@@ -13,6 +13,9 @@ import * as docsApi from '../../../api/agencyDocs';
 import type { DocCategory, RelatedDocType } from '../../../api/agencyDocs';
 import { portfolioDocs, type PortfolioDoc } from '../../../api/agencyPortfolioDocs';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
+import { DateInput } from '../../common/DateInput';
+import { formatMoneyForCurrency } from '../../../utils/format';
+import { useDateFormat } from '../../../context/DateFormatContext';
 
 interface Props {
   open: boolean;
@@ -50,6 +53,7 @@ const CATEGORY_TO_RELATED: Partial<Record<DocCategory, RelatedDocType>> = {
 export function NewDocRequestDialog({ open, onOpenChange, defaultTenantId, onCreated }: Props) {
   const { portfolio } = useAgencyClient();
 
+  const { formatDate } = useDateFormat();
   const [tenantId, setTenantId] = useState<string>('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -139,7 +143,7 @@ export function NewDocRequestDialog({ open, onOpenChange, defaultTenantId, onCre
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs">
-              <div className="text-gray-500 mb-1">Client</div>
+              <div className="text-gray-500 mb-1">Client <span className="text-red-500">*</span></div>
               <Select value={tenantId} onValueChange={setTenantId}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Pick a client…" /></SelectTrigger>
                 <SelectContent>
@@ -187,9 +191,9 @@ export function NewDocRequestDialog({ open, onOpenChange, defaultTenantId, onCre
                   <SelectItem value="__none__">(no link)</SelectItem>
                   {candidates.map(d => (
                     <SelectItem key={d.id} value={d.id}>
-                      {d.docNo} · {d.issueDate}
+                      {d.docNo} · {formatDate(d.issueDate)}
                       <span className="text-[10px] text-gray-500 ml-1">
-                        {d.currency} {Number(d.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {d.currency} {formatMoneyForCurrency(Number(d.total), d.currency)}
                       </span>
                     </SelectItem>
                   ))}
@@ -203,7 +207,7 @@ export function NewDocRequestDialog({ open, onOpenChange, defaultTenantId, onCre
           )}
 
           <div>
-            <Label className="text-xs">Title (what to request)</Label>
+            <Label className="text-xs">Title (what to request) <span className="text-red-500">*</span></Label>
             <Input
               value={title}
               onChange={e => setTitle(e.target.value)}
@@ -237,11 +241,10 @@ export function NewDocRequestDialog({ open, onOpenChange, defaultTenantId, onCre
             </div>
             <div>
               <Label className="text-xs">Due by (optional)</Label>
-              <Input
-                type="date"
-                value={dueDate}
-                onChange={e => setDueDate(e.target.value)}
-                className="h-9 text-sm mt-1"
+              <DateInput
+                value={dueDate || null}
+                onChange={v => setDueDate(v ?? '')}
+                className="w-full mt-1"
               />
             </div>
           </div>

@@ -168,17 +168,17 @@ export function AgencyApp() {
           <div className="h-full flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-xs text-gray-500">
-              {section === 'dashboard' ? 'Agency dashboard'
-                : inSettings ? 'Agency settings'
+              {inSettings ? 'Agency settings'
                 : activePickTitle
                   ? `Working on: ${activePickTitle}`
                   : 'Pick a client Company to continue'}
             </div>
           </div>
 
-          {/* Client picker — hidden on Dashboard + Settings pages
-              (agency-scope surfaces, not client-scoped). */}
-          {section !== 'dashboard' && !inSettings && (
+          {/* Client picker — hidden only on Settings pages (agency-scope
+              surfaces). The Dashboard reads the picked client, so it
+              needs the picker too. */}
+          {!inSettings && (
             <div className="flex items-center gap-2">
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin text-gray-400" />

@@ -18,6 +18,11 @@ import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { useAuth } from '../../../context/AuthContext';
 import { PageTitleTooltip } from './PageTitleTooltip';
 import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { Checkbox } from '../../ui/checkbox';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { useDateFormat } from '../../../context/DateFormatContext';
+import { statusBadgeClass } from '../../../utils/statusTones';
 
 type StatusTab = 'all' | AssignmentStatus;
 
@@ -30,12 +35,14 @@ const STATUS_TABS: Array<{ key: StatusTab; label: string }> = [
   { key: 'disengaged',         label: 'Disengaged' },
 ];
 
+// App-wide palette (utils/statusTones): waiting = amber, active = green,
+// declined = red, ended = slate.
 const STATUS_CLS: Record<AssignmentStatus, string> = {
-  pending:            'bg-amber-100 text-amber-700 border-amber-200',
-  active:             'bg-emerald-100 text-emerald-700 border-emerald-200',
-  declined:           'bg-rose-100 text-rose-700 border-rose-200',
-  disengaged:         'bg-gray-100 text-gray-500 border-gray-200',
-  disconnect_pending: 'bg-amber-200 text-amber-900 border-amber-300',
+  pending:            statusBadgeClass('pending'),
+  active:             statusBadgeClass('active'),
+  declined:           statusBadgeClass('rejected'),
+  disengaged:         statusBadgeClass('closed'),
+  disconnect_pending: statusBadgeClass('pending'),
 };
 
 const SCOPE_CLS: Record<string, string> = {
@@ -69,19 +76,23 @@ export function AgencySettingsClientsPage() {
   const { currentUser } = useAuth();
   const myRole = currentUser?.role?.replace(/^agency_/, '') ?? '';
   const canDecide = myRole === 'partner';
+  const confirm = useConfirm();
+  const { formatDate } = useDateFormat();
 
   const [rows, setRows] = useState<AssignmentDto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState<StatusTab>('all');
   const [search, setSearch] = useState('');
   const [reviewing, setReviewing] = useState<AssignmentDto | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setRows(await assignmentsApi.list());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load clients');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load clients');
     } finally {
       setLoading(false);
     }
@@ -121,9 +132,8 @@ export function AgencySettingsClientsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold flex items-center gap-2">
-          <Building2 className="h-5 w-5 text-blue-600" />
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold flex items-center gap-2">
           Clients
           <PageTitleTooltip label="About Clients">
             Every engagement your agency has, across all statuses. Super
@@ -134,10 +144,12 @@ export function AgencySettingsClientsPage() {
             with allowed chips unlock the client's data plane.
           </PageTitleTooltip>
         </h1>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -151,44 +163,45 @@ export function AgencySettingsClientsPage() {
               </span>
             </CardTitle>
             <div className="relative shrink-0">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search name / slug / scope / status…"
-                className="pl-8 h-9 w-72 text-sm"
+                className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-          </div>
-
-          {/* Status tabs — All / Pending / Active / Declined / Disengaged */}
-          <div className="flex items-center gap-2 flex-wrap mt-3">
-            {STATUS_TABS.map(t => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                className={`px-3 h-8 rounded-md border text-xs font-medium transition ${
-                  tab === t.key
-                    ? 'bg-blue-50 border-blue-300 text-blue-700'
-                    : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                }`}
+            <select
+              value={tab}
+              onChange={e => setTab(e.target.value as StatusTab)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              {STATUS_TABS.map(t => (
+                <option key={t.key} value={t.key}>Status : {t.label} ({counts[t.key]})</option>
+              ))}
+            </select>
+            {(search || tab !== 'all') && (
+              <Button
+                size="sm" variant="ghost" className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setTab('all'); }}
               >
-                {t.label}
-                <span className="ml-1 text-[10px] opacity-70">({counts[t.key]})</span>
-              </button>
-            ))}
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading && rows.length === 0 ? (
             <div className="px-4 py-4"><TableRowsSkeleton rows={6} columns={5} /></div>
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 px-6 py-4">
-              {rows.length === 0
-                ? 'No engagements yet. Super Admin will land new proposals here for your review.'
-                : 'No engagements match this filter.'}
-            </p>
+            <ListEmpty noun="engagements" filtered={!!(search || tab !== 'all')}>
+              {rows.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1">Super Admin will land new proposals here for your review.</p>
+              )}
+            </ListEmpty>
           ) : (
             <ul className="divide-y">
               {filtered.map(a => {
@@ -203,7 +216,7 @@ export function AgencySettingsClientsPage() {
                             <Star className="h-2.5 w-2.5" /> Primary
                           </Badge>
                         )}
-                        <Badge className={`border text-[10px] px-1.5 py-0 ${STATUS_CLS[a.status]}`}>
+                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${STATUS_CLS[a.status]}`}>
                           {a.status}
                         </Badge>
                         <Badge className={`border text-[10px] px-1.5 py-0 ${SCOPE_CLS[a.scope] ?? ''}`}>
@@ -211,12 +224,12 @@ export function AgencySettingsClientsPage() {
                         </Badge>
                       </div>
                       <div className="text-[11px] text-gray-500 mt-0.5 flex flex-wrap gap-3">
-                        <span>Proposed {new Date(a.createdAt).toLocaleDateString()}</span>
+                        <span>Proposed {formatDate(a.createdAt)}</span>
                         {a.decisionAt && (
                           <span>
                             {a.status === 'active' ? 'Accepted' : a.status === 'declined' ? 'Declined' : 'Decided'}
                             {' '}
-                            {new Date(a.decisionAt).toLocaleDateString()}
+                            {formatDate(a.decisionAt)}
                           </span>
                         )}
                       </div>
@@ -264,9 +277,13 @@ export function AgencySettingsClientsPage() {
                         variant="outline" size="sm"
                         className="shrink-0 border-rose-200 text-rose-700 hover:bg-rose-50"
                         onClick={async () => {
-                          if (!confirm(
-                            `Accept the client's disconnect request?\n\nThis ends the engagement — your agency will lose read access to ${a.tenantName ?? 'this Company'}'s data after Accept.`
-                          )) return;
+                          const ok = await confirm({
+                            title: "Accept the client's disconnect request?",
+                            message: `This ends the engagement — your agency will lose read access to ${a.tenantName ?? 'this Company'}'s data after Accept.`,
+                            confirmLabel: 'Accept disconnect',
+                            variant: 'destructive',
+                          });
+                          if (!ok) return;
                           try {
                             await assignmentsApi.acceptDisconnect(a.id);
                             toast.success('Disconnect accepted — engagement ended.');
@@ -314,6 +331,7 @@ function ReviewProposalDialog({ proposal, canDecide, onClose }: {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState<'accept' | 'decline' | null>(null);
   const [scrolledEnd, setScrolledEnd] = useState(false);
+  const { formatDate } = useDateFormat();
 
   useEffect(() => {
     if (!proposal) return;
@@ -376,7 +394,7 @@ function ReviewProposalDialog({ proposal, canDecide, onClose }: {
             {proposal.tenantName ?? proposal.tenantSlug ?? proposal.tenantId}
             {proposal.isPrimary && ' · Primary'}
             {' · Proposed '}
-            {new Date(proposal.createdAt).toLocaleDateString()}
+            {formatDate(proposal.createdAt)}
           </DialogDescription>
         </DialogHeader>
 
@@ -423,10 +441,9 @@ function ReviewProposalDialog({ proposal, canDecide, onClose }: {
 
           {!declining ? (
             <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={agreed}
-                onChange={e => setAgreed(e.target.checked)}
+                onCheckedChange={v => setAgreed(v === true)}
                 disabled={!scrolledEnd}
               />
               I have read and agree to the Terms of Engagement above.

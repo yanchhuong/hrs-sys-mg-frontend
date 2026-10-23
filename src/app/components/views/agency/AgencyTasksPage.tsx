@@ -4,16 +4,23 @@ import { Card, CardContent, CardHeader } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Badge } from '../../ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
-import { CheckSquare, Plus, RefreshCw, Search, User2, Calendar, ChevronDown } from 'lucide-react';
+import { Label } from '../../ui/label';
+import { format } from 'date-fns';
+import { Plus, RefreshCw, Search, User2, Calendar, ChevronDown } from 'lucide-react';
 import * as tasksApi from '../../../api/agencyTasks';
 import type { TaskDto, TaskPriority, TaskStatus } from '../../../api/agencyTasks';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { useAuth } from '../../../context/AuthContext';
 import { TaskDialog } from './TaskDialog';
 import { PageTitleTooltip } from './PageTitleTooltip';
-import { DateRangeFilter, inRange } from '../../common/DateRangeFilter';
+import { inRange } from '../../common/DateRangeFilter';
+import { DateInput } from '../../common/DateInput';
 import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { Pagination } from '../../common/Pagination';
+import { usePagination } from '../../../hooks/usePagination';
+import { statusBadgeClass } from '../../../utils/statusTones';
+import { useDateFormat } from '../../../context/DateFormatContext';
 
 type Tab = 'all' | 'todo' | 'in_progress' | 'blocked' | 'done';
 
@@ -25,11 +32,13 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'done',        label: 'Done' },
 ];
 
+// App-wide palette (utils/statusTones): not started = slate,
+// in progress = blue, blocked = red, done = green.
 const STATUS_CLS: Record<TaskStatus, string> = {
-  todo:        'bg-slate-100 text-slate-700 border-slate-200',
-  in_progress: 'bg-blue-100 text-blue-700 border-blue-200',
-  blocked:     'bg-rose-100 text-rose-700 border-rose-200',
-  done:        'bg-emerald-100 text-emerald-700 border-emerald-200',
+  todo:        statusBadgeClass('draft'),
+  in_progress: statusBadgeClass('in_progress'),
+  blocked:     statusBadgeClass('failed'),
+  done:        statusBadgeClass('done'),
 };
 
 const PRIORITY_CLS: Record<TaskPriority, string> = {
@@ -50,6 +59,8 @@ export function AgencyTasksPage() {
   const { activeClient, activeClientId } = useAgencyClient();
   const [rows, setRows] = useState<TaskDto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const { formatDate } = useDateFormat();
   const [tab, setTab] = useState<Tab>('todo');
   const [scope, setScope] = useState<'portfolio' | 'client' | 'mine'>('portfolio');
   const [search, setSearch] = useState('');
@@ -60,6 +71,7 @@ export function AgencyTasksPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const opts: Parameters<typeof tasksApi.tasks.list>[0] = {};
       if (scope === 'client' && activeClientId) opts.clientTenantId = activeClientId;
@@ -67,7 +79,7 @@ export function AgencyTasksPage() {
       const list = await tasksApi.tasks.list(opts);
       setRows(list);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load tasks');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load tasks');
     } finally {
       setLoading(false);
     }
@@ -95,6 +107,19 @@ export function AgencyTasksPage() {
     return c;
   }, [rows]);
 
+  // Defaults: "To do" over the whole portfolio. Clear returns there.
+  const hasFilters = !!(search.trim() || tab !== 'todo' || scope !== 'portfolio' || dateFrom || dateTo);
+  const clearFilters = () => {
+    setSearch(''); setTab('todo'); setScope('portfolio'); setDateFrom(null); setDateTo(null);
+  };
+  const pager = usePagination(filtered, 25);
+  useEffect(() => {
+    pager.goToPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, tab, scope, dateFrom, dateTo]);
+  // Local "today" (not UTC) so a task due today isn't flagged overdue.
+  const today = format(new Date(), 'yyyy-MM-dd');
+
   const cycleStatus = async (task: TaskDto) => {
     const next: TaskStatus =
       task.status === 'todo' ? 'in_progress'
@@ -114,24 +139,21 @@ export function AgencyTasksPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold flex items-center gap-2">
-            <CheckSquare className="h-5 w-5 text-blue-600" />
-            Tasks
-            <PageTitleTooltip label="About Tasks">
-              Internal to-dos for the agency. Optionally scope a task to one
-              client, or leave portfolio-wide. Cycle status inline from the
-              row's pill; click a row to edit.
-            </PageTitleTooltip>
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold flex items-center gap-2">
+          Tasks
+          <PageTitleTooltip label="About Tasks">
+            Internal to-dos for the agency. Optionally scope a task to one
+            client, or leave portfolio-wide. Cycle status inline from the
+            row's pill; click a row to edit.
+          </PageTitleTooltip>
+        </h1>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button size="sm" onClick={openNew}>
+          <Button onClick={openNew}>
             <Plus className="h-4 w-4 mr-1.5" />
             New task
           </Button>
@@ -140,79 +162,73 @@ export function AgencyTasksPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Select value={tab} onValueChange={v => setTab(v as Tab)}>
-              <SelectTrigger className="h-9 w-48 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {TABS.map(t => (
-                  <SelectItem key={t.key} value={t.key}>
-                    <div className="flex items-center gap-2">
-                      {t.key === 'all' ? (
-                        <span className="text-sm">{t.label}</span>
-                      ) : (
-                        <Badge className={`border text-[10px] px-1.5 py-0 ${STATUS_CLS[t.key as TaskStatus]}`}>
-                          {t.label}
-                        </Badge>
-                      )}
-                      <span className="text-[10px] text-gray-500">({counts[t.key]})</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="ml-auto flex items-center gap-2 flex-wrap">
-              {/* v-date-range-filter — filter tasks by due-date range.
-                  Tasks without a due date drop out when a range is
-                  set (nothing to compare against). */}
-              <DateRangeFilter
-                enablePresets
-                defaultStartDate={dateFrom ?? ''}
-                defaultEndDate={dateTo ?? ''}
-                onFilterChange={(f, t) => { setDateFrom(f); setDateTo(t); }}
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search title / client / notes…"
+                className="h-9 pl-7 w-64 text-sm"
               />
-              <Select value={scope} onValueChange={v => setScope(v as typeof scope)}>
-                <SelectTrigger className="h-9 w-40 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="portfolio">All portfolio</SelectItem>
-                  <SelectItem value="client" disabled={!activeClientId}>
-                    Just this client{activeClient ? '' : ' (pick first)'}
-                  </SelectItem>
-                  <SelectItem value="mine">My tasks</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search…"
-                  className="pl-8 h-9 w-52 text-sm"
-                />
-              </div>
             </div>
+            <select
+              value={tab}
+              onChange={e => setTab(e.target.value as Tab)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              {TABS.map(t => (
+                <option key={t.key} value={t.key}>Status : {t.label} ({counts[t.key]})</option>
+              ))}
+            </select>
+            <select
+              value={scope}
+              onChange={e => setScope(e.target.value as typeof scope)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by scope"
+            >
+              <option value="portfolio">Scope : All portfolio</option>
+              <option value="client" disabled={!activeClientId}>
+                Scope : Just this client{activeClient ? '' : ' (pick first)'}
+              </option>
+              <option value="mine">Scope : My tasks</option>
+            </select>
+            {/* Due-date range. Tasks without a due date drop out when a
+                range is set (nothing to compare against). */}
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom} onChange={setDateFrom} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo} onChange={setDateTo} min={dateFrom || undefined} /></div>
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
             <TableRowsSkeleton rows={6} columns={6} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">
-              No tasks match this filter. {scope === 'mine' && 'Try switching to All portfolio.'}
-            </p>
-          ) : (
+            <ListEmpty noun="tasks" filtered={hasFilters}>
+              {scope === 'mine' && <p className="text-xs text-gray-400 mt-1">Try switching to All portfolio.</p>}
+            </ListEmpty>
+          ) : (<>
             <ul className="divide-y">
-              {filtered.map(t => {
-                const overdue = t.dueDate && t.status !== 'done'
-                  && new Date(t.dueDate).getTime() < Date.now() - 86_400_000;
+              {pager.paginatedItems.map(t => {
+                const overdue = !!t.dueDate && t.status !== 'done' && t.dueDate.slice(0, 10) < today;
                 return (
-                  <li key={t.id} className="py-3 px-1 hover:bg-gray-50 flex items-start gap-3">
+                  <li key={t.id} className="py-3 px-1 hover:bg-gray-50 cursor-pointer flex items-start gap-3">
                     <button
                       type="button"
                       onClick={() => cycleStatus(t)}
                       className="mt-0.5 shrink-0"
                       title="Click to cycle status"
                     >
-                      <Badge className={`border ${STATUS_CLS[t.status]} text-[10px] px-1.5 py-0 flex items-center gap-1`}>
+                      <Badge variant="outline" className={`${STATUS_CLS[t.status]} text-[10px] px-1.5 py-0 flex items-center gap-1`}>
                         {t.status.replace('_', ' ')}
                         <ChevronDown className="h-2.5 w-2.5" />
                       </Badge>
@@ -239,7 +255,7 @@ export function AgencyTasksPage() {
                         {t.dueDate && (
                           <span className={`inline-flex items-center gap-1 ${overdue ? 'text-rose-700 font-medium' : ''}`}>
                             <Calendar className="h-3 w-3" />
-                            Due {t.dueDate}{overdue ? ' — overdue' : ''}
+                            Due {formatDate(t.dueDate)}{overdue ? ' — overdue' : ''}
                           </span>
                         )}
                         {t.assigneeName && (
@@ -257,7 +273,17 @@ export function AgencyTasksPage() {
                 );
               })}
             </ul>
-          )}
+            <div className="border-t">
+              <Pagination
+                currentPage={pager.currentPage}
+                totalPages={pager.totalPages}
+                onPageChange={pager.goToPage}
+                startIndex={pager.startIndex}
+                endIndex={pager.endIndex}
+                totalItems={pager.totalItems}
+              />
+            </div>
+          </>)}
         </CardContent>
       </Card>
 

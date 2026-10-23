@@ -13,6 +13,8 @@ import { Info, Loader2, Plus, Paperclip } from 'lucide-react';
 import * as declApi from '../../../api/agencyTaxDecl';
 import type { TaxDeclCategory, LinkedDoc } from '../../../api/agencyTaxDecl';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
+import { Checkbox } from '../../ui/checkbox';
+import { NumericInput } from '../../common/NumericInput';
 
 /**
  * The nine seeded obligations from V225, bucketed into the FE's
@@ -207,7 +209,7 @@ export function NewTaxDeclarationDialog({
         <div className="overflow-y-auto flex-1 min-h-0 px-6 py-4 space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs">
-              <div className="text-gray-500 mb-1">Client</div>
+              <div className="text-gray-500 mb-1">Client <span className="text-red-500">*</span></div>
               <Select value={tenantId} onValueChange={setTenantId}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Pick a client…" /></SelectTrigger>
                 <SelectContent>
@@ -220,15 +222,15 @@ export function NewTaxDeclarationDialog({
               </Select>
             </label>
             <label className="text-xs">
-              <div className="text-gray-500 mb-1">Obligation</div>
+              <div className="text-gray-500 mb-1">Obligation <span className="text-red-500">*</span></div>
               <Select value={obligationCode} onValueChange={setObligationCode}>
                 <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {OBLIGATION_CHOICES
-                    // Pin the picker to the same frequency as the
-                    // parent tab — Monthly obligations under
-                    // Monthly, annual under Yearly. User can flip
-                    // manually if they want.
+                    // Pinned to the parent tab's frequency — Monthly
+                    // obligations under Monthly, annual under Yearly.
+                    // To file the other kind, switch the page tab
+                    // first. (The current pick is always kept.)
                     .filter(o => o.frequency === (defaultFrequency ?? 'monthly') || o.code === obligationCode)
                     .map(o => (
                       <SelectItem key={o.code} value={o.code}>{o.name}</SelectItem>
@@ -240,7 +242,7 @@ export function NewTaxDeclarationDialog({
 
           <div className="grid grid-cols-3 gap-2">
             <label className="text-xs col-span-1">
-              <div className="text-gray-500 mb-1">Period</div>
+              <div className="text-gray-500 mb-1">Period <span className="text-red-500">*</span></div>
               <Input
                 value={period}
                 onChange={e => setPeriod(e.target.value)}
@@ -251,12 +253,11 @@ export function NewTaxDeclarationDialog({
             </label>
             <label className="text-xs">
               <div className="text-gray-500 mb-1">Amount owed</div>
-              <Input
-                type="number"
-                step="0.01"
+              <NumericInput
                 value={amount}
-                onChange={e => setAmount(e.target.value)}
-                placeholder="0.00"
+                onChange={setAmount}
+                decimals={currency === 'KHR' ? 0 : 2}
+                placeholder={currency === 'KHR' ? '0' : '0.00'}
                 className="h-9 text-sm text-right tabular-nums"
               />
             </label>
@@ -299,12 +300,11 @@ export function NewTaxDeclarationDialog({
                       return (
                         <li key={`${d.docType}:${d.docId}`}>
                           <label className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={on}
-                              onChange={e => {
+                              onCheckedChange={v => {
                                 const next = new Set(picked);
-                                if (e.target.checked) next.add(d.docId); else next.delete(d.docId);
+                                if (v === true) next.add(d.docId); else next.delete(d.docId);
                                 setPicked(next);
                               }}
                             />

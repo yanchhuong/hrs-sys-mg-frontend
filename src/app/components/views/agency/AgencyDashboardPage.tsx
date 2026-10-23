@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
 import {
-  LayoutDashboard, Briefcase, Calendar, AlertTriangle,
+  Briefcase, Calendar, AlertTriangle,
   Users, ClipboardCheck, RefreshCw, ArrowRight,
 } from 'lucide-react';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
@@ -13,6 +13,10 @@ import * as taxApi from '../../../api/agencyTax';
 import type { CaseDto } from '../../../api/agencyCases';
 import type { CalendarEntry } from '../../../api/agencyTax';
 import { PageTitleTooltip } from './PageTitleTooltip';
+import { StatCard } from '../../common/StatCard';
+import { StatCardsSkeleton } from '../../common/LoadingSkeletons';
+import { Skeleton } from '../../ui/skeleton';
+import { useDateFormat } from '../../../context/DateFormatContext';
 
 /**
  * v-agency-fe-5 — agency dashboard landing page.
@@ -37,6 +41,10 @@ export function AgencyDashboardPage() {
   const [cases, setCases] = useState<CaseDto[]>([]);
   const [calendar, setCalendar] = useState<CalendarEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  // False until the first fetch settles, so the tiles and lists show a
+  // skeleton instead of "0" / "No open cases" on first paint.
+  const [loaded, setLoaded] = useState(false);
+  const { formatDate } = useDateFormat();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,6 +65,7 @@ export function AgencyDashboardPage() {
       toast.error(e instanceof Error ? e.message : 'Failed to load dashboard');
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   }, [activeClientId]);
 
@@ -110,51 +119,51 @@ export function AgencyDashboardPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold flex items-center gap-2">
-            <LayoutDashboard className="h-5 w-5 text-blue-600" />
-            Agency dashboard
-            <PageTitleTooltip label="About Agency dashboard">
-              {activeClient
-                ? <>Live view for <b>{activeClient.tenantName ?? activeClient.tenantSlug}</b>. Refreshes every minute.</>
-                : <>Portfolio overview across {portfolio.length} client{portfolio.length === 1 ? '' : 's'}. Pick a client to see tax-calendar counts here.</>}
-            </PageTitleTooltip>
-          </h1>
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold flex items-center gap-2">
+          Agency dashboard
+          <PageTitleTooltip label="About Agency dashboard">
+            {activeClient
+              ? <>Live view for <b>{activeClient.tenantName ?? activeClient.tenantSlug}</b>. Refreshes every minute.</>
+              : <>Portfolio overview across {portfolio.length} client{portfolio.length === 1 ? '' : 's'}. Pick a client to see tax-calendar counts here.</>}
+          </PageTitleTooltip>
+        </h1>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
       </div>
 
       {/* Top row — 3 KPI tiles */}
-      <div className="stat-strip stat-cols-3">
-        <KpiTile
-          icon={<Users className="h-5 w-5 text-blue-600" />}
-          label="Clients"
-          value={portfolio.length}
-          hint={`${portfolio.filter(c => c.isPrimary).length} primary`}
-        />
-        <KpiTile
-          icon={<Briefcase className="h-5 w-5 text-amber-600" />}
-          label="Open cases"
-          value={caseKpis.open}
-          hint={caseKpis.blocking > 0 ? `${caseKpis.blocking} high/blocking` : `${caseKpis.pending} pending reply`}
-          tone={caseKpis.blocking > 0 ? 'warn' : 'default'}
-        />
-        <KpiTile
-          icon={<AlertTriangle className="h-5 w-5 text-rose-600" />}
-          label="Overdue filings"
-          value={activeClientId ? taxKpis.overdue : null}
-          hint={
-            !activeClientId ? 'Pick a client'
-              : taxKpis.overdue > 0 ? `${taxKpis.dueSoon} due this week`
-              : `${taxKpis.dueSoon} due this week`
-          }
-          tone={taxKpis.overdue > 0 ? 'danger' : 'default'}
-        />
-      </div>
+      {!loaded ? (
+        <StatCardsSkeleton cards={3} className="stat-strip stat-cols-3" />
+      ) : (
+        <div className="stat-strip stat-cols-3">
+          <StatCard
+            icon={Users}
+            tone="blue"
+            label="Clients"
+            value={portfolio.length}
+            hint={`${portfolio.filter(c => c.isPrimary).length} primary`}
+          />
+          <StatCard
+            icon={Briefcase}
+            tone={caseKpis.blocking > 0 ? 'amber' : 'blue'}
+            label="Open cases"
+            value={caseKpis.open}
+            hint={caseKpis.blocking > 0 ? `${caseKpis.blocking} high/blocking` : `${caseKpis.pending} pending reply`}
+          />
+          <StatCard
+            icon={AlertTriangle}
+            tone={taxKpis.overdue > 0 ? 'red' : 'green'}
+            label="Overdue filings"
+            value={activeClientId ? taxKpis.overdue : '—'}
+            hint={!activeClientId ? 'Pick a client in the top bar' : `${taxKpis.dueSoon} due this week`}
+          />
+        </div>
+      )}
 
       {/* Second row — two lists side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -164,7 +173,9 @@ export function AgencyDashboardPage() {
             <ClipboardCheck className="h-4 w-4 text-gray-400" />
           </CardHeader>
           <CardContent>
-            {recentCases.length === 0 ? (
+            {!loaded ? (
+              <ListSkeleton />
+            ) : recentCases.length === 0 ? (
               <p className="text-sm text-gray-500 py-3 text-center">No open cases across your portfolio.</p>
             ) : (
               <ul className="divide-y">
@@ -199,8 +210,10 @@ export function AgencyDashboardPage() {
           <CardContent>
             {!activeClientId ? (
               <p className="text-sm text-gray-500 py-3 text-center">
-                Pick a client on the Portfolio page to see their tax deadlines.
+                Pick a client in the top bar to see their tax deadlines.
               </p>
+            ) : !loaded ? (
+              <ListSkeleton />
             ) : upcomingDeadlines.length === 0 ? (
               <p className="text-sm text-gray-500 py-3 text-center">
                 Nothing overdue or due this week.
@@ -212,7 +225,7 @@ export function AgencyDashboardPage() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">{e.obligationName}</div>
                       <div className="text-[11px] text-gray-500 mt-0.5">
-                        Period {e.period} · due {e.dueDate}
+                        Period {e.period} · due {formatDate(e.dueDate)}
                       </div>
                     </div>
                     <Badge className={`border text-[10px] px-1.5 py-0 ${
@@ -241,29 +254,18 @@ export function AgencyDashboardPage() {
   );
 }
 
-/* -------------------- tile helper -------------------- */
+/* -------------------- list skeleton -------------------- */
 
-function KpiTile({ icon, label, value, hint, tone }: {
-  icon: React.ReactNode; label: string; value: number | null; hint?: string;
-  tone?: 'default' | 'warn' | 'danger';
-}) {
-  const bg =
-    tone === 'danger' ? 'bg-rose-50/50 border-rose-200'
-    : tone === 'warn' ? 'bg-amber-50/40 border-amber-200'
-    : 'bg-white border-gray-200';
+function ListSkeleton() {
   return (
-    <Card className={bg}>
-      <CardContent className="py-4">
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          {icon}
-          {label}
+    <div className="divide-y">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="py-2 space-y-1.5">
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-3 w-1/3" />
         </div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">
-          {value == null ? '—' : value}
-        </div>
-        {hint && <div className="text-[11px] text-gray-500 mt-0.5">{hint}</div>}
-      </CardContent>
-    </Card>
+      ))}
+    </div>
   );
 }
 

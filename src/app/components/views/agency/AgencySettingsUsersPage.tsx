@@ -9,7 +9,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription,
 } from '../../ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
-import { Loader2, Users, Search, RefreshCw, Plus, Edit3, UserX, Building2 } from 'lucide-react';
+import { Loader2, Users, Search, RefreshCw, Plus, Edit3, UserX, Building2, Save } from 'lucide-react';
 import { agencyUsers } from '../../../api/agencyAdmin';
 import type { AgencyUserAdminDto, AgencyRole } from '../../../api/agencyAdmin';
 import { useAuth } from '../../../context/AuthContext';
@@ -17,6 +17,10 @@ import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { PageTitleTooltip } from './PageTitleTooltip';
 import { Checkbox } from '../../ui/checkbox';
 import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { Avatar, AvatarFallback } from '../../ui/avatar';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { statusBadgeClass } from '../../../utils/statusTones';
 
 const ROLE_LABEL: Record<AgencyRole, string> = {
   partner: 'Partner', manager: 'Manager', senior: 'Senior', staff: 'Staff',
@@ -43,9 +47,11 @@ export function AgencySettingsUsersPage() {
   const { currentUser } = useAuth();
   const myRole = currentUser?.role?.replace(/^agency_/, '') as AgencyRole | undefined;
   const canAdmin = myRole === 'partner';
+  const confirm = useConfirm();
 
   const [rows, setRows] = useState<AgencyUserAdminDto[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editRow, setEditRow] = useState<AgencyUserAdminDto | null>(null);
@@ -53,11 +59,12 @@ export function AgencySettingsUsersPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const list = await agencyUsers.list();
       setRows(list);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load users');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load users');
     } finally {
       setLoading(false);
     }
@@ -78,7 +85,13 @@ export function AgencySettingsUsersPage() {
   const openEdit = (r: AgencyUserAdminDto) => { setEditRow(r); setDialogOpen(true); };
 
   const doDeactivate = async (r: AgencyUserAdminDto) => {
-    if (!confirm(`Deactivate ${r.name ?? r.email}? They lose access immediately.`)) return;
+    const ok = await confirm({
+      title: `Deactivate ${r.name ?? r.email}?`,
+      message: 'They lose access immediately. Their audit trail is kept.',
+      confirmLabel: 'Deactivate',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     try {
       await agencyUsers.deactivate(r.id);
       toast.success('User deactivated');
@@ -90,9 +103,8 @@ export function AgencySettingsUsersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold flex items-center gap-2">
-          <Users className="h-5 w-5 text-blue-600" />
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold flex items-center gap-2">
           Users
           <PageTitleTooltip label="About Users">
             Every member on your agency (Partner / Manager / Senior / Staff).
@@ -101,13 +113,13 @@ export function AgencySettingsUsersPage() {
             lose login access immediately.
           </PageTitleTooltip>
         </h1>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
           {canAdmin && (
-            <Button size="sm" onClick={openNew}>
+            <Button onClick={openNew}>
               <Plus className="h-4 w-4 mr-1.5" />
               Add user
             </Button>
@@ -126,35 +138,42 @@ export function AgencySettingsUsersPage() {
               </span>
             </CardTitle>
             <div className="relative shrink-0">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search name / email / role…"
-                className="pl-8 h-9 w-72 text-sm"
+                className="h-9 pl-7 w-64 text-sm"
               />
             </div>
+            {search && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={() => setSearch('')}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading && rows.length === 0 ? (
             <div className="px-4 py-4"><TableRowsSkeleton rows={6} columns={4} /></div>
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 px-6 py-4">
-              {rows.length === 0 ? 'No members yet.' : 'No members match this filter.'}
-            </p>
+            <ListEmpty noun="members" filtered={!!search.trim()} />
           ) : (
             <ul className="divide-y">
               {filtered.map(m => (
                 <li key={m.id} className={`px-6 py-2.5 flex items-center gap-3 ${!m.isActive ? 'opacity-50' : ''}`}>
-                  <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-semibold shrink-0">
-                    {initials(m.name || m.email)}
-                  </div>
+                  <Avatar className="h-8 w-8 shrink-0">
+                    <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
+                      {initials(m.name || m.email)}
+                    </AvatarFallback>
+                  </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900 truncate inline-flex items-center gap-1.5">
                       {m.name || m.email}
                       {!m.isActive && (
-                        <Badge variant="outline" className="text-[9px] px-1 py-0">Inactive</Badge>
+                        <Badge variant="outline" className={`text-[9px] px-1 py-0 ${statusBadgeClass('inactive')}`}>Inactive</Badge>
                       )}
                     </div>
                     <div className="text-[11px] text-gray-500 truncate">{m.email}</div>
@@ -167,7 +186,7 @@ export function AgencySettingsUsersPage() {
                     <div className="flex items-center gap-1 shrink-0">
                       {m.role !== 'partner' && (
                         <Button
-                          variant="ghost" size="sm" className="h-7 px-2"
+                          variant="ghost" size="icon" className="h-7 w-7"
                           onClick={() => setScopeRow(m)}
                           title="Assign clients"
                         >
@@ -175,7 +194,7 @@ export function AgencySettingsUsersPage() {
                         </Button>
                       )}
                       <Button
-                        variant="ghost" size="sm" className="h-7 px-2"
+                        variant="ghost" size="icon" className="h-7 w-7"
                         onClick={() => openEdit(m)}
                         title="Edit user"
                       >
@@ -183,7 +202,7 @@ export function AgencySettingsUsersPage() {
                       </Button>
                       {m.isActive && (
                         <Button
-                          variant="ghost" size="sm" className="h-7 px-2 text-rose-600 hover:text-rose-800"
+                          variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700"
                           onClick={() => doDeactivate(m)}
                           title="Deactivate"
                         >
@@ -288,7 +307,7 @@ function UserDialog({ open, onOpenChange, user, onSaved }: {
 
         <div className="space-y-3 text-sm">
           <div>
-            <Label className="text-xs">Email</Label>
+            <Label className="text-xs">Email {!editing && <span className="text-red-500">*</span>}</Label>
             <Input
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -338,7 +357,7 @@ function UserDialog({ open, onOpenChange, user, onSaved }: {
           </div>
           <div>
             <Label className="text-xs">
-              {editing ? 'New password (leave blank to keep current)' : 'Password'}
+              {editing ? 'New password (leave blank to keep current)' : <>Password <span className="text-red-500">*</span></>}
             </Label>
             <Input
               type="password"
@@ -359,7 +378,9 @@ function UserDialog({ open, onOpenChange, user, onSaved }: {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={saving || !email.trim() || (!editing && password.length < 8)}>
-            {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Plus className="h-4 w-4 mr-1.5" />}
+            {saving
+              ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              : editing ? <Save className="h-4 w-4 mr-1.5" /> : <Plus className="h-4 w-4 mr-1.5" />}
             {editing ? 'Save' : 'Create'}
           </Button>
         </DialogFooter>
@@ -520,9 +541,7 @@ function ScopeDialog({
           </div>
 
           {loading ? (
-            <div className="text-center py-6 text-sm text-gray-500 inline-flex items-center gap-2 px-4">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading scopes…
-            </div>
+            <TableRowsSkeleton rows={4} columns={2} />
           ) : portfolio.length === 0 ? (
             <p className="text-sm text-gray-500 py-4">
               No engaged clients yet. Accept an engagement from Settings ▸ Clients first.

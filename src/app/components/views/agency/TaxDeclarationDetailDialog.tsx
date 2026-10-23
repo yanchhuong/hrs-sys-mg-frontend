@@ -14,6 +14,11 @@ import {
 import * as declApi from '../../../api/agencyTaxDecl';
 import type { TaxDeclarationDto, TaxDeclStatus } from '../../../api/agencyTaxDecl';
 import { CATEGORY_LABELS, formatPeriodForDisplay } from '../../../api/agencyTaxDecl';
+import { NumericInput } from '../../common/NumericInput';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { formatMoneyForCurrency } from '../../../utils/format';
+import { statusBadgeClass } from '../../../utils/statusTones';
+import { useDateFormat } from '../../../context/DateFormatContext';
 
 interface Props {
   open: boolean;
@@ -22,14 +27,15 @@ interface Props {
   onChanged?: () => void;
 }
 
+// Same mapping as AgencyTaxDeclarationsPage (utils/statusTones palette).
 const STATUS_CLS: Record<TaxDeclStatus, string> = {
-  draft:     'bg-slate-100 text-slate-700 border-slate-200',
-  prepared:  'bg-blue-100 text-blue-700 border-blue-200',
-  reviewed:  'bg-violet-100 text-violet-700 border-violet-200',
-  approved:  'bg-emerald-100 text-emerald-700 border-emerald-200',
-  submitted: 'bg-teal-100 text-teal-700 border-teal-200',
-  accepted:  'bg-lime-100 text-lime-700 border-lime-200',
-  rejected:  'bg-rose-100 text-rose-700 border-rose-200',
+  draft:     statusBadgeClass('draft'),
+  prepared:  statusBadgeClass('prepared'),
+  reviewed:  statusBadgeClass('in_progress'),
+  approved:  statusBadgeClass('approved'),
+  submitted: statusBadgeClass('submitted'),
+  accepted:  statusBadgeClass('accepted'),
+  rejected:  statusBadgeClass('rejected'),
 };
 
 /**
@@ -42,6 +48,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
   const [row, setRow] = useState<TaxDeclarationDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { formatDate, formatDateTime } = useDateFormat();
 
   // Draft edit fields
   const [amount, setAmount] = useState('');
@@ -62,7 +69,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
     try {
       const d = await declApi.agency.get(declarationId);
       setRow(d);
-      setAmount(d.amountOwed?.toString() ?? '');
+      setAmount(d.amountOwed != null ? String(d.amountOwed) : '');
       setNotes(d.notes ?? '');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to load');
@@ -80,38 +87,69 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
     }
   }, [open, declarationId, load]);
 
-  const act = async (fn: () => Promise<TaxDeclarationDto>) => {
+  /** Runs one transition. Resolves true only when the server call
+   *  succeeded, so callers fire their success toast / close their pane
+   *  only after a real success (it used to swallow the error and let
+   *  the caller toast "saved" anyway). */
+  const act = async (fn: () => Promise<TaxDeclarationDto>): Promise<boolean> => {
     setSaving(true);
     try {
       const d = await fn();
       setRow(d);
+      setAmount(d.amountOwed != null ? String(d.amountOwed) : '');
+      setNotes(d.notes ?? '');
       setSignOffNote('');
       onChanged?.();
+      return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Action failed');
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
-  const saveDraft = () => row && act(() => declApi.agency.update(row.id, {
+  const draftPayload = () => ({
     amountOwed: amount ? parseFloat(amount) : 0,
     notes: notes.trim() || null,
-  })).then(() => toast.success('Draft saved'));
+  });
+  // True when the Amount / Notes fields differ from what the server holds.
+  const draftDirty = !!row && row.status === 'draft' && (
+    (amount ? parseFloat(amount) : 0) !== Number(row.amountOwed ?? 0)
+    || (notes.trim() || null) !== (row.notes?.trim() || null)
+  );
 
-  const prepare  = () => row && act(() => declApi.agency.prepare(row.id, { notes: signOffNote || null }));
+  const saveDraft = async () => {
+    if (!row) return;
+    if (await act(() => declApi.agency.update(row.id, draftPayload()))) toast.success('Draft saved');
+  };
+
+  // Prepare saves unsaved Amount / Notes edits first, so what goes for
+  // review is what the preparer sees on screen.
+  const prepare = async () => {
+    if (!row) return;
+    if (draftDirty && !(await act(() => declApi.agency.update(row.id, draftPayload())))) return;
+    await act(() => declApi.agency.prepare(row.id, { notes: signOffNote || null }));
+  };
   const review   = () => row && act(() => declApi.agency.review(row.id,  { notes: signOffNote || null }));
   const approve  = () => row && act(() => declApi.agency.approve(row.id, { notes: signOffNote || null }));
   const accept   = () => row && act(() => declApi.agency.markAccepted(row.id));
 
-  const submitGdt = () => row && act(() => declApi.agency.submitToGdt(row.id, {
-    gdtReferenceNo: gdtRef.trim(),
-    attachmentUrl:  gdtAttachment.trim() || null,
-    notes:          gdtNotes.trim() || null,
-  })).then(() => { setGdtSubmitting(false); toast.success('Submitted to GDT + Tax Calendar updated'); });
+  const submitGdt = async () => {
+    if (!row) return;
+    const ok = await act(() => declApi.agency.submitToGdt(row.id, {
+      gdtReferenceNo: gdtRef.trim(),
+      attachmentUrl:  gdtAttachment.trim() || null,
+      notes:          gdtNotes.trim() || null,
+    }));
+    if (ok) { setGdtSubmitting(false); toast.success('Submitted to GDT + Tax Calendar updated'); }
+  };
 
-  const doReject = () => row && act(() => declApi.agency.reject(row.id, { notes: rejectNotes.trim() }))
-    .then(() => { setRejecting(false); toast.success('Sent back to preparer'); });
+  const doReject = async () => {
+    if (!row) return;
+    const ok = await act(() => declApi.agency.reject(row.id, { notes: rejectNotes.trim() }));
+    if (ok) { setRejecting(false); toast.success('Sent back to preparer'); }
+  };
 
   const isDraft     = row?.status === 'draft';
   const isPrepared  = row?.status === 'prepared';
@@ -127,21 +165,19 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
             {row ? `${row.obligationName} — ${formatPeriodForDisplay(row.period)}` : 'Tax declaration'}
           </DialogTitle>
           <DialogDescription className="text-xs">
-            {row ? <>{row.tenantName ?? '—'} · {CATEGORY_LABELS[row.category]} · {row.amountOwed} {row.currency}</> : 'Loading…'}
+            {row ? <>{row.tenantName ?? '—'} · {CATEGORY_LABELS[row.category]} · {row.currency} {formatMoneyForCurrency(Number(row.amountOwed ?? 0), row.currency)}</> : 'Loading…'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           {loading && !row && (
-            <div className="flex items-center justify-center py-8 text-sm text-gray-500 gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
+            <TableRowsSkeleton rows={5} columns={2} />
           )}
 
           {row && (
             <>
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge className={`border ${STATUS_CLS[row.status]}`}>{row.status}</Badge>
+                <Badge variant="outline" className={`capitalize ${STATUS_CLS[row.status]}`}>{row.status}</Badge>
                 {row.gdtReferenceNo && (
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                     GDT ref: {row.gdtReferenceNo}
@@ -155,11 +191,10 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label className="text-xs">Amount owed ({row.currency})</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
+                      <NumericInput
                         value={amount}
-                        onChange={e => setAmount(e.target.value)}
+                        onChange={setAmount}
+                        decimals={row.currency === 'KHR' ? 0 : 2}
                         className="h-8 text-sm mt-1 text-right tabular-nums"
                       />
                     </div>
@@ -174,7 +209,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
                     />
                   </div>
                   <div className="flex justify-end">
-                    <Button variant="outline" size="sm" onClick={saveDraft} disabled={saving}>
+                    <Button variant="outline" size="sm" onClick={() => void saveDraft()} disabled={saving || !draftDirty}>
                       {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
                       Save draft
                     </Button>
@@ -228,7 +263,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
                               {d.docAmount == null ? '—' : Number(d.docAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td className="px-3 py-1.5 text-gray-500 tabular-nums">
-                              {d.attachedAt ? new Date(d.attachedAt).toLocaleDateString() : '—'}
+                              {d.attachedAt ? formatDate(d.attachedAt) : '—'}
                             </td>
                           </tr>
                         ))}
@@ -242,7 +277,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
                 <div className="rounded-md border border-rose-200 bg-rose-50/60 px-3 py-2 text-sm">
                   <div className="text-xs font-medium text-rose-800 mb-0.5">
                     Rejected by {row.rejectedByName ?? 'a reviewer'}
-                    {row.rejectedAt && ` on ${new Date(row.rejectedAt).toLocaleString()}`}
+                    {row.rejectedAt && ` on ${formatDateTime(row.rejectedAt)}`}
                   </div>
                   <div className="text-sm text-rose-900 whitespace-pre-wrap">{row.rejectionNotes}</div>
                 </div>
@@ -309,9 +344,10 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
           {row && !rejecting && !gdtSubmitting && (
             <>
               {isDraft && (
-                <Button onClick={prepare} disabled={saving}>
+                <Button onClick={() => void prepare()} disabled={saving}
+                        title={draftDirty ? 'Saves your Amount / Notes edits, then sends for review' : undefined}>
                   {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
-                  Prepare (send for review)
+                  {draftDirty ? 'Save & prepare' : 'Prepare (send for review)'}
                 </Button>
               )}
               {isPrepared && (
@@ -354,7 +390,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
             <>
               <Button variant="outline" onClick={() => setGdtSubmitting(false)} disabled={saving}>Cancel</Button>
               <Button
-                onClick={submitGdt}
+                onClick={() => void submitGdt()}
                 disabled={saving || !gdtRef.trim()}
                 className="bg-teal-600 hover:bg-teal-700"
               >
@@ -366,7 +402,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
           {row && rejecting && (
             <>
               <Button variant="outline" onClick={() => setRejecting(false)} disabled={saving}>Cancel</Button>
-              <Button onClick={doReject} disabled={saving || !rejectNotes.trim()} className="bg-rose-600 hover:bg-rose-700">
+              <Button onClick={() => void doReject()} disabled={saving || !rejectNotes.trim()} className="bg-rose-600 hover:bg-rose-700">
                 {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <XCircle className="h-4 w-4 mr-1.5" />}
                 Send back
               </Button>
@@ -379,13 +415,14 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
 }
 
 function TrailLine({ label, name, at, note }: { label: string; name: string | null; at: string | null; note?: string | null }) {
+  const { formatDateTime } = useDateFormat();
   if (!name && !at && !note) return null;
   return (
     <div>
       <div className="text-gray-500">{label}</div>
       <div className="text-gray-800">
         {name ?? <span className="text-gray-400 italic">—</span>}
-        {at && <span className="text-gray-400 text-[10px] ml-1">{new Date(at).toLocaleString()}</span>}
+        {at && <span className="text-gray-400 text-[10px] ml-1">{formatDateTime(at)}</span>}
       </div>
       {note && <div className="text-gray-600 whitespace-pre-wrap mt-0.5">{note}</div>}
     </div>

@@ -13,6 +13,10 @@ import {
 import type { PortfolioDoc, PortfolioDocDetail, PortfolioDocTaxRef, PortfolioDocType } from '../../../api/agencyPortfolioDocs';
 import { portfolioDocs } from '../../../api/agencyPortfolioDocs';
 import { agencyDocComments, type DocCommentDto } from '../../../api/agencyDocComments';
+import { Skeleton } from '../../ui/skeleton';
+import { formatMoneyForCurrency } from '../../../utils/format';
+import { DOC_KIND_CLASS, statusBadgeClass } from '../../../utils/statusTones';
+import { useDateFormat } from '../../../context/DateFormatContext';
 
 interface Props {
   /** The list-row that was clicked. Carries doc type + id + a
@@ -33,23 +37,14 @@ const TYPE_META: Record<PortfolioDocType, { label: string; icon: JSX.Element; cl
  *  the popup renders these instead so the SA / agency sees
  *  "Tax Invoice" not "tax". */
 const KIND_META: Record<string, { label: string; cls: string }> = {
-  commercial:  { label: 'Commercial',   cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  tax:         { label: 'Tax',          cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  credit_note: { label: 'Credit Note',  cls: 'bg-rose-50 text-rose-700 border-rose-200' },
-  debit_note:  { label: 'Debit Note',   cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  commercial:  { label: 'Commercial',   cls: DOC_KIND_CLASS.commercial },
+  tax:         { label: 'Tax',          cls: DOC_KIND_CLASS.tax },
+  credit_note: { label: 'Credit Note',  cls: DOC_KIND_CLASS.credit_note },
+  debit_note:  { label: 'Debit Note',   cls: DOC_KIND_CLASS.debit_note },
 };
 
-const DOC_STATUS_CLS: Record<string, string> = {
-  draft:      'bg-slate-100 text-slate-700 border-slate-200',
-  pending:    'bg-amber-100 text-amber-700 border-amber-200',
-  progress:   'bg-blue-100 text-blue-700 border-blue-200',
-  partially:  'bg-cyan-100 text-cyan-700 border-cyan-200',
-  paid:       'bg-emerald-100 text-emerald-700 border-emerald-200',
-  overdue:    'bg-rose-100 text-rose-700 border-rose-200',
-  void:       'bg-gray-100 text-gray-500 border-gray-200',
-  returned:   'bg-purple-100 text-purple-700 border-purple-200',
-  refunded:   'bg-purple-100 text-purple-700 border-purple-200',
-};
+// Status badges use the app-wide palette (utils/statusTones), same as
+// the Journals list.
 
 /**
  * v-agency-case-view — full-fidelity read of one Invoice / Bill /
@@ -69,6 +64,9 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const { formatDate, formatDateTime } = useDateFormat();
+  const money = (n: number | string | null | undefined) =>
+    formatMoneyForCurrency(Number(n ?? 0), detail?.currency ?? seed?.currency ?? 'USD');
 
   const loadDetail = useCallback(async () => {
     if (!seed) return;
@@ -145,7 +143,7 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
             {taxRef && (
               <Badge
                 className="border border-emerald-200 bg-emerald-50 text-emerald-700 text-[10px] px-1.5 py-0 inline-flex items-center gap-1"
-                title={`Declared ${taxRef.status} · period ${taxRef.period}${taxRef.submittedAt ? ' · submitted ' + new Date(taxRef.submittedAt).toLocaleDateString() : ''}`}
+                title={`Declared ${taxRef.status} · period ${taxRef.period}${taxRef.submittedAt ? ' · submitted ' + formatDate(taxRef.submittedAt) : ''}`}
               >
                 <FileSpreadsheet className="h-2.5 w-2.5" />
                 Declared · GDT {taxRef.gdtReferenceNo}
@@ -162,19 +160,24 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
           {/* ---- Header ---- */}
           <div className="px-6 py-4 border-b">
             {loading && !detail ? (
-              <div className="text-sm text-gray-500 inline-flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading document…
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="space-y-1.5">
+                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                ))}
               </div>
             ) : detail ? (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3 text-xs">
                 <Field label="Doc no.">{detail.docNo}</Field>
                 <Field label="Status">
-                  <Badge className={`border text-[10px] px-1.5 py-0 ${DOC_STATUS_CLS[detail.status] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                  <Badge variant="outline" className={`capitalize text-[10px] px-1.5 py-0 ${statusBadgeClass(detail.status)}`}>
                     {detail.status}
                   </Badge>
                 </Field>
-                <Field label="Issue date">{detail.issueDate}</Field>
-                <Field label="Due date">{detail.dueDate ?? '—'}</Field>
+                <Field label="Issue date">{formatDate(detail.issueDate)}</Field>
+                <Field label="Due date">{detail.dueDate ? formatDate(detail.dueDate) : '—'}</Field>
                 <Field label={detail.type === 'invoice' ? 'Customer' : 'Vendor'}>
                   {detail.counterpartyName ?? '—'}
                 </Field>
@@ -187,7 +190,7 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
                     {(() => {
                       const meta = KIND_META[detail.kind];
                       return meta
-                        ? <Badge className={`border text-[10px] px-1.5 py-0 ${meta.cls}`}>{meta.label}</Badge>
+                        ? <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${meta.cls}`}>{meta.label}</Badge>
                         : <span className="capitalize">{detail.kind.replace(/_/g, ' ')}</span>;
                     })()}
                   </Field>
@@ -198,7 +201,7 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
               // what they clicked while the detail fetch fails.
               <div className="text-xs text-gray-500">
                 Could not load full details. Basic info from the list:
-                &nbsp;{seed?.docNo} · {seed?.issueDate} · {seed?.status}
+                &nbsp;{seed?.docNo} · {seed?.issueDate ? formatDate(seed.issueDate) : ''} · {seed?.status}
               </div>
             )}
           </div>
@@ -229,8 +232,8 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
                         </td>
                         <td className="py-1.5 text-gray-600">{l.unit ?? '—'}</td>
                         <td className="py-1.5 text-right tabular-nums">{Number(l.quantity)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{Number(l.unitPrice).toFixed(2)}</td>
-                        <td className="py-1.5 text-right tabular-nums font-medium">{Number(l.lineTotal).toFixed(2)}</td>
+                        <td className="py-1.5 text-right tabular-nums">{money(l.unitPrice)}</td>
+                        <td className="py-1.5 text-right tabular-nums font-medium">{money(l.lineTotal)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -245,28 +248,28 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-xs">
                 {detail.subtotal != null && (
                   <Field label="Subtotal" align="right">
-                    <span className="tabular-nums">{Number(detail.subtotal).toFixed(2)}</span>
+                    <span className="tabular-nums">{money(detail.subtotal)}</span>
                   </Field>
                 )}
                 {detail.discountAmount != null && Number(detail.discountAmount) !== 0 && (
                   <Field label="Discount" align="right">
-                    <span className="tabular-nums text-rose-600">−{Number(detail.discountAmount).toFixed(2)}</span>
+                    <span className="tabular-nums text-rose-600">−{money(detail.discountAmount)}</span>
                   </Field>
                 )}
                 {detail.taxAmount != null && Number(detail.taxAmount) !== 0 && (
                   <Field label="Tax" align="right">
-                    <span className="tabular-nums">{Number(detail.taxAmount).toFixed(2)}</span>
+                    <span className="tabular-nums">{money(detail.taxAmount)}</span>
                   </Field>
                 )}
                 <Field label="Total" align="right">
                   <span className="tabular-nums font-semibold text-gray-900">
-                    {detail.currency} {Number(detail.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {detail.currency} {money(detail.total)}
                   </span>
                 </Field>
                 {detail.paidAmount != null && (
                   <Field label="Paid" align="right">
                     <span className="tabular-nums text-emerald-700">
-                      {Number(detail.paidAmount).toFixed(2)}
+                      {money(detail.paidAmount)}
                     </span>
                   </Field>
                 )}
@@ -301,8 +304,9 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
             </div>
 
             {commentsLoading && comments.length === 0 ? (
-              <div className="text-xs text-gray-500 inline-flex items-center gap-2">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+              <div className="space-y-2">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-2/3" />
               </div>
             ) : comments.length === 0 ? (
               <p className="text-xs text-gray-500 py-2">
@@ -327,7 +331,7 @@ export function PortfolioDocDetailDialog({ seed, onClose }: Props) {
                       }`}>
                         {c.authorSide}
                       </Badge>
-                      <span>{new Date(c.createdAt).toLocaleString()}</span>
+                      <span>{formatDateTime(c.createdAt)}</span>
                     </div>
                     <div className="text-xs text-gray-800 whitespace-pre-wrap">{c.body}</div>
                   </li>

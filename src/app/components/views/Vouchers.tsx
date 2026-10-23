@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { format } from 'date-fns';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -45,6 +46,8 @@ import * as vouchersApi from '../../api/vouchers';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { statusBadgeClass } from '../../utils/statusTones';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
 import * as itemsApi from '../../api/items';
 import * as customersApi from '../../api/customers';
@@ -55,6 +58,7 @@ import { loadBankAccounts } from '../../utils/bankAccount';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 
 const fmtMoney = (n: number, currency: string): string => {
@@ -67,18 +71,18 @@ const fmtMoney = (n: number, currency: string): string => {
   return n < 0 ? `− ${body}` : body;
 };
 
+// One palette app-wide (utils/statusTones): pending amber, progress
+// blue, done/approved green, rejected red, void slate (struck through).
 const STATUS_BADGE_CLASS: Record<vouchersApi.VoucherStatus, string> = {
-  // Amber for pending — signals "waiting on chain approvers"
-  // without leaning on red. V176.
-  pending:  'border-amber-300 text-amber-700 bg-amber-50',
-  progress: 'border-blue-300 text-blue-700 bg-blue-50',
-  done:     'border-emerald-300 text-emerald-700 bg-emerald-50',
-  approved: 'border-emerald-400 text-emerald-800 bg-emerald-100',
-  rejected: 'border-red-300 text-red-700 bg-red-50',
-  void:     'border-slate-300 text-slate-500 bg-slate-50 line-through',
+  pending:  statusBadgeClass('pending'),
+  progress: statusBadgeClass('progress'),
+  done:     statusBadgeClass('done'),
+  approved: statusBadgeClass('approved'),
+  rejected: statusBadgeClass('rejected'),
+  void:     `${statusBadgeClass('void')} line-through`,
   // Legacy V104 rows — treat as a finalised state visually.
-  issued:   'border-emerald-300 text-emerald-700 bg-emerald-50',
-};
+  issued:   statusBadgeClass('done'),
+}
 
 const STATUS_FILTERS: ReadonlyArray<{ value: vouchersApi.VoucherStatus | 'all'; label: string }> = [
   { value: 'all',      label: 'All' },
@@ -144,6 +148,7 @@ export function Vouchers() {
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [vUsers, setVUsers] = useState<usersApi.User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<vouchersApi.VoucherStatus | 'all'>('all');
   const [purposeFilter, setPurposeFilter] = useState<vouchersApi.VoucherPurpose | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -176,6 +181,7 @@ export function Vouchers() {
   const load = async () => {
     if (!canView('voucher')) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const [vRes, cRes, uRes] = await Promise.all([
         vouchersApi.list({ size: 500 }),
@@ -189,7 +195,9 @@ export function Vouchers() {
       setCustomers(cRes.content ?? []);
       setVUsers((uRes as { data: usersApi.User[] }).data ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load vouchers');
+      const msg = e instanceof Error ? e.message : 'Failed to load vouchers';
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -217,6 +225,7 @@ export function Vouchers() {
     });
   }, [rows, statusFilter, purposeFilter, dateFrom, dateTo, search, customerById]);
 
+  const hasFilters = !!(search.trim() || statusFilter !== 'all' || purposeFilter !== 'all' || dateFrom || dateTo);
   const pagination = usePagination(filtered, 25);
 
   // Sub-up Fair Value across the entire filtered set (not just the
@@ -297,73 +306,61 @@ export function Vouchers() {
       <Card>
         <CardHeader className="pb-3">
           <div className="filter-strip">
-            <div className="flex items-center gap-3 flex-wrap">
-              <Select value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
-                <SelectTrigger className="h-8 w-44 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {STATUS_FILTERS.map(f => (
-                    <SelectItem key={f.value} value={f.value}>
-                      {f.value === 'all' ? (
-                        <span className="text-sm">{f.label}</span>
-                      ) : (
-                        <Badge variant="outline" className={`capitalize text-[10px] px-1.5 py-0 ${STATUS_BADGE_CLASS[f.value as vouchersApi.VoucherStatus]}`}>
-                          {f.label}
-                        </Badge>
-                      )}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={purposeFilter} onValueChange={v => setPurposeFilter(v as typeof purposeFilter)}>
-                <SelectTrigger className="h-8 w-56 text-sm">
-                  <SelectValue placeholder="All purposes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All purposes</SelectItem>
-                  {PURPOSE_OPTIONS.map(p => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-gray-500">From</Label>
-              <DateInput
-                value={dateFrom || null}
-                onChange={v => setDateFrom(v ?? '')}
-                max={dateTo || undefined}
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search voucher no, customer, notes…"
+                className="h-9 pl-7 w-64 text-sm"
               />
-              <Label className="text-xs text-gray-500">To</Label>
-              <DateInput
-                value={dateTo || null}
-                onChange={v => setDateTo(v ?? '')}
-                min={dateFrom || undefined}
-              />
-              {(dateFrom || dateTo) && (
-                <Button
-                  size="sm" variant="ghost" className="h-8 text-xs"
-                  onClick={() => { setDateFrom(''); setDateTo(''); }}
-                >
-                  Clear
-                </Button>
-              )}
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search voucher no, customer, notes…"
-                  className="h-8 pl-7 w-64 text-sm"
-                />
-              </div>
             </div>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              {STATUS_FILTERS.map(f => (
+                <option key={f.value} value={f.value}>Status : {f.label}</option>
+              ))}
+            </select>
+            <select
+              value={purposeFilter}
+              onChange={e => setPurposeFilter(e.target.value as typeof purposeFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by purpose"
+            >
+              <option value="all">Purpose : All</option>
+              {PURPOSE_OPTIONS.map(p => (
+                <option key={p.value} value={p.value}>Purpose : {p.label}</option>
+              ))}
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            {hasFilters && (
+              <Button
+                size="sm" variant="ghost"
+                className="h-9 shrink-0"
+                onClick={() => {
+                  setSearch(''); setStatusFilter('all'); setPurposeFilter('all');
+                  setDateFrom(''); setDateTo('');
+                }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && rows.length === 0 ? (
             <TableRowsSkeleton rows={8} columns={7} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">No vouchers yet.</p>
+            <ListEmpty noun="vouchers" filtered={hasFilters} />
           ) : (
             <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
@@ -568,7 +565,7 @@ function VoucherFormDialog({
     setCustomers,
     onSelect: id => setCustomerId(id),
   });
-  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [issueDate, setIssueDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [currency, setCurrency] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState('4100');
   const [purpose, setPurpose] = useState<vouchersApi.VoucherPurpose>('free_service');
@@ -657,7 +654,7 @@ function VoucherFormDialog({
         .then(r => setVoucherNo(r.voucherNo))
         .catch(() => setVoucherNo(''));
       setCustomerId('');
-      setIssueDate(new Date().toISOString().slice(0, 10));
+      setIssueDate(format(new Date(), 'yyyy-MM-dd'));
       setCurrency(currencySettings?.primaryCurrency ?? 'USD');
       setExchangeRate(String(currencySettings?.secondaryRate ?? 4100));
       setPurpose(initialPurpose);
@@ -871,7 +868,7 @@ function VoucherFormDialog({
           <div className="grid grid-cols-4 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Issue date</Label>
-              <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+              <DateInput value={issueDate || null} onChange={v => setIssueDate(v ?? '')} className="w-full" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Purpose *</Label>
@@ -1350,7 +1347,8 @@ function VoucherDetailDialog({
   onChanged: () => void;
   onEdit: (v: vouchersApi.Voucher) => void;
 }) {
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
+  const confirm = useConfirm();
   const [voucher, setVoucher] = useState<vouchersApi.Voucher | null>(null);
   const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
   const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
@@ -1414,7 +1412,17 @@ function VoucherDetailDialog({
 
   const doMarkDone = () => runTransition('marked done', () => vouchersApi.markDone(voucher!.id));
   const doApprove  = () => runTransition('approved',     () => vouchersApi.approve(voucher!.id));
-  const doVoid     = () => runTransition('voided',       () => vouchersApi.voidVoucher(voucher!.id));
+  const doVoid = async () => {
+    if (!voucher) return;
+    const ok = await confirm({
+      title: `Void ${voucher.voucherNo}?`,
+      message: 'The voucher stays on record as void and can no longer be edited, approved or sent.',
+      confirmLabel: 'Void',
+      variant: 'destructive',
+    });
+    if (!ok) return;
+    await runTransition('voided', () => vouchersApi.voidVoucher(voucher.id));
+  };
 
   const doReject = async () => {
     if (!voucher) return;
@@ -1546,7 +1554,7 @@ function VoucherDetailDialog({
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="max-w-xs text-xs">
-                      Read-only view. Approve / Reject is only available while pending.
+                      Read-only view. Approve / Reject is only available while the voucher is in progress.
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -1563,7 +1571,7 @@ function VoucherDetailDialog({
         </DialogHeader>
 
         {loading || !voucher ? (
-          <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+          <TableRowsSkeleton rows={4} columns={2} />
         ) : (
           <div className="space-y-4 print:hidden">
             <div className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1 text-sm">
@@ -1580,7 +1588,7 @@ function VoucherDetailDialog({
               {voucher.approverId && (<>
                 <div className="text-gray-500">Approver</div>
                 <div>
-                  {approver?.email ?? <span className="text-gray-400">{voucher.approverId}</span>}
+                  {(approver?.name || approver?.email) ?? <span className="text-gray-400">{voucher.approverId}</span>}
                   {voucher.status === 'progress' && (
                     <span className="ml-2 text-xs text-amber-700">
                       {isAssignedApprover ? '(waiting on you)' : '(awaiting approval)'}
@@ -1591,15 +1599,15 @@ function VoucherDetailDialog({
               {voucher.status === 'approved' && voucher.approvedAt && (<>
                 <div className="text-gray-500">Approved</div>
                 <div className="text-sm">
-                  by {approvedBy?.email ?? voucher.approvedById ?? '—'}
-                  {' '}<span className="text-gray-500">· {new Date(voucher.approvedAt).toLocaleString()}</span>
+                  by {approvedBy?.name || approvedBy?.email || voucher.approvedById || '—'}
+                  {' '}<span className="text-gray-500">· {formatDateTime(voucher.approvedAt)}</span>
                 </div>
               </>)}
               {voucher.status === 'rejected' && voucher.rejectedAt && (<>
                 <div className="text-gray-500">Rejected</div>
                 <div className="text-sm">
-                  by {rejectedBy?.email ?? voucher.rejectedById ?? '—'}
-                  {' '}<span className="text-gray-500">· {new Date(voucher.rejectedAt).toLocaleString()}</span>
+                  by {rejectedBy?.name || rejectedBy?.email || voucher.rejectedById || '—'}
+                  {' '}<span className="text-gray-500">· {formatDateTime(voucher.rejectedAt)}</span>
                   {voucher.rejectedReason && (
                     <div className="mt-1 text-red-700 whitespace-pre-wrap">{voucher.rejectedReason}</div>
                   )}

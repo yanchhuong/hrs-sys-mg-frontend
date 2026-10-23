@@ -22,7 +22,19 @@ import { useAgencyClient } from '../../../context/AgencyClientContext';
 import { NewDocRequestDialog } from './NewDocRequestDialog';
 import { PortfolioDocDetailDialog } from './PortfolioDocDetailDialog';
 import { PageTitleTooltip } from './PageTitleTooltip';
-import { DateRangeFilter, inRange } from '../../common/DateRangeFilter';
+import { inRange } from '../../common/DateRangeFilter';
+import { DateInput } from '../../common/DateInput';
+import { Label } from '../../ui/label';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '../../ui/table';
+import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../../common/ListStates';
+import { Pagination } from '../../common/Pagination';
+import { usePagination } from '../../../hooks/usePagination';
+import { formatMoneyForCurrency } from '../../../utils/format';
+import { statusBadgeClass, TONE_CLASS } from '../../../utils/statusTones';
+import { useDateFormat } from '../../../context/DateFormatContext';
 
 type TopTab = 'case' | 'documents';
 type DocKindFilter = 'all' | PortfolioDocType;
@@ -39,20 +51,8 @@ const DOC_KIND_FILTERS: Array<{ key: DocKindFilter; label: string; icon?: React.
   { key: 'expense', label: 'Expenses', icon: <Wallet className="h-3 w-3" /> },
 ];
 
-/** Set is the union of the three doc-type status enums; anything
- *  missing falls back to a neutral gray badge (defensive — add new
- *  statuses here rather than reject-list). */
-const DOC_STATUS_CLS: Record<string, string> = {
-  draft:      'bg-slate-100 text-slate-700 border-slate-200',
-  pending:    'bg-amber-100 text-amber-700 border-amber-200',
-  progress:   'bg-blue-100 text-blue-700 border-blue-200',
-  partially:  'bg-cyan-100 text-cyan-700 border-cyan-200',
-  paid:       'bg-emerald-100 text-emerald-700 border-emerald-200',
-  overdue:    'bg-rose-100 text-rose-700 border-rose-200',
-  void:       'bg-gray-100 text-gray-500 border-gray-200',
-  returned:   'bg-purple-100 text-purple-700 border-purple-200',
-  refunded:   'bg-purple-100 text-purple-700 border-purple-200',
-};
+/** Status badge classes come from the app-wide palette (utils/statusTones). */
+const docStatusClass = (status: string): string => statusBadgeClass(status);
 
 /**
  * Bug fix: bills + expenses on the tenant side display non-terminal
@@ -88,10 +88,10 @@ const DOC_REQ_TABS: Array<{ key: DocReqTab; label: string }> = [
 ];
 
 const DOC_REQ_STATUS_META: Record<DocStatus, { cls: string; label: string; icon: JSX.Element }> = {
-  pending:  { cls: 'bg-amber-100 text-amber-700 border-amber-200',       label: 'Pending',  icon: <Clock className="h-3 w-3" /> },
-  uploaded: { cls: 'bg-blue-100 text-blue-700 border-blue-200',          label: 'Uploaded', icon: <Inbox className="h-3 w-3" /> },
-  reviewed: { cls: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Reviewed', icon: <CheckCircle2 className="h-3 w-3" /> },
-  rejected: { cls: 'bg-rose-100 text-rose-700 border-rose-200',          label: 'Rejected', icon: <XCircle className="h-3 w-3" /> },
+  pending:  { cls: TONE_CLASS.attention, label: 'Pending',  icon: <Clock className="h-3 w-3" /> },
+  uploaded: { cls: TONE_CLASS.info,      label: 'Uploaded', icon: <Inbox className="h-3 w-3" /> },
+  reviewed: { cls: TONE_CLASS.success,   label: 'Reviewed', icon: <CheckCircle2 className="h-3 w-3" /> },
+  rejected: { cls: TONE_CLASS.danger,    label: 'Rejected', icon: <XCircle className="h-3 w-3" /> },
 };
 
 /** Doc-request categories that "relate to" Invoice / Bill / Expense.
@@ -123,6 +123,8 @@ export function AgencySaleExpensePage() {
   const [kind, setKind] = useState<DocKindFilter>('all');
   const [docs, setDocs] = useState<PortfolioDoc[]>([]);
   const [docsLoading, setDocsLoading] = useState(false);
+  const [docsError, setDocsError] = useState<string | null>(null);
+  const { formatDate, formatDateTime } = useDateFormat();
   const [docSearch, setDocSearch] = useState('');
   // v-date-range-filter — issue-date range for the Case tab.
   const [docDateFrom, setDocDateFrom] = useState<string | null>(null);
@@ -144,6 +146,7 @@ export function AgencySaleExpensePage() {
   // Documents (doc-requests) state
   const [reqs, setReqs] = useState<DocumentRequestDto[]>([]);
   const [reqsLoading, setReqsLoading] = useState(false);
+  const [reqsError, setReqsError] = useState<string | null>(null);
   const [reqTab, setReqTab] = useState<DocReqTab>('uploaded');
   const [reqSearch, setReqSearch] = useState('');
   // v-date-range-filter — created-date range for the Documents tab.
@@ -155,6 +158,7 @@ export function AgencySaleExpensePage() {
 
   const loadDocs = useCallback(async () => {
     setDocsLoading(true);
+    setDocsError(null);
     try {
       const list = await portfolioDocs.list({
         type: kind === 'all' ? undefined : kind,
@@ -188,7 +192,7 @@ export function AgencySaleExpensePage() {
       setCommentCounts(nextCounts);
       setTaxRefs(nextRefs);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load documents');
+      setDocsError(e instanceof Error ? e.message : 'Failed to load documents');
     } finally {
       setDocsLoading(false);
     }
@@ -196,11 +200,12 @@ export function AgencySaleExpensePage() {
 
   const loadReqs = useCallback(async () => {
     setReqsLoading(true);
+    setReqsError(null);
     try {
       const list = await docsApi.agency.list(activeClientId ?? undefined);
       setReqs(list);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load document requests');
+      setReqsError(e instanceof Error ? e.message : 'Failed to load document requests');
     } finally {
       setReqsLoading(false);
     }
@@ -247,6 +252,27 @@ export function AgencySaleExpensePage() {
     });
   }, [financialReqs, reqTab, reqSearch, reqDateFrom, reqDateTo]);
 
+  const docsFiltered = !!(docSearch.trim() || kind !== 'all' || docDateFrom || docDateTo);
+  const clearDocFilters = () => {
+    setDocSearch(''); setKind('all'); setDocDateFrom(null); setDocDateTo(null);
+  };
+  // The Documents tab lands on "Needs review" by design, so that is the
+  // baseline; Clear returns to it.
+  const reqsFiltered = !!(reqSearch.trim() || reqTab !== 'uploaded' || reqDateFrom || reqDateTo);
+  const clearReqFilters = () => {
+    setReqSearch(''); setReqTab('uploaded'); setReqDateFrom(null); setReqDateTo(null);
+  };
+  const docsPager = usePagination(filteredDocs, 25);
+  const reqsPager = usePagination(filteredReqs, 25);
+  useEffect(() => {
+    docsPager.goToPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docSearch, kind, docDateFrom, docDateTo, activeClientId]);
+  useEffect(() => {
+    reqsPager.goToPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reqSearch, reqTab, reqDateFrom, reqDateTo, activeClientId]);
+
   const doReview = async (r: DocumentRequestDto) => {
     setBusy(r.id);
     try {
@@ -265,27 +291,24 @@ export function AgencySaleExpensePage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold flex items-center gap-2">
-            <Wallet className="h-5 w-5 text-blue-600" />
-            Journals
-            <PageTitleTooltip label="About Journals">
-              {topTab === 'case'
-                ? (activeClient
-                    ? <>Invoices, bills, and expenses on <b>{activeClient.tenantName ?? activeClient.tenantSlug}</b>.</>
-                    : <>Invoices, bills, and expenses across {portfolio.length} client{portfolio.length === 1 ? '' : 's'}. Pick a client in the header to narrow.</>)
-                : 'Uploads the agency has requested against invoices, bills, or expenses. Review or reject as they land.'}
-            </PageTitleTooltip>
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold flex items-center gap-2">
+          Journals
+          <PageTitleTooltip label="About Journals">
+            {topTab === 'case'
+              ? (activeClient
+                  ? <>Invoices, bills, and expenses on <b>{activeClient.tenantName ?? activeClient.tenantSlug}</b>.</>
+                  : <>Invoices, bills, and expenses across {portfolio.length} client{portfolio.length === 1 ? '' : 's'}. Pick a client in the header to narrow.</>)
+              : 'Uploads the agency has requested against invoices, bills, or expenses. Review or reject as they land.'}
+          </PageTitleTooltip>
+        </h1>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={refresh} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
           {topTab === 'documents' && (
-            <Button size="sm" onClick={() => setNewReqOpen(true)}>
+            <Button onClick={() => setNewReqOpen(true)}>
               <Plus className="h-4 w-4 mr-1.5" />
               Request document
             </Button>
@@ -310,113 +333,107 @@ export function AgencySaleExpensePage() {
       {topTab === 'case' && (
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              {DOC_KIND_FILTERS.map(f => (
-                <button
-                  key={f.key}
-                  type="button"
-                  onClick={() => setKind(f.key)}
-                  className={`inline-flex items-center gap-1.5 px-3 h-8 rounded-md border text-xs font-medium transition ${
-                    kind === f.key
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                  }`}
-                >
-                  {f.icon}
-                  {f.label}
-                </button>
-              ))}
-              <div className="ml-auto flex items-center gap-2 flex-wrap">
-                <DateRangeFilter
-                  enablePresets
-                  defaultStartDate={docDateFrom ?? ''}
-                  defaultEndDate={docDateTo ?? ''}
-                  onFilterChange={(f, t) => { setDocDateFrom(f); setDocDateTo(t); }}
+            <div className="filter-strip">
+              <div className="relative shrink-0">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <Input
+                  value={docSearch}
+                  onChange={e => setDocSearch(e.target.value)}
+                  placeholder="Search doc no / status…"
+                  className="h-9 pl-7 w-64 text-sm"
                 />
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-                  <Input
-                    value={docSearch}
-                    onChange={e => setDocSearch(e.target.value)}
-                    placeholder="Search doc no / status…"
-                    className="pl-8 h-9 w-72 text-sm"
-                  />
-                </div>
               </div>
+              <select
+                value={kind}
+                onChange={e => setKind(e.target.value as DocKindFilter)}
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                aria-label="Filter by type"
+              >
+                {DOC_KIND_FILTERS.map(f => (
+                  <option key={f.key} value={f.key}>Type : {f.label}</option>
+                ))}
+              </select>
+              <Label className="text-xs text-gray-500 shrink-0">From</Label>
+              <div className="shrink-0"><DateInput value={docDateFrom} onChange={setDocDateFrom} max={docDateTo || undefined} /></div>
+              <Label className="text-xs text-gray-500 shrink-0">To</Label>
+              <div className="shrink-0"><DateInput value={docDateTo} onChange={setDocDateTo} min={docDateFrom || undefined} /></div>
+              {docsFiltered && (
+                <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearDocFilters}>
+                  Clear
+                </Button>
+              )}
             </div>
           </CardHeader>
           <CardContent className="p-0">
             {docsLoading && docs.length === 0 ? (
-              <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2 px-4">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading documents…
-              </div>
+              <div className="px-4"><TableRowsSkeleton rows={8} columns={9} /></div>
+            ) : docsError && docs.length === 0 ? (
+              <ListError message={docsError} onRetry={() => void loadDocs()} />
             ) : filteredDocs.length === 0 ? (
-              <p className="text-sm text-gray-500 py-6 text-center px-4">
-                No documents found.
-              </p>
-            ) : (
+              <ListEmpty noun="documents" filtered={docsFiltered} />
+            ) : (<>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-xs text-gray-500">
-                    <tr>
-                      <th className="text-left font-medium px-4 py-2">Issue date</th>
-                      <th className="text-left font-medium px-4 py-2">Doc no.</th>
-                      <th className="text-left font-medium px-4 py-2">Customer</th>
-                      <th className="text-left font-medium px-4 py-2">Type</th>
-                      <th className="text-right font-medium px-4 py-2">Amount</th>
-                      <th className="text-right font-medium px-4 py-2">VAT</th>
-                      <th className="text-left font-medium px-4 py-2">Status</th>
-                      <th className="text-left font-medium px-4 py-2">Tax Ref</th>
-                      <th className="text-center font-medium px-4 py-2">
+                <Table>
+                  <TableHeader className="bg-gray-50">
+                    <TableRow>
+                      <TableHead className="text-left px-4">Issue date</TableHead>
+                      <TableHead className="text-left px-4">Doc no.</TableHead>
+                      <TableHead className="text-left px-4">Customer</TableHead>
+                      <TableHead className="text-left px-4">Type</TableHead>
+                      <TableHead className="text-right px-4">Amount</TableHead>
+                      <TableHead className="text-right px-4">VAT</TableHead>
+                      <TableHead className="text-left px-4">Status</TableHead>
+                      <TableHead className="text-left px-4">Tax Ref</TableHead>
+                      <TableHead className="text-center px-4">
                         <MessageCircle className="h-3.5 w-3.5 inline text-gray-400" />
                         <span className="sr-only">Comments</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {filteredDocs.map(d => {
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {docsPager.paginatedItems.map(d => {
                       const typeMeta = DOC_TYPE_META[d.type];
                       const commentCount = commentCounts[`${d.type}:${d.id}`] ?? 0;
                       const taxRef = taxRefs[`${d.type}:${d.id}`];
                       return (
-                        <tr
+                        <TableRow
                           key={`${d.type}:${d.id}`}
                           onClick={() => setOpenedDoc(d)}
                           className="hover:bg-gray-50 cursor-pointer"
                         >
-                          <td className="px-4 py-2 text-gray-600">{d.issueDate}</td>
-                          <td className="px-4 py-2 font-medium text-gray-900">{d.docNo}</td>
-                          <td className="px-4 py-2 text-gray-700">
+                          <TableCell className="px-4 py-2 text-gray-600">{formatDate(d.issueDate)}</TableCell>
+                          <TableCell className="px-4 py-2 font-medium text-gray-900">{d.docNo}</TableCell>
+                          <TableCell className="px-4 py-2 text-gray-700">
                             {d.counterpartyName ?? <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className="px-4 py-2">
+                          </TableCell>
+                          <TableCell className="px-4 py-2">
                             <Badge className={`border text-[10px] px-1.5 py-0 ${typeMeta.cls}`}>
                               {typeMeta.label}
                             </Badge>
-                          </td>
-                          <td className="px-4 py-2 text-right tabular-nums">
-                            {d.currency} {Number(d.total).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-4 py-2 text-right tabular-nums text-gray-700">
+                          </TableCell>
+                          <TableCell className="px-4 py-2 text-right tabular-nums">
+                            {d.currency} {formatMoneyForCurrency(Number(d.total), d.currency)}
+                          </TableCell>
+                          <TableCell className="px-4 py-2 text-right tabular-nums text-gray-700">
                             {d.taxAmount != null && d.taxAmount > 0
-                              ? `${d.currency} ${Number(d.taxAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              ? `${d.currency} ${formatMoneyForCurrency(Number(d.taxAmount), d.currency)}`
                               : <span className="text-gray-300">—</span>}
-                          </td>
-                          <td className="px-4 py-2">
+                          </TableCell>
+                          <TableCell className="px-4 py-2">
                             {(() => {
                               const label = displayStatus(d.type, d.status);
                               return (
-                                <Badge className={`border text-[10px] px-1.5 py-0 ${DOC_STATUS_CLS[label] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                <Badge variant="outline" className={`capitalize text-[10px] px-1.5 py-0 ${docStatusClass(label)}`}>
                                   {label}
                                 </Badge>
                               );
                             })()}
-                          </td>
-                          <td className="px-4 py-2">
+                          </TableCell>
+                          <TableCell className="px-4 py-2">
                             {taxRef ? (
                               <span
                                 className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-medium tabular-nums"
-                                title={`Declared ${taxRef.status} · period ${taxRef.period}${taxRef.submittedAt ? ' · submitted ' + new Date(taxRef.submittedAt).toLocaleDateString() : ''}`}
+                                title={`Declared ${taxRef.status} · period ${taxRef.period}${taxRef.submittedAt ? ' · submitted ' + formatDate(taxRef.submittedAt) : ''}`}
                               >
                                 <FileSpreadsheet className="h-3 w-3" />
                                 {taxRef.gdtReferenceNo}
@@ -424,8 +441,8 @@ export function AgencySaleExpensePage() {
                             ) : (
                               <span className="text-gray-300 text-xs">—</span>
                             )}
-                          </td>
-                          <td className="px-4 py-2 text-center">
+                          </TableCell>
+                          <TableCell className="px-4 py-2 text-center">
                             {commentCount > 0 ? (
                               <span className="inline-flex items-center gap-1 text-xs text-blue-700 font-medium tabular-nums">
                                 <MessageCircle className="h-3 w-3" />
@@ -434,14 +451,24 @@ export function AgencySaleExpensePage() {
                             ) : (
                               <span className="text-gray-300 text-xs">—</span>
                             )}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
-            )}
+              <div className="px-4 border-t">
+                <Pagination
+                  currentPage={docsPager.currentPage}
+                  totalPages={docsPager.totalPages}
+                  onPageChange={docsPager.goToPage}
+                  startIndex={docsPager.startIndex}
+                  endIndex={docsPager.endIndex}
+                  totalItems={docsPager.totalItems}
+                />
+              </div>
+            </>)}
           </CardContent>
         </Card>
       )}
@@ -449,53 +476,47 @@ export function AgencySaleExpensePage() {
       {topTab === 'documents' && (
         <Card>
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              {DOC_REQ_TABS.map(t => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => setReqTab(t.key)}
-                  className={`px-3 h-8 rounded-md border text-xs font-medium transition ${
-                    reqTab === t.key
-                      ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                  }`}
-                >
-                  {t.label}
-                  <span className="ml-1 text-[10px] opacity-70">({reqCounts[t.key]})</span>
-                </button>
-              ))}
-              <div className="ml-auto flex items-center gap-2 flex-wrap">
-                <DateRangeFilter
-                  enablePresets
-                  defaultStartDate={reqDateFrom ?? ''}
-                  defaultEndDate={reqDateTo ?? ''}
-                  onFilterChange={(f, t) => { setReqDateFrom(f); setReqDateTo(t); }}
+            <div className="filter-strip">
+              <div className="relative shrink-0">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <Input
+                  value={reqSearch}
+                  onChange={e => setReqSearch(e.target.value)}
+                  placeholder="Search title / client…"
+                  className="h-9 pl-7 w-64 text-sm"
                 />
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
-                  <Input
-                    value={reqSearch}
-                    onChange={e => setReqSearch(e.target.value)}
-                    placeholder="Search title / client…"
-                    className="pl-8 h-9 w-64 text-sm"
-                  />
-                </div>
               </div>
+              <select
+                value={reqTab}
+                onChange={e => setReqTab(e.target.value as DocReqTab)}
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                aria-label="Filter by status"
+              >
+                {DOC_REQ_TABS.map(t => (
+                  <option key={t.key} value={t.key}>Status : {t.label} ({reqCounts[t.key]})</option>
+                ))}
+              </select>
+              <Label className="text-xs text-gray-500 shrink-0">From</Label>
+              <div className="shrink-0"><DateInput value={reqDateFrom} onChange={setReqDateFrom} max={reqDateTo || undefined} /></div>
+              <Label className="text-xs text-gray-500 shrink-0">To</Label>
+              <div className="shrink-0"><DateInput value={reqDateTo} onChange={setReqDateTo} min={reqDateFrom || undefined} /></div>
+              {reqsFiltered && (
+                <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearReqFilters}>
+                  Clear
+                </Button>
+              )}
             </div>
           </CardHeader>
           <CardContent>
             {reqsLoading && reqs.length === 0 ? (
-              <div className="text-center py-8 text-sm text-gray-500 inline-flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-              </div>
+              <TableRowsSkeleton rows={6} columns={3} />
+            ) : reqsError && reqs.length === 0 ? (
+              <ListError message={reqsError} onRetry={() => void loadReqs()} />
             ) : filteredReqs.length === 0 ? (
-              <p className="text-sm text-gray-500 py-6 text-center">
-                No document requests for invoices, bills, or expenses match this filter.
-              </p>
-            ) : (
+              <ListEmpty noun="document requests" filtered={reqsFiltered} />
+            ) : (<>
               <ul className="divide-y">
-                {filteredReqs.map(r => {
+                {reqsPager.paginatedItems.map(r => {
                   const meta = DOC_REQ_STATUS_META[r.status];
                   return (
                     <li key={r.id} className="py-3 px-1 flex items-start gap-3">
@@ -522,8 +543,8 @@ export function AgencySaleExpensePage() {
                         <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-3">
                           {r.tenantName && <span>{r.tenantName}</span>}
                           {r.requestedByName && <span>Requested by {r.requestedByName}</span>}
-                          {r.dueDate && <span>Due {r.dueDate}</span>}
-                          {r.uploadedAt && <span>Uploaded {new Date(r.uploadedAt).toLocaleString()}</span>}
+                          {r.dueDate && <span>Due {formatDate(r.dueDate)}</span>}
+                          {r.uploadedAt && <span>Uploaded {formatDateTime(r.uploadedAt)}</span>}
                         </div>
                         {r.rejectionNotes && (
                           <div className="mt-1 text-xs bg-rose-50/60 border border-rose-200 rounded px-2 py-1 text-rose-800">
@@ -572,7 +593,17 @@ export function AgencySaleExpensePage() {
                   );
                 })}
               </ul>
-            )}
+              <div className="border-t">
+                <Pagination
+                  currentPage={reqsPager.currentPage}
+                  totalPages={reqsPager.totalPages}
+                  onPageChange={reqsPager.goToPage}
+                  startIndex={reqsPager.startIndex}
+                  endIndex={reqsPager.endIndex}
+                  totalItems={reqsPager.totalItems}
+                />
+              </div>
+            </>)}
           </CardContent>
         </Card>
       )}

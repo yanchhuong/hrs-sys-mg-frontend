@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -12,6 +12,9 @@ import { Loader2, Save, Trash2, Calendar, User2, Flag, Building2, CircleDot } fr
 import * as tasksApi from '../../../api/agencyTasks';
 import type { TaskDto, TaskPriority, TaskStatus, AgencyMember } from '../../../api/agencyTasks';
 import { useAgencyClient } from '../../../context/AgencyClientContext';
+import { useConfirm } from '../../../context/ConfirmContext';
+import { DateInput } from '../../common/DateInput';
+import { statusBadgeClass } from '../../../utils/statusTones';
 
 interface Props {
   open: boolean;
@@ -24,10 +27,11 @@ interface Props {
 }
 
 const STATUS_OPTIONS: Array<{ value: TaskStatus; label: string; cls: string }> = [
-  { value: 'todo',        label: 'To do',       cls: 'bg-slate-100 text-slate-700 border-slate-200' },
-  { value: 'in_progress', label: 'In progress', cls: 'bg-blue-100 text-blue-700 border-blue-200' },
-  { value: 'blocked',     label: 'Blocked',     cls: 'bg-rose-100 text-rose-700 border-rose-200' },
-  { value: 'done',        label: 'Done',        cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  // Same palette as AgencyTasksPage (utils/statusTones).
+  { value: 'todo',        label: 'To do',       cls: statusBadgeClass('draft') },
+  { value: 'in_progress', label: 'In progress', cls: statusBadgeClass('in_progress') },
+  { value: 'blocked',     label: 'Blocked',     cls: statusBadgeClass('failed') },
+  { value: 'done',        label: 'Done',        cls: statusBadgeClass('done') },
 ];
 
 const STATUS_META: Record<TaskStatus, { label: string; cls: string }> = STATUS_OPTIONS.reduce(
@@ -52,6 +56,7 @@ const PRIORITY_OPTIONS: Array<{ value: TaskPriority; label: string }> = [
  */
 export function TaskDialog({ open, onOpenChange, task, defaultTenantId, onSaved }: Props) {
   const { portfolio } = useAgencyClient();
+  const confirm = useConfirm();
   const editing = !!task;
 
   const [title, setTitle] = useState('');
@@ -130,7 +135,13 @@ export function TaskDialog({ open, onOpenChange, task, defaultTenantId, onSaved 
 
   const doDelete = async () => {
     if (!task) return;
-    if (!confirm(`Delete "${task.title}"? This can't be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete "${task.title}"?`,
+      message: "This can't be undone.",
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       await tasksApi.tasks.del(task.id);
@@ -176,7 +187,7 @@ export function TaskDialog({ open, onOpenChange, task, defaultTenantId, onSaved 
           <MetaRow icon={<CircleDot className="h-3.5 w-3.5" />} label="Status">
             <Select value={status} onValueChange={v => setStatus(v as TaskStatus)}>
               <SelectTrigger className="h-8 border-0 bg-transparent shadow-none focus:ring-0 px-2 hover:bg-gray-100 rounded-md w-auto min-w-32">
-                <Badge className={`border ${statusMeta.cls} text-[10px] px-1.5 py-0 mr-1`}>
+                <Badge variant="outline" className={`${statusMeta.cls} text-[10px] px-1.5 py-0 mr-1`}>
                   {statusMeta.label}
                 </Badge>
               </SelectTrigger>
@@ -186,7 +197,7 @@ export function TaskDialog({ open, onOpenChange, task, defaultTenantId, onSaved 
                   // shows — so the dropdown reads like a colour picker
                   // rather than plain text labels.
                   <SelectItem key={s.value} value={s.value}>
-                    <Badge className={`border ${s.cls} text-[10px] px-1.5 py-0`}>
+                    <Badge variant="outline" className={`${s.cls} text-[10px] px-1.5 py-0`}>
                       {s.label}
                     </Badge>
                   </SelectItem>
@@ -242,11 +253,10 @@ export function TaskDialog({ open, onOpenChange, task, defaultTenantId, onSaved 
           </MetaRow>
 
           <MetaRow icon={<Calendar className="h-3.5 w-3.5" />} label="Due date">
-            <Input
-              type="date"
-              value={dueDate}
-              onChange={e => setDueDate(e.target.value)}
-              className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-0 hover:bg-gray-100 rounded-md px-2 w-44 text-sm"
+            <DateInput
+              value={dueDate || null}
+              onChange={v => setDueDate(v ?? '')}
+              className="h-8 w-44"
             />
           </MetaRow>
         </div>
@@ -263,13 +273,13 @@ export function TaskDialog({ open, onOpenChange, task, defaultTenantId, onSaved 
           />
         </div>
 
-        <div className="px-5 py-3 border-t bg-white flex items-center justify-between gap-2 flex-wrap">
+        <DialogFooter className="px-5 py-3 border-t bg-white sm:justify-between gap-2">
           {editing ? (
             <Button
               variant="outline"
               size="sm"
-              className="text-rose-700 border-rose-200 hover:bg-rose-50"
-              onClick={doDelete}
+              className="text-red-600 border-red-200 hover:bg-red-50"
+              onClick={() => void doDelete()}
               disabled={deleting || saving}
             >
               {deleting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1.5" />}
@@ -283,7 +293,7 @@ export function TaskDialog({ open, onOpenChange, task, defaultTenantId, onSaved 
               {editing ? 'Save' : 'Create'}
             </Button>
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
