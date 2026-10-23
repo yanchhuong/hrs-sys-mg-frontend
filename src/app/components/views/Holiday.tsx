@@ -5,6 +5,10 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
+import { StatCard } from '../common/StatCard';
+import { DateInput } from '../common/DateInput';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
 import {
   Table,
   TableBody,
@@ -29,7 +33,7 @@ import * as systemHolidaysApi from '../../api/systemHolidays';
 import { USE_MOCKS } from '../../api/client';
 import { mockHolidays } from '../../data/timeworkData';
 import {
-  CalendarDays, Plus, Search, Copy, Pencil, Trash2, X, Globe, CheckCheck,
+  CalendarDays, Plus, Search, Copy, Pencil, Trash2, Globe, CheckCheck, Flag, Building2,
 } from 'lucide-react';
 import {
   format, parseISO, addYears, addDays, getYear, startOfMonth, endOfMonth,
@@ -54,6 +58,15 @@ interface Holiday {
 
 const ALL_YEARS_OPT = 'all';
 
+const FILTER_SELECT_CLS = 'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
+
+/** One colour per holiday type — table badge, KPI tile and calendar
+ *  cell all agree (Public = red, as on a printed calendar; Company = purple). */
+const TYPE_BADGE_CLASS: Record<string, string> = {
+  public:  'border-red-300 text-red-700 bg-red-50',
+  company: 'border-purple-300 text-purple-700 bg-purple-50',
+};
+
 interface HolidayProps {
   /** Hides the standalone page title + description when this view is
    *  rendered inside another page's tab (e.g. Attendance Settings).
@@ -66,6 +79,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
   const { formatDate } = useDateFormat();
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(!USE_MOCKS);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Default to the current year so the page opens to "what's relevant
@@ -126,6 +140,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
       return;
     }
     setLoading(true);
+    setLoadError(null);
     try {
       const list = await settingsApi.listHolidays();
       setHolidays(list.map(h => ({
@@ -138,7 +153,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
         clonedFromId: h.clonedFromId ?? null,
       })));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load holidays');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load holidays');
     } finally {
       setLoading(false);
     }
@@ -329,21 +344,29 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
             : h));
         }
       } else if (editorMode === 'add') {
-        await settingsApi.createHoliday({
+        // isPaid is accepted by HolidayRequest but missing from the
+        // settingsApi.Holiday type — passed via a non-literal body.
+        const body = {
           name: formName.trim(),
           date: formDate,
           type: formType,
           isRecurring: false,
+          isPaid: formIsPaid,
           description: formDescription.trim() || undefined,
-        });
+        };
+        await settingsApi.createHoliday(body);
         await loadHolidays();
       } else if (editorTarget) {
-        await settingsApi.updateHoliday(editorTarget.id, {
+        // The server resets a missing isPaid to TRUE, so an unpaid
+        // holiday used to flip back to paid on every edit.
+        const body = {
           name: formName.trim(),
           date: formDate,
           type: formType,
+          isPaid: formIsPaid,
           description: formDescription.trim() || undefined,
-        });
+        };
+        await settingsApi.updateHoliday(editorTarget.id, body);
         await loadHolidays();
       }
       toast.success(editorMode === 'add' ? 'Holiday added' : 'Holiday updated');
@@ -445,16 +468,20 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
               clonedFromId: src.id,
             }]);
           } else {
-            await settingsApi.createHoliday({
+            const body = {
               name: src.name,
               date: newDate,
               type: src.type as 'national' | 'company',
               isRecurring: false,
+              // Carry the source's paid flag — omitted, the server
+              // defaults it to paid.
+              isPaid: src.isPaid ?? true,
               description: src.description,
               // Persisted lineage — the table can render the "cloned"
               // badge with a tooltip back to the source year.
               clonedFromId: src.id,
-            });
+            };
+            await settingsApi.createHoliday(body);
           }
           created++;
         } catch {
@@ -507,45 +534,40 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
   // ---------------------------------------------------------------------------
   return (
     <div className="space-y-6">
-      {!embedded && (
+      <div className="page-header-strip">
         <div>
-          <h1 className="text-3xl font-bold">Holiday Management</h1>
+          {!embedded && <h1 className="text-3xl font-bold">Holiday Management</h1>}
         </div>
-      )}
-
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <CalendarDays className="h-5 w-5 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-600">{filtered.length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Total Holidays</p>
-            <p className="text-[11px] text-gray-500 truncate">Match current filters</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <CalendarDays className="h-5 w-5 text-green-600" />
-              <span className="text-2xl font-bold text-green-600">{filtered.filter(h => h.type === 'public').length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Public</p>
-            <p className="text-[11px] text-gray-500 truncate">National observances</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <CalendarDays className="h-5 w-5 text-purple-600" />
-              <span className="text-2xl font-bold text-purple-600">{filtered.filter(h => h.type === 'company').length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Company</p>
-            <p className="text-[11px] text-gray-500 truncate">Internal off-days</p>
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => setSystemDialogOpen(true)}>
+            <Globe className="mr-1.5 h-4 w-4 text-blue-600" />
+            System
+            {availableSystemHolidays.length > 0 && (
+              <Badge variant="outline" className="ml-1.5 text-[10px] bg-blue-50 border-blue-200 text-blue-700">
+                {availableSystemHolidays.length}
+              </Badge>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={selectedIds.size === 0}
+            onClick={() => openCloneFor(Array.from(selectedIds))}
+          >
+            <Copy className="mr-1.5 h-4 w-4" />
+            Clone ({selectedIds.size})
+          </Button>
+          <Button onClick={openAdd}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add
+          </Button>
+        </div>
       </div>
 
+      <div className="stat-strip stat-cols-3">
+        <StatCard label="Total Holidays" value={filtered.length} hint="Match current filters" icon={CalendarDays} tone="blue" />
+        <StatCard label="Public" value={filtered.filter(h => h.type === 'public').length} hint="National observances" icon={Flag} tone="red" />
+        <StatCard label="Company" value={filtered.filter(h => h.type === 'company').length} hint="Internal off-days" icon={Building2} tone="purple" />
+      </div>
       {/* ----- System holidays (V124) popup -----
           Was an always-visible card; moved into a Dialog launched
           from the toolbar button so the main page stays compact.
@@ -589,8 +611,8 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
           </div>
 
           <div className="overflow-y-auto flex-1 min-h-0">
-            {loadingSystem && (
-              <div className="text-center text-xs text-gray-500 py-8">Loading…</div>
+            {loadingSystem && systemHolidays.length === 0 && (
+              <Table><TableBody><TableBodySkeletonRows columns={6} rows={4} /></TableBody></Table>
             )}
             {!loadingSystem && systemHolidays.length === 0 && (
               <div className="text-sm text-gray-600 px-6 py-10 text-center">
@@ -624,8 +646,8 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                 <TableBody>
                   {availableSystemHolidays.map(({ src, targetDate }) => (
                     <TableRow key={src.id} className="hover:bg-blue-50/40">
-                      <TableCell className="tabular-nums text-xs text-gray-500">{src.date}</TableCell>
-                      <TableCell className="tabular-nums text-xs text-blue-700 font-medium">{targetDate}</TableCell>
+                      <TableCell className="tabular-nums text-xs text-gray-500">{formatDate(src.date)}</TableCell>
+                      <TableCell className="tabular-nums text-xs text-blue-700 font-medium">{formatDate(targetDate)}</TableCell>
                       <TableCell className="font-medium text-sm">{src.name}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize text-[11px]">{src.type}</Badge>
@@ -656,97 +678,46 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
       </Dialog>
 
       <Card>
-        <CardHeader className="space-y-3">
-          <div className="filter-strip items-end">
-            <div className="space-y-1 shrink-0">
-              <Label className="text-xs">Year (YYYY)</Label>
-              <Select value={yearFilter} onValueChange={setYearFilter}>
-                <SelectTrigger className="w-32 h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_YEARS_OPT}>All years</SelectItem>
-                  {years.map(y => (
-                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <CardHeader>
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search name or date…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
             </div>
-            <div className="space-y-1 w-56 shrink-0">
-              <Label className="text-xs">Search</Label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Name or date…"
-                  className="pl-9 h-9"
-                />
-                {search && (
-                  <button
-                    onClick={() => setSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    title="Clear"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-            {/* View toggle + the three action buttons that used to live
-                at the top of the page (V124+). Moving them here keeps
-                the table's controls in one row and reclaims the
-                vertical space the old toolbar took. */}
-            <div className="ml-auto flex items-end gap-2 shrink-0">
-              <div className="flex gap-1 bg-gray-100 rounded-md p-0.5 h-9 items-center">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('table')}
-                  className={`px-3 py-1 text-xs rounded ${
-                    viewMode === 'table' ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Table
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('calendar')}
-                  className={`px-3 py-1 text-xs rounded ${
-                    viewMode === 'calendar' ? 'bg-white shadow-sm font-medium' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Calendar
-                </button>
-              </div>
+            <select
+              value={yearFilter}
+              onChange={e => setYearFilter(e.target.value)}
+              className={FILTER_SELECT_CLS}
+              aria-label="Filter by year"
+            >
+              <option value={ALL_YEARS_OPT}>Year : All</option>
+              {years.map(y => (
+                <option key={y} value={String(y)}>Year : {y}</option>
+              ))}
+            </select>
+            <select
+              value={viewMode}
+              onChange={e => setViewMode(e.target.value as 'table' | 'calendar')}
+              className={FILTER_SELECT_CLS}
+              aria-label="View"
+            >
+              <option value="table">View : Table</option>
+              <option value="calendar">View : Calendar</option>
+            </select>
+            {(search || yearFilter !== String(new Date().getFullYear())) && (
               <Button
-                variant="outline"
-                size="sm"
-                className="h-9"
-                onClick={() => setSystemDialogOpen(true)}
+                size="sm" variant="ghost"
+                className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setYearFilter(String(new Date().getFullYear())); }}
               >
-                <Globe className="mr-1.5 h-4 w-4 text-blue-600" />
-                System
-                {availableSystemHolidays.length > 0 && (
-                  <Badge variant="outline" className="ml-1.5 text-[10px] bg-blue-50 border-blue-200 text-blue-700">
-                    {availableSystemHolidays.length}
-                  </Badge>
-                )}
+                Clear
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9"
-                disabled={selectedIds.size === 0}
-                onClick={() => openCloneFor(Array.from(selectedIds))}
-              >
-                <Copy className="mr-1.5 h-4 w-4" />
-                Clone ({selectedIds.size})
-              </Button>
-              <Button size="sm" className="h-9" onClick={openAdd}>
-                <Plus className="mr-1.5 h-4 w-4" />
-                Add
-              </Button>
-            </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -776,12 +747,16 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-10">
-                    {loading ? 'Loading…' : 'No holidays match the current filters.'}
-                  </TableCell>
-                </TableRow>
+              {loading && holidays.length === 0 ? (
+                <TableBodySkeletonRows columns={6} />
+              ) : loadError && holidays.length === 0 ? (
+                <ListError colSpan={6} message={loadError} onRetry={() => void loadHolidays()} />
+              ) : filtered.length === 0 && (
+                <ListEmpty
+                  colSpan={6}
+                  noun="holidays"
+                  filtered={!!search.trim() || yearFilter !== ALL_YEARS_OPT}
+                />
               )}
               {filtered.map(h => {
                 const d = parseISO(h.date);
@@ -825,7 +800,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={h.type === 'public' ? 'default' : 'secondary'} className="capitalize">
+                      <Badge variant="outline" className={`capitalize ${TYPE_BADGE_CLASS[h.type] ?? ''}`}>
                         {h.type}
                       </Badge>
                     </TableCell>
@@ -833,23 +808,22 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                       {h.description || '-'}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-1.5">
-                        <Button variant="outline" size="sm" className="h-7" onClick={() => openCloneFor([h.id])}>
-                          <Copy className="h-3.5 w-3.5 mr-1" />
-                          Clone
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Clone" aria-label="Clone" onClick={() => openCloneFor([h.id])}>
+                          <Copy className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="outline" size="sm" className="h-7" onClick={() => openEdit(h)}>
-                          <Pencil className="h-3.5 w-3.5 mr-1" />
-                          Edit
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" aria-label="Edit" onClick={() => openEdit(h)}>
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
                         <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-red-700 border-red-200 hover:bg-red-50"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-red-600 hover:text-red-700"
+                          title="Delete"
+                          aria-label="Delete"
                           onClick={() => handleDelete(h)}
                         >
-                          <Trash2 className="h-3.5 w-3.5 mr-1" />
-                          Delete
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </TableCell>
@@ -881,27 +855,26 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
-              <Label>Holiday Name</Label>
+              <Label>Holiday Name <span className="text-red-500">*</span></Label>
               <Input value={formName} onChange={e => setFormName(e.target.value)} placeholder="e.g., Independence Day" />
             </div>
             <div className="space-y-1">
-              <Label>Date</Label>
-              <Input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} />
+              <Label>Date <span className="text-red-500">*</span></Label>
+              <DateInput value={formDate || null} onChange={v => setFormDate(v ?? '')} clearable={false} className="w-full" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Type</Label>
-                <select
-                  value={formType}
-                  onChange={e => setFormType(e.target.value as 'public' | 'company')}
-                  className="w-full px-3 py-2 border rounded-md text-sm h-9"
-                >
-                  <option value="public">Public Holiday</option>
-                  <option value="company">Company Holiday</option>
-                </select>
+                <Select value={formType} onValueChange={v => setFormType(v as 'public' | 'company')}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public Holiday</SelectItem>
+                    <SelectItem value="company">Company Holiday</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <label className="flex items-center gap-2 mt-6 cursor-pointer text-sm">
-                <input type="checkbox" checked={formIsPaid} onChange={e => setFormIsPaid(e.target.checked)} />
+                <Checkbox checked={formIsPaid} onCheckedChange={v => setFormIsPaid(v === true)} />
                 Paid Holiday
               </label>
             </div>
@@ -913,7 +886,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditorOpen(false)} disabled={busy}>Cancel</Button>
             <Button onClick={saveEditor} disabled={busy}>
-              {busy ? 'Saving…' : editorMode === 'add' ? 'Add Holiday' : 'Save Changes'}
+              {busy ? 'Saving…' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1020,10 +993,10 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                         </div>
                         <span className="text-gray-300 text-sm">→</span>
                         <div className="flex items-center gap-2">
-                          <Input
-                            type="date"
-                            value={cloneOverrides[h.id] ?? ''}
-                            onChange={e => setCloneOverrides(prev => ({ ...prev, [h.id]: e.target.value }))}
+                          <DateInput
+                            value={cloneOverrides[h.id] ?? null}
+                            onChange={v => setCloneOverrides(prev => ({ ...prev, [h.id]: v ?? '' }))}
+                            clearable={false}
                             className="h-8 w-40 text-xs"
                           />
                           {targetDate && (

@@ -20,6 +20,10 @@ import {
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useLogoTint } from '../../utils/useLogoTint';
+import { useConfirm } from '../../context/ConfirmContext';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListError } from '../common/ListStates';
 import { hexToRgb, toBandTint } from '../../utils/logoColor';
 import { useCompanyLogo, useCompanyInfo } from '../../hooks/useCompanyLogo';
 import {
@@ -329,10 +333,9 @@ export function InvoiceTemplates() {
   const [loading, setLoad]  = useState(false);
   const [open, setOpen]     = useState(false);
   const [editing, setEdit]  = useState<InvoiceTemplate | null>(null);
-  /** Built-in preview state — opens the editor in view-only mode so
-   *  the operator can inspect what the current default template
-   *  looks like before deciding to customise. Null = closed. */
-  const [previewingBuiltin, setPreviewingBuiltin] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const confirm = useConfirm();
+  const { formatDate } = useDateFormat();
   /** Sample-gallery dialog — opens when the operator hits
    *  "New template" so they pick a starting preset instead of a
    *  blank canvas. Null = closed. */
@@ -362,30 +365,25 @@ export function InvoiceTemplates() {
     setOpen(true);
   };
 
-  /** Open the editor pre-seeded with the built-in default config —
-   *  operator ends up with a fresh custom template that starts from
-   *  the current print layout instead of a blank canvas. */
-  const duplicateBuiltin = () => {
-    setEdit({
-      id: '', name: 'Copy of Default Template', kind: 'invoice', isDefault: false,
-      config: defaultTemplateConfig(),
-      createdAt: '', updatedAt: '',
-    } as InvoiceTemplate);
-    setOpen(true);
-  };
 
   const load = useCallback(async () => {
     setLoad(true);
+    setLoadError(null);
     try {
       setRows(await invoiceTemplates.list());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load templates');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load templates');
     } finally { setLoad(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
   const doDelete = async (r: InvoiceTemplate) => {
-    if (!confirm(`Delete "${r.name}"? Documents printed with this template stay unchanged; only future prints use another.`)) return;
+    if (!(await confirm({
+      title: `Delete "${r.name}"?`,
+      message: 'Documents printed with this template stay unchanged; only future prints use another.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    }))) return;
     try {
       await invoiceTemplates.remove(r.id);
       toast.success('Template deleted');
@@ -415,37 +413,36 @@ export function InvoiceTemplates() {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-blue-600" />
-            <CardTitle>Templates</CardTitle>
-            <TooltipProvider delayDuration={120}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
-                    aria-label="What Templates are"
-                  >
-                    <Info className="h-4 w-4" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
-                  Custom invoice / receipt layouts — set one as the default per doc type.
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={load} disabled={loading}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            </Button>
-            <Button size="sm" onClick={() => setPickingSample(true)}>
-              <Plus className="h-4 w-4 mr-1.5" /> New template
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+      <div className="page-header-strip">
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl font-bold">Templates</h1>
+          <TooltipProvider delayDuration={120}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
+                  aria-label="What Templates are"
+                >
+                  <Info className="h-4 w-4" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
+                Custom invoice / receipt layouts — set one as the default per doc type.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={load} disabled={loading} title="Refresh">
+            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => setPickingSample(true)}>
+            <Plus className="h-4 w-4 mr-1.5" /> New template
+          </Button>
+        </div>
+      </div>
+      <div>
           {/* Two independent Cards side-by-side — "Invoice templates"
            *  and "POS Receipt templates" — each with its own CardTitle
            *  so the kind label reads as a proper heading. Each kind
@@ -482,7 +479,11 @@ export function InvoiceTemplates() {
                   )}
                 </CardHeader>
                 <CardContent>
-                  {kindRows.length === 0 ? (
+                  {loading && rows.length === 0 ? (
+                    <TableRowsSkeleton rows={3} columns={3} />
+                  ) : loadError && rows.length === 0 ? (
+                    <ListError message={loadError} onRetry={() => void load()} />
+                  ) : kindRows.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8 text-center border-2 border-dashed rounded-lg bg-gray-50">
                       <FileText className="h-8 w-8 text-gray-300 mb-2" />
                       <div className="text-sm text-gray-600">
@@ -502,7 +503,7 @@ export function InvoiceTemplates() {
                           landscape
                           variant="custom"
                           title={r.name}
-                          caption={`${KIND_META[r.kind].label} layout · updated ${new Date(r.updatedAt).toLocaleDateString()}`}
+                          caption={`${KIND_META[r.kind].label} layout · updated ${formatDate(r.updatedAt)}`}
                           config={r.config ?? defaultTemplateConfig()}
                           kind={r.kind}
                           kindBadge={
@@ -536,8 +537,14 @@ export function InvoiceTemplates() {
                               <Button variant="outline" size="sm" onClick={() => { setEdit(r); setOpen(true); }} title="Edit template">
                                 <Edit3 className="h-3.5 w-3.5 mr-1" /> Edit
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => doDelete(r)} title="Delete template">
-                                <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                              <Button
+                                variant="ghost" size="icon"
+                                className="h-7 w-7 text-red-600 hover:text-red-700"
+                                onClick={() => doDelete(r)}
+                                title="Delete template"
+                                aria-label="Delete template"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </>
                           }
@@ -550,8 +557,7 @@ export function InvoiceTemplates() {
             );
           })}
           </div>
-        </CardContent>
-      </Card>
+      </div>
 
       <TemplateEditorDialog
         open={open}
@@ -723,32 +729,6 @@ export function InvoiceTemplates() {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Built-in preview — read-only. Reuses the same TemplatePreview
-          the editor uses so the operator sees exactly what a
-          duplicated copy would start from. */}
-      <Dialog open={previewingBuiltin} onOpenChange={setPreviewingBuiltin}>
-        {/* Same layout as the preview above: only the body scrolls, so the
-            X never scrolls off. */}
-        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>Default Template · Preview</DialogTitle>
-          </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <TemplatePreview config={defaultTemplateConfig()} kind="invoice" />
-          </div>
-          {/* v-dialog-close-x-only — "Close" dropped; the X closes this
-              read-only preview. Footer kept for the one real action, which
-              only seeds the editor locally (the create happens on submit). */}
-          <DialogFooter>
-            <Button
-              onClick={() => { setPreviewingBuiltin(false); duplicateBuiltin(); }}
-            >
-              <Copy className="h-4 w-4 mr-1.5" /> Duplicate & customise
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -829,7 +809,7 @@ function TemplateEditorDialog({
           <div className="space-y-4 text-sm">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Name *</Label>
+                <Label>Name <span className="text-red-500">*</span></Label>
                 <Input value={name} onChange={e => setName(e.target.value)} maxLength={120} />
               </div>
               <div className="space-y-1">
@@ -1253,7 +1233,7 @@ function TemplateEditorDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={submit} disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
-            {editing ? 'Update' : 'Create'}
+            Save
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -16,7 +16,9 @@ import {
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
-import { Input } from '../ui/input';
+import { NumericInput } from '../common/NumericInput';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
 import { Label } from '../ui/label';
 import {
   Table,
@@ -40,6 +42,13 @@ function money(n: number): string {
   return `$${formatMoney(n)}`;
 }
 
+/** The rate actually sent to the API for an input string — undefined
+ *  (server default) when blank / non-positive. */
+function effectiveRate(input: string): number | undefined {
+  const rate = Number(input);
+  return Number.isFinite(rate) && rate > 0 ? rate : undefined;
+}
+
 /**
  * Compute 5% Severance — bulk preview.
  *
@@ -55,6 +64,11 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
   const [ratePercent, setRatePercent] = useState<string>('5');
   const [preview, setPreview] = useState<fdcApi.FdcSeveranceAll | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  /** Rate the current preview was computed with. Generate is blocked
+   *  while the input differs from it, so the batch can never be created
+   *  at a rate HR typed but never previewed (Recalc). */
+  const [appliedRate, setAppliedRate] = useState<number | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   /** Per-row include toggle keyed by contractId. Seeded from eligible rows. */
   const [included, setIncluded] = useState<Set<string>>(new Set());
@@ -67,6 +81,7 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
     if (!open) return;
     setRatePercent('5');
     setPreview(null);
+    setLoadError(null);
     setIncluded(new Set());
     setStatusFilter('all');
   }, [open]);
@@ -78,15 +93,17 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setLoadError(null);
       try {
-        const rate = Number(ratePercent);
-        const res = await fdcApi.previewAll(Number.isFinite(rate) && rate > 0 ? rate : undefined);
+        const rate = effectiveRate(ratePercent);
+        const res = await fdcApi.previewAll(rate);
         if (!cancelled) {
           setPreview(res);
+          setAppliedRate(rate);
           setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.contractId)));
         }
       } catch (err) {
-        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load FDC employees');
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Failed to load FDC employees');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -98,26 +115,32 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
 
   const handleRecalc = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const rate = Number(ratePercent);
-      const res = await fdcApi.previewAll(Number.isFinite(rate) && rate > 0 ? rate : undefined);
+      const rate = effectiveRate(ratePercent);
+      const res = await fdcApi.previewAll(rate);
       setPreview(res);
+      setAppliedRate(rate);
       setIncluded(new Set(res.items.filter(i => i.eligible).map(i => i.contractId)));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reload FDC employees');
+      if (preview) toast.error(err instanceof Error ? err.message : 'Failed to reload FDC employees');
+      else setLoadError(err instanceof Error ? err.message : 'Failed to load FDC employees');
     } finally {
       setLoading(false);
     }
   };
 
   const handleCreate = async () => {
+    if (rateDirty) {
+      toast.error('Rate changed — click Recalc before generating the batch');
+      return;
+    }
     if (!preview || included.size === 0) {
       toast.error('Pick at least one eligible employee to include in the batch');
       return;
     }
     setCreating(true);
     try {
-      const rate = Number(ratePercent);
       // Bulk createBatch wants the (from, to) window covering every
       // included contract's endDate. Picking min(startDate) → max(endDate)
       // guarantees they all land inside the preview's window-scan.
@@ -127,7 +150,8 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
       await fdcApi.createBatch({
         from,
         to,
-        ratePercent: Number.isFinite(rate) && rate > 0 ? rate : undefined,
+        // The rate the preview was computed with — never an un-recalculated edit.
+        ratePercent: appliedRate,
         contractIds: Array.from(included),
       });
       toast.success(`5% Severance batch created for ${included.size} employee${included.size === 1 ? '' : 's'}`);
@@ -139,6 +163,8 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
       setCreating(false);
     }
   };
+
+  const rateDirty = effectiveRate(ratePercent) !== appliedRate;
 
   const toggleAll = () => {
     if (!preview) return;
@@ -171,23 +197,32 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
             <div className="space-y-1">
               <Label className="text-xs">Rate (%)</Label>
               <div className="flex items-center gap-1.5">
-                <Input
-                  type="number"
-                  step="0.1"
-                  min="0"
+                <NumericInput
                   value={ratePercent}
-                  onChange={e => setRatePercent(e.target.value)}
+                  onChange={setRatePercent}
+                  decimals={2}
+                  maxInt={3}
                   placeholder="5"
                   className="w-24"
                 />
                 <span className="text-sm text-gray-500">%</span>
               </div>
             </div>
-            <Button onClick={handleRecalc} disabled={loading} variant="outline">
+            <Button
+              onClick={handleRecalc}
+              disabled={loading}
+              variant={rateDirty ? 'default' : 'outline'}
+              title={rateDirty ? 'Rate changed — recalculate before generating' : undefined}
+            >
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
               Recalc
             </Button>
             <p className="text-[11px] text-gray-500 self-end">
+              {rateDirty && preview && (
+                <span className="block text-amber-700 font-medium">
+                  Rate changed from {preview.ratePercent}% — click Recalc to update the amounts.
+                </span>
+              )}
               One installment per completed <strong>3-month block</strong>, locked to the <strong>salary at contract start</strong>.
             </p>
           </div>
@@ -237,6 +272,14 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
 
         {/* Table — only this scrolls. */}
         <div className="flex-1 min-h-0 overflow-auto">
+          {!preview && loading && (
+            <Table>
+              <TableBody><TableBodySkeletonRows columns={10} /></TableBody>
+            </Table>
+          )}
+          {!preview && !loading && loadError && (
+            <ListError message={loadError} onRetry={() => void handleRecalc()} />
+          )}
           {preview && (
                   <Table>
                     <TableHeader className="sticky top-0 bg-white z-10">
@@ -261,13 +304,15 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
                     </TableHeader>
                     <TableBody>
                       {visibleRows.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={10} className="text-center text-sm text-gray-500 py-6">
-                            {statusFilter === 'eligible'
-                              ? 'No eligible FDC employees. Switch to All to see why any rows dropped.'
-                              : 'No active FDC contracts on file.'}
-                          </TableCell>
-                        </TableRow>
+                        statusFilter === 'eligible' ? (
+                          <TableRow>
+                            <TableCell colSpan={10} className="text-center text-sm text-gray-500 py-6">
+                              No eligible FDC employees. Switch to All to see why any rows dropped.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          <ListEmpty colSpan={10} noun="active FDC contracts" />
+                        )
                       )}
                       {visibleRows.map(row => (
                         <TableRow key={row.contractId} className={row.eligible ? '' : 'opacity-60'}>
@@ -359,7 +404,8 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
           </Button>
           <Button
             onClick={handleCreate}
-            disabled={!preview || included.size === 0 || creating || loading}
+            disabled={!preview || included.size === 0 || creating || loading || rateDirty}
+            title={rateDirty ? 'Rate changed — click Recalc first' : undefined}
           >
             {creating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
             Generate Batch ({included.size})

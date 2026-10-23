@@ -23,7 +23,11 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import { DateRangeFilter } from '../common/DateRangeFilter';
+import { DateInput } from '../common/DateInput';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { useConfirm } from '../../context/ConfirmContext';
+import { statusBadgeClass } from '../../utils/statusTones';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
 import { mockExceptions } from '../../data/timeworkData';
@@ -31,8 +35,8 @@ import { useI18n } from '../../i18n/I18nContext';
 import { mockEmployees } from '../../data/mockData';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
-import { X, Search, Pencil } from 'lucide-react';
-import { format, isWithinInterval, parseISO } from 'date-fns';
+import { Search, Pencil, RotateCcw } from 'lucide-react';
+import { isWithinInterval, parseISO } from 'date-fns';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { toast } from 'sonner';
 import { Employee } from '../../types/hrms';
@@ -94,6 +98,12 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     attendanceExceptionStartDate: e.attendanceExceptionStartDate ?? undefined,
     attendanceExceptionEndDate: e.attendanceExceptionEndDate ?? undefined,
     attendanceExceptionRemark: e.attendanceExceptionRemark ?? undefined,
+    // TOS dependent-claim flags + child count — full-replace PUT, so a
+    // missing key would reset them and silently change the payslip's
+    // dependent deduction.
+    numberOfChildren: e.numberOfChildren ?? 0,
+    decouple: e.decouple ?? false,
+    claimSpouse: e.claimSpouse ?? false,
     updatedAt: e.updatedAt ?? undefined,
   };
 }
@@ -154,10 +164,18 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 export function Exception() {
   const { t } = useI18n();
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
   const [leaves, setLeaves] = useState<AttendanceException[]>(USE_MOCKS ? mockExceptions : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
-  const [, setLoading] = useState<boolean>(!USE_MOCKS);
+  const confirm = useConfirm();
+  const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
+  const [loadingEmps, setLoadingEmps] = useState<boolean>(!USE_MOCKS);
+  const [leavesError, setLeavesError] = useState<string | null>(null);
+  const [empsError, setEmpsError] = useState<string | null>(null);
+  // Raw API rows keyed by empNo — spread into the full-replace PUTs so
+  // every column this screen doesn't model (decouple, claimSpouse,
+  // numberOfChildren, level, clinicalRole, …) round-trips unchanged.
+  const [rawEmps, setRawEmps] = useState<Record<string, employeesApi.Employee>>({});
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
   const deptName = makeDeptName(deptList, '');
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
@@ -179,15 +197,13 @@ export function Exception() {
   } = useTeamScope();
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
 
-  const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
-    setDateFilter({ start: startDate, end: endDate });
-  };
-
   const loadLeaves = async () => {
     if (USE_MOCKS) {
       setLeaves([...mockExceptions]);
       return;
     }
+    setLoading(true);
+    setLeavesError(null);
     try {
       const res = await leaveApi.list({
         from: dateFilter.start || undefined,
@@ -196,7 +212,7 @@ export function Exception() {
       });
       setLeaves(res.data.map(adaptApiLeave));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load leave requests');
+      setLeavesError(err instanceof Error ? err.message : 'Failed to load leave requests');
     } finally {
       setLoading(false);
     }
@@ -207,11 +223,16 @@ export function Exception() {
       setEmployees([...mockEmployees]);
       return;
     }
+    setLoadingEmps(true);
+    setEmpsError(null);
     try {
       const res = await employeesApi.list({ size: 500 });
       setEmployees(res.content.map(adaptApiEmployee));
+      setRawEmps(Object.fromEntries(res.content.map(r => [r.empNo, r])));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+      setEmpsError(err instanceof Error ? err.message : 'Failed to load employees');
+    } finally {
+      setLoadingEmps(false);
     }
   };
 
@@ -274,6 +295,7 @@ export function Exception() {
       }
       const targetId = (editEmp as Employee & { apiId?: string }).apiId ?? editEmp.id;
       const body: employeesApi.CreateEmployeeRequest = {
+        ...(rawEmps[editEmp.id] as unknown as employeesApi.CreateEmployeeRequest | undefined),
         empNo: editEmp.id,
         name: editEmp.name,
         khmerName: editEmp.khmerName,
@@ -301,6 +323,9 @@ export function Exception() {
         contractExpireDate: editEmp.contractExpireDate,
         resignDate: editEmp.resignDate,
         status: editEmp.status,
+        numberOfChildren: editEmp.numberOfChildren ?? 0,
+        decouple: editEmp.decouple ?? false,
+        claimSpouse: editEmp.claimSpouse ?? false,
         // Keep the row on Exception while editing — only the date / remark
         // fields change. Use the Unmark Exception button to restore.
         attendanceYn: false,
@@ -328,6 +353,12 @@ export function Exception() {
   // back to true so the employee is counted in attendance again.
   const [unmarkingId, setUnmarkingId] = useState<string | null>(null);
   const handleUnmarkException = async (emp: Employee) => {
+    if (!(await confirm({
+      title: `Unmark ${emp.name} as Exception?`,
+      message: 'The employee goes back into attendance counting and the Exception start / end / remark are cleared.',
+      confirmLabel: 'Unmark',
+      variant: 'destructive',
+    }))) return;
     setUnmarkingId(emp.id);
     try {
       if (USE_MOCKS) {
@@ -337,6 +368,7 @@ export function Exception() {
       }
       const targetId = (emp as Employee & { apiId?: string }).apiId ?? emp.id;
       const body: employeesApi.CreateEmployeeRequest = {
+        ...(rawEmps[emp.id] as unknown as employeesApi.CreateEmployeeRequest | undefined),
         empNo: emp.id,
         name: emp.name,
         khmerName: emp.khmerName,
@@ -364,7 +396,16 @@ export function Exception() {
         contractExpireDate: emp.contractExpireDate,
         resignDate: emp.resignDate,
         status: emp.status,
+        numberOfChildren: emp.numberOfChildren ?? 0,
+        decouple: emp.decouple ?? false,
+        claimSpouse: emp.claimSpouse ?? false,
         attendanceYn: true,
+        // Explicit nulls (these used to be omitted, which the full-replace
+        // PUT already treated as null) — the raw spread above would
+        // otherwise carry the old Exception dates forward.
+        attendanceExceptionStartDate: null,
+        attendanceExceptionEndDate: null,
+        attendanceExceptionRemark: null,
       } as employeesApi.CreateEmployeeRequest;
       await employeesApi.update(targetId, body);
       setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, attendanceYn: true } : e));
@@ -387,15 +428,6 @@ export function Exception() {
       manual_correction: 'Full',
     };
     return labels[type] || type;
-  };
-
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100',
-      approved: 'bg-green-100 text-green-800 hover:bg-green-100',
-      rejected: 'bg-red-100 text-red-800 hover:bg-red-100',
-    };
-    return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
   };
 
   const kw = search.trim().toLowerCase();
@@ -458,72 +490,71 @@ export function Exception() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-bold">{t('page.exception.title')}</h1>
-        </div>
-        <div className="filter-strip">
-          {showScopePicker && mode === 'day' && (
-            <div className="shrink-0"><ScopePicker value={scopeMode} onChange={setScopeMode} /></div>
-          )}
-          {mode === 'day' && <div className="shrink-0"><DateRangeFilter onFilterChange={handleDateFilterChange} /></div>}
-        </div>
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold">{t('page.exception.title')}</h1>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
-          {/* Single-row header: view-mode pills on the left, search on
-              the right. The hover-tooltip on each pill replaces the old
-              separate description line, and the section title is dropped
-              because the active pill already labels the table. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs uppercase tracking-wide text-gray-500 mr-1">
-              View:
-            </span>
-            {(['employee', 'day'] as const).map(m => {
-              const isActive = mode === m;
-              const count = m === 'employee' ? exceptionEmployees.length : dayExceptionRows.length;
-              const hint = m === 'employee'
-                ? 'Employees opted out of attendance until HR unmarks them (Attendance → Mark Exception).'
-                : 'Single-day exceptions (mission, on-site, special) flagged on the Submit Leave dialog.';
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  title={hint}
-                  onClick={() => setMode(m)}
-                  className={`h-8 px-3 rounded-full text-sm border transition ${
-                    isActive
-                      ? 'border-amber-300 bg-amber-50 text-amber-800 font-medium'
-                      : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  {m === 'employee' ? 'Long-term (Employee)' : 'Day Exception'}
-                  <Badge variant="outline" className="ml-1.5 h-5 px-1.5 text-[10px]">{count}</Badge>
-                </button>
-              );
-            })}
-            <div className="relative ml-auto w-full sm:w-72">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          {/* One filter strip (Transactions pattern): search, view
+              select (with counts), and — on the Day view — scope +
+              From/To. Clear resets every filter. */}
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={mode === 'employee'
                   ? 'Search name, ID, department or position…'
                   : 'Search name, ID, department or reason…'}
-                className="h-8 pl-8 pr-8 text-sm"
+                className="h-9 pl-7 w-64 text-sm"
               />
-              {search && (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  title="Clear search"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
             </div>
+            <select
+              value={mode}
+              onChange={e => setMode(e.target.value as 'employee' | 'day')}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="View"
+              title={mode === 'employee'
+                ? 'Employees opted out of attendance until HR unmarks them (Attendance → Mark Exception).'
+                : 'Single-day exceptions (mission, on-site, special) flagged on the Submit Leave dialog.'}
+            >
+              <option value="employee">View : Long-term (Employee) ({exceptionEmployees.length})</option>
+              <option value="day">View : Day Exception ({dayExceptionRows.length})</option>
+            </select>
+            {showScopePicker && mode === 'day' && (
+              <div className="shrink-0"><ScopePicker value={scopeMode} onChange={setScopeMode} /></div>
+            )}
+            {mode === 'day' && (
+              <>
+                <Label className="text-xs text-gray-500 shrink-0">From</Label>
+                <div className="shrink-0">
+                  <DateInput
+                    value={dateFilter.start}
+                    onChange={v => setDateFilter(f => ({ ...f, start: v || null }))}
+                    max={dateFilter.end || undefined}
+                  />
+                </div>
+                <Label className="text-xs text-gray-500 shrink-0">To</Label>
+                <div className="shrink-0">
+                  <DateInput
+                    value={dateFilter.end}
+                    onChange={v => setDateFilter(f => ({ ...f, end: v || null }))}
+                    min={dateFilter.start || undefined}
+                  />
+                </div>
+              </>
+            )}
+            {(search || dateFilter.start || dateFilter.end || scopeMode !== 'all') && (
+              <Button
+                size="sm" variant="ghost"
+                className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setDateFilter({ start: null, end: null }); setScopeMode('all'); }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         {/* p-0 keeps the table flush against the card edges so the gap
@@ -550,7 +581,11 @@ export function Exception() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {exceptionEmpsPagination.paginatedItems.length === 0 && (
+                {loadingEmps && employees.length === 0 ? (
+                  <TableBodySkeletonRows columns={9} />
+                ) : empsError && employees.length === 0 ? (
+                  <ListError colSpan={9} message={empsError} onRetry={() => void loadEmployees()} />
+                ) : exceptionEmpsPagination.paginatedItems.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-10">
                       {kw
@@ -582,7 +617,7 @@ export function Exception() {
                       </TableCell>
                       <TableCell className="text-sm">{deptName(emp.department)}</TableCell>
                       <TableCell className="text-sm">{emp.position ?? '—'}</TableCell>
-                      <TableCell className="text-sm">{emp.joinDate}</TableCell>
+                      <TableCell className="text-sm">{emp.joinDate ? formatDate(emp.joinDate) : '—'}</TableCell>
                       <TableCell className="text-sm text-gray-600">{startDate}</TableCell>
                       <TableCell className="text-sm text-gray-600">{endDate}</TableCell>
                       <TableCell className="text-sm text-gray-600 max-w-xs truncate" title={emp.attendanceExceptionRemark ?? ''}>{remark}</TableCell>
@@ -603,12 +638,15 @@ export function Exception() {
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button
-                            size="sm"
-                            variant="outline"
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-red-600 hover:text-red-700"
+                            title={unmarkingId === emp.id ? 'Restoring…' : 'Unmark Exception'}
+                            aria-label="Unmark Exception"
                             onClick={() => handleUnmarkException(emp)}
                             disabled={unmarkingId === emp.id}
                           >
-                            {unmarkingId === emp.id ? 'Restoring…' : 'Unmark Exception'}
+                            <RotateCcw className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </TableCell>
@@ -637,12 +675,16 @@ export function Exception() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {dayExceptionsPagination.paginatedItems.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={11} className="text-center text-sm text-gray-500 py-10">
-                      No Day Exceptions found for the current filters.
-                    </TableCell>
-                  </TableRow>
+                {loading && leaves.length === 0 ? (
+                  <TableBodySkeletonRows columns={11} />
+                ) : leavesError && leaves.length === 0 ? (
+                  <ListError colSpan={11} message={leavesError} onRetry={() => void loadLeaves()} />
+                ) : dayExceptionsPagination.paginatedItems.length === 0 && (
+                  <ListEmpty
+                    colSpan={11}
+                    noun="Day Exceptions"
+                    filtered={!!(kw || dateFilter.start || dateFilter.end || scopeMode !== 'all')}
+                  />
                 )}
                 {dayExceptionsPagination.paginatedItems.map((exc) => {
                   const employee = employees.find(
@@ -678,12 +720,12 @@ export function Exception() {
                         {exc.reason || <span className="text-gray-300">—</span>}
                       </TableCell>
                       <TableCell>
-                        <Badge className={getStatusBadge(exc.status)}>
+                        <Badge variant="outline" className={statusBadgeClass(exc.status)}>
                           {exc.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">
-                        {format(new Date(exc.submittedAt), 'MMM dd, HH:mm')}
+                        {formatDateTime(exc.submittedAt)}
                       </TableCell>
                       <TableCell>
                         <AuditCell
@@ -745,23 +787,22 @@ export function Exception() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="ee-start" className="text-xs">Start Date</Label>
-                <Input
-                  id="ee-start"
-                  type="date"
-                  value={editStartDate}
-                  onChange={(e) => setEditStartDate(e.target.value)}
+                <DateInput
+                  value={editStartDate || null}
+                  onChange={(v) => setEditStartDate(v ?? '')}
+                  max={editEndDate || undefined}
+                  className="w-full"
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="ee-end" className="text-xs">
                   End Date <span className="text-gray-400 font-normal">(optional)</span>
                 </Label>
-                <Input
-                  id="ee-end"
-                  type="date"
-                  value={editEndDate}
+                <DateInput
+                  value={editEndDate || null}
                   min={editStartDate || undefined}
-                  onChange={(e) => setEditEndDate(e.target.value)}
+                  onChange={(v) => setEditEndDate(v ?? '')}
+                  className="w-full"
                 />
               </div>
             </div>

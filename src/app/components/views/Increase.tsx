@@ -1,5 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Card, CardContent } from '../ui/card';
+import { Card, CardContent, CardHeader } from '../ui/card';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../ui/select';
+import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import { StatCard } from '../common/StatCard';
+import { StatCardsSkeleton, TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { AuditCell } from '../common/AuditCell';
@@ -40,7 +48,7 @@ import * as contractsApi from '../../api/contracts';
 import * as categoriesApi from '../../api/payrollCategories';
 import { formatMoney } from '../../utils/format';
 import { USE_MOCKS } from '../../api/client';
-import { TrendingUp, Plus, User as UserIcon, Filter, Search, X, Settings } from 'lucide-react';
+import { TrendingUp, Plus, User as UserIcon, Search, Settings, Eye } from 'lucide-react';
 import { CategoryCardVisibilityDialog } from '../common/CategoryCardVisibilityDialog';
 import * as cardVisibilityApi from '../../api/categoryCardVisibility';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -139,7 +147,7 @@ const CATEGORY_COLORS = [
 
 export function Increase() {
   const { t } = useI18n();
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
   // Permission gates per the matrix in Settings → User Management → Permissions.
   // A role with V-only on 'increase' will hide the Add button and per-row
   // Edit / Delete actions; the page still renders the read-only table.
@@ -160,17 +168,19 @@ export function Increase() {
    *  Used by the fdc_severance flow to auto-fill the Effective Date with
    *  the contract's natural expiry — HR can still override. */
   const [contractEndByEmpId, setContractEndByEmpId] = useState<Record<string, string>>({});
-  const [, setLoading] = useState<boolean>(!USE_MOCKS);
+  const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   // V154 — per-tenant per-page category card hide-list. Drives the
   // gear-icon dialog AND filters the visible card strip below.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hiddenCategoryCodes, setHiddenCategoryCodes] = useState<Set<string>>(new Set());
   const [detailsTarget, setDetailsTarget] = useState<SalaryIncrease | null>(null);
-  const [dateFilter] = useState<{ start: string | null; end: string | null }>({
-    start: null,
-    end: null,
-  });
+  // Effective-date range filter (From / To on the filter strip). Was a
+  // frozen `useState` with no setter, so the filtering below never ran.
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const dateFilter = { start: dateFrom || null, end: dateTo || null };
   // Header filters — Type picker + free-text search, mirrors the
   // Salary Deduction page so HR uses the same shape on both screens.
   // Search matches against the employee's name / empNo / position and
@@ -206,14 +216,21 @@ export function Increase() {
       setIncreases([...mockIncreases]);
       return;
     }
+    setLoadError(null);
     try {
       // apiJson returns undefined on module-disabled — default to []
       // so we don't crash on `.map`.
       const res = await increasesApi.list({ size: 500 });
       setIncreases((res?.data ?? []).map(adaptApiIncrease));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load salary increases');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load salary increases');
     }
+  };
+
+  const reloadIncreases = async () => {
+    setLoading(true);
+    await loadIncreases();
+    setLoading(false);
   };
 
   const loadEmployees = async () => {
@@ -522,7 +539,16 @@ export function Increase() {
 
   useEffect(() => {
     increasePagination.resetPage();
-  }, [dateFilter, typeFilter, searchQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo, typeFilter, searchQuery]);
+
+  const hasActiveFilters = typeFilter !== 'all' || !!searchQuery.trim() || !!dateFrom || !!dateTo;
+  const clearFilters = () => {
+    setTypeFilter('all');
+    setSearchQuery('');
+    setDateFrom('');
+    setDateTo('');
+  };
 
   // V154 — load the per-tenant hide-list for this page. Soft-fail
   // (a 403 from a role without `increase.view` just leaves every
@@ -535,57 +561,11 @@ export function Increase() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold">{t('page.increase.title')}</h1>
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search employee or reason…"
-              className="h-9 pl-8 pr-7 border rounded-md text-sm bg-white w-56"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                aria-label="Clear search"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Filter className="h-4 w-4 text-gray-500" />
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="h-9 px-2 border rounded-md text-sm bg-white"
-            >
-              <option value="all">All Types</option>
-              {earningCategories.map((c) => (
-                <option key={c.id} value={c.code}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-            {(typeFilter !== 'all' || searchQuery) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setTypeFilter('all'); setSearchQuery(''); }}
-                className="h-9 px-2"
-              >
-                <X className="h-3.5 w-3.5 mr-1" />
-                Clear
-              </Button>
-            )}
-          </div>
+        <div className="flex gap-2 items-center shrink-0">
           {canAdd && (
             <Button
               variant="outline"
@@ -613,7 +593,7 @@ export function Increase() {
               {isMultiTargetMode ? (
                 <div className="space-y-2">
                   <Label>
-                    Apply to employees
+                    Apply to employees <span className="text-red-500">*</span>
                     <span className="ml-2 text-xs font-normal text-gray-500">
                       ({multiEmployeeIds.length} selected)
                     </span>
@@ -709,7 +689,7 @@ export function Increase() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Label>Employee</Label>
+                  <Label>Employee <span className="text-red-500">*</span></Label>
                   {/* Searchable picker — same UX as Manager/Lead and the
                       Member picker. Supports name / empNo / position search. */}
                   <SearchablePicker
@@ -745,50 +725,49 @@ export function Increase() {
                 </div>
               )}
               <div className="space-y-2">
-                <Label>Type</Label>
-                <select
-                  className="w-full px-3 py-2 border rounded-md"
-                  value={newType}
-                  onChange={(e) => handleTypeChange(e.target.value)}
-                >
-                  <option value="">Select type…</option>
-                  {earningCategories.map((c) => (
-                    <option key={c.id} value={c.code}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+                <Label>Type <span className="text-red-500">*</span></Label>
+                <Select value={newType || undefined} onValueChange={handleTypeChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select type…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {earningCategories.map((c) => (
+                      <SelectItem key={c.id} value={c.code}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>{newUnit === 'day' ? 'Days' : 'Amount'}</Label>
-                  <Input
-                    type="number"
-                    step={newUnit === 'day' ? '0.5' : '0.01'}
+                  <Label>{newUnit === 'day' ? 'Days' : 'Amount'} <span className="text-red-500">*</span></Label>
+                  <NumericInput
+                    decimals={2}
                     placeholder={newUnit === 'day' ? '7.5' : '500'}
                     value={newAmount}
-                    onChange={(e) => setNewAmount(e.target.value)}
+                    onChange={setNewAmount}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Unit</Label>
-                  <select
-                    className="w-full px-3 py-2 border rounded-md"
-                    value={newUnit}
-                    onChange={(e) => setNewUnit(e.target.value as 'amount' | 'percentage' | 'day')}
-                  >
-                    <option value="amount">Fixed Amount ($)</option>
-                    <option value="percentage">Percentage (%)</option>
-                    <option value="day">Day(s)</option>
-                  </select>
+                  <Select value={newUnit} onValueChange={(v) => setNewUnit(v as 'amount' | 'percentage' | 'day')}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="amount">Fixed Amount ($)</SelectItem>
+                      <SelectItem value="percentage">Percentage (%)</SelectItem>
+                      <SelectItem value="day">Day(s)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Effective Date</Label>
-                <Input
-                  type="date"
-                  value={newEffectiveDate}
-                  onChange={(e) => setNewEffectiveDate(e.target.value)}
+                <Label>Effective Date <span className="text-red-500">*</span></Label>
+                <DateInput
+                  value={newEffectiveDate || null}
+                  onChange={(v) => setNewEffectiveDate(v ?? '')}
+                  clearable={false}
+                  className="w-full"
                 />
               </div>
               {/* Recurrence — drives whether the row affects only one
@@ -826,7 +805,7 @@ export function Increase() {
                 </div>
                 {isFdcSeverance && (
                   <p className="text-xs text-amber-700">
-                    5% Severance is paid <strong>once</strong> on the natural expiry of the FDC contract — Effective Date is locked to the contract's end date.
+                    5% Severance is paid <strong>once</strong> on the natural expiry of the FDC contract — Effective Date defaults to the contract's end date (you can still change it).
                   </p>
                 )}
                 {newRecurrence === 'once' && (newType === 'basic' || newType === 'salary' || newType === 'base') && (
@@ -845,11 +824,11 @@ export function Increase() {
                   <Label>
                     Effective Until <span className="text-xs text-gray-500 font-normal">(blank = open-ended)</span>
                   </Label>
-                  <Input
-                    type="date"
-                    value={newEffectiveUntil}
+                  <DateInput
+                    value={newEffectiveUntil || null}
                     min={newEffectiveDate || undefined}
-                    onChange={(e) => setNewEffectiveUntil(e.target.value)}
+                    onChange={(v) => setNewEffectiveUntil(v ?? '')}
+                    className="w-full"
                   />
                 </div>
               )}
@@ -864,10 +843,13 @@ export function Increase() {
                   onChange={(e) => setNewReason(e.target.value)}
                 />
               </div>
-              <Button onClick={handleAddIncrease} className="w-full" disabled={submitting}>
-                {submitting ? 'Adding…' : 'Add Increase'}
-              </Button>
             </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
+              <Button onClick={handleAddIncrease} disabled={submitting}>
+                {submitting ? 'Creating…' : 'Create Increase'}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>}
         </div>
@@ -877,16 +859,19 @@ export function Increase() {
           Categories settings. Layout mirrors the Attendance page's
           summary strip — compact p-4 body, icon-left + big number right,
           label below. */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        {earningCategories.length === 0 && (
-          <Card className="col-span-full">
-            <CardContent className="py-6 text-center text-sm text-gray-500">
-              No earning categories configured. Add one under{' '}
-              <strong>Settings → Payroll Categories</strong> to start
-              tracking increases here.
-            </CardContent>
-          </Card>
-        )}
+      {earningCategories.length === 0 && (
+        <Card>
+          <CardContent className="py-6 text-center text-sm text-gray-500">
+            No earning categories configured. Add one under{' '}
+            <strong>Settings → Payroll Categories</strong> to start
+            tracking increases here.
+          </CardContent>
+        </Card>
+      )}
+      {loading && increases.length === 0 && earningCategories.length > 0 ? (
+        <StatCardsSkeleton cards={Math.min(earningCategories.length, 6)} className="stat-strip stat-cols-5" />
+      ) : earningCategories.length > 0 && (
+      <div className="stat-strip stat-cols-5">
         {earningCategories
           .filter((cat) => !hiddenCategoryCodes.has(cat.code))
           .map((cat) => {
@@ -899,23 +884,55 @@ export function Increase() {
             .filter((i) => (i.unit ?? (i.isPercentage ? 'percentage' : 'amount')) === 'amount')
             .reduce((sum, i) => sum + i.amount, 0);
           return (
-            <Card key={cat.id} className="border-gray-200">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <TrendingUp className="h-5 w-5 text-green-600" />
-                  <span className="text-2xl font-bold text-green-600">{count}</span>
-                </div>
-                <p className="text-xs font-medium text-gray-700 truncate" title={cat.label}>{cat.label}</p>
-                <p className="text-[11px] text-gray-500 truncate">
-                  {total > 0 ? `$${formatMoney(total)} total` : 'No entries yet'}
-                </p>
-              </CardContent>
-            </Card>
+            <StatCard
+              key={cat.id}
+              label={cat.label}
+              value={count}
+              hint={total > 0 ? `$${formatMoney(total)} total in flat-amount rows` : 'No entries yet'}
+              icon={TrendingUp}
+              tone="green"
+            />
           );
         })}
       </div>
+      )}
 
       <Card>
+        <CardHeader>
+          <div className="filter-strip">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search employee or reason…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
+            </div>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              <option value="all">Type : All</option>
+              {earningCategories.map((c) => (
+                <option key={c.id} value={c.code}>
+                  Type : {c.label}
+                </option>
+              ))}
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            {hasActiveFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
+          </div>
+        </CardHeader>
         {/* Default padding, not p-0 — the bordered scroller needs the
             side gutter to read as an inset panel (see Items). */}
         <CardContent>
@@ -938,12 +955,12 @@ export function Increase() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredIncreases.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center text-sm text-gray-500 py-8">
-                    No salary increases recorded.
-                  </TableCell>
-                </TableRow>
+              {loading && increases.length === 0 ? (
+                <TableBodySkeletonRows rows={6} columns={10} />
+              ) : loadError && increases.length === 0 ? (
+                <ListError colSpan={10} message={loadError} onRetry={() => void reloadIncreases()} />
+              ) : filteredIncreases.length === 0 && (
+                <ListEmpty colSpan={10} noun="salary increases" filtered={hasActiveFilters} />
               )}
               {increasePagination.paginatedItems.map((increase) => {
                 const employee = employees.find(
@@ -989,12 +1006,14 @@ export function Increase() {
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
-                        size="sm"
+                        size="icon"
                         variant="ghost"
-                        className="h-7"
+                        className="h-7 w-7"
+                        title="View"
+                        aria-label="View"
                         onClick={(e) => { e.stopPropagation(); setDetailsTarget(increase); }}
                       >
-                        View
+                        <Eye className="h-3.5 w-3.5" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -1063,7 +1082,7 @@ export function Increase() {
                   </DetailRow>
                   <DetailRow label="Approved At">
                     {detailsTarget.approvedAt
-                      ? format(new Date(detailsTarget.approvedAt), 'MMM dd, yyyy HH:mm')
+                      ? formatDateTime(detailsTarget.approvedAt)
                       : '—'}
                   </DetailRow>
                 </div>
