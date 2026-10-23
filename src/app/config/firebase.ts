@@ -17,8 +17,10 @@
  * Push keypair; the private half stays in Firebase).
  */
 
-import { getApps, getApp, initializeApp, FirebaseApp } from 'firebase/app';
-import { getMessaging, isSupported, Messaging } from 'firebase/messaging';
+// Type-only: these are erased at build, so naming them here costs
+// nothing at runtime. The SDK itself is loaded on demand below.
+import type { FirebaseApp } from 'firebase/app';
+import type { Messaging } from 'firebase/messaging';
 
 export const firebaseConfig = {
   apiKey:            'AIzaSyBqXgGrA2YYK1HDURhXywwZKtdYLqYCoTM',
@@ -39,8 +41,15 @@ export const FCM_VAPID_PUBLIC_KEY =
   ?? '';
 
 /** Idempotent Firebase app bootstrap. Safe to call from every hook
- *  invocation — subsequent calls return the already-initialised app. */
-export function ensureFirebaseApp(): FirebaseApp {
+ *  invocation — subsequent calls return the already-initialised app.
+ *
+ *  The SDK is imported dynamically. Layout mounts the FCM hook on
+ *  every authenticated page, and a static import put the whole
+ *  Firebase bundle in the entry chunk — downloaded by everyone,
+ *  including people sitting on the login page, to support a feature
+ *  that only runs once notification permission has been granted. */
+export async function ensureFirebaseApp(): Promise<FirebaseApp> {
+  const { getApps, getApp, initializeApp } = await import('firebase/app');
   return getApps().length ? getApp() : initializeApp(firebaseConfig);
 }
 
@@ -50,8 +59,9 @@ export function ensureFirebaseApp(): FirebaseApp {
  *  so callers can silently skip registration rather than crash. */
 export async function getFcmMessaging(): Promise<Messaging | null> {
   try {
+    const { getMessaging, isSupported } = await import('firebase/messaging');
     if (!(await isSupported())) return null;
-    return getMessaging(ensureFirebaseApp());
+    return getMessaging(await ensureFirebaseApp());
   } catch {
     return null;
   }

@@ -16,7 +16,6 @@
  */
 
 import { useEffect } from 'react';
-import { getToken, onMessage } from 'firebase/messaging';
 import { toast } from 'sonner';
 import { FCM_VAPID_PUBLIC_KEY, getFcmMessaging } from '../config/firebase';
 import { registerFcmToken } from '../api/fcm';
@@ -70,6 +69,11 @@ async function registerCurrentDevice(): Promise<void> {
 
   const messaging = await getFcmMessaging();
   if (!messaging) return;
+
+  // Loaded here rather than at module scope: by this line the user
+  // is signed in, opted in, and has granted permission, so the SDK
+  // is about to be used. See ensureFirebaseApp().
+  const { getToken, onMessage } = await import('firebase/messaging');
 
   let swReg: ServiceWorkerRegistration | undefined;
   try {
