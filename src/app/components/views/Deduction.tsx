@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Card, CardContent } from '../ui/card';
+import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { AuditCell } from '../common/AuditCell';
@@ -26,6 +26,14 @@ import {
   DialogTrigger,
 } from '../ui/dialog';
 import { Switch } from '../ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import { StatCard } from '../common/StatCard';
+import { StatCardsSkeleton, TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { useConfirm } from '../../context/ConfirmContext';
+import { statusBadgeClass } from '../../utils/statusTones';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { mockDeductions } from '../../data/timeworkData';
@@ -35,11 +43,11 @@ import { Employee } from '../../types/hrms';
 import * as deductionsApi from '../../api/deductions';
 import * as employeesApi from '../../api/employees';
 import { USE_MOCKS } from '../../api/client';
-import { Minus, Plus, Pencil, Save, Filter, X, CheckSquare, Search, Settings, User as UserIcon } from 'lucide-react';
+import { Minus, Plus, Pencil, Save, X, CheckSquare, Search, Settings, Eye, User as UserIcon } from 'lucide-react';
 import { CategoryCardVisibilityDialog } from '../common/CategoryCardVisibilityDialog';
 import * as cardVisibilityApi from '../../api/categoryCardVisibility';
 import { Checkbox } from '../ui/checkbox';
-import { format, isWithinInterval, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
@@ -130,7 +138,9 @@ export function Deduction() {
   const canRemove = canDelete('deduction');
   const [deductions, setDeductions] = useState<SalaryDeduction[]>(USE_MOCKS ? mockDeductions : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
-  const [, setLoading] = useState<boolean>(!USE_MOCKS);
+  const confirm = useConfirm();
+  const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   // V154 — per-page category card hide-list. Drives the gear-icon
   // dialog and filters the visible card strip below.
@@ -142,10 +152,12 @@ export function Deduction() {
    *  the Increase page's pattern: the row carries one View Details
    *  button and Edit / Stop live in the dialog footer. */
   const [detailsTarget, setDetailsTarget] = useState<SalaryDeduction | null>(null);
-  const [dateFilter] = useState<{ start: string | null; end: string | null }>({
-    start: null,
-    end: null,
-  });
+  /** From / To on the filter strip — matched against each row's
+   *  startDate (yyyy-MM-dd strings compare correctly as text). */
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  /** Edit dialog's Amount as typed — NumericInput works on strings. */
+  const [editAmountText, setEditAmountText] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | SalaryDeduction['status']>('all');
   // Free-text search — matches the employee (name / empNo / position) and
@@ -210,9 +222,16 @@ export function Deduction() {
       // renders blank instead of crashing on `.map`.
       const res = await deductionsApi.list({ size: 500 });
       setDeductions((res?.data ?? []).map(adaptApiDeduction));
+      setLoadError(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load deductions');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load deductions');
     }
+  };
+
+  const reload = async () => {
+    setLoading(true);
+    await loadDeductions();
+    setLoading(false);
   };
 
   const loadEmployees = async () => {
@@ -399,20 +418,13 @@ export function Deduction() {
 
   let filteredDeductions = deductions;
 
-  // Apply date filter based on startDate
-  if (dateFilter.start || dateFilter.end) {
+  // From / To filter on startDate. Both sides are yyyy-MM-dd, so a plain
+  // string compare is exact and avoids any timezone shift.
+  if (dateFrom || dateTo) {
     filteredDeductions = filteredDeductions.filter(ded => {
-      const dedDate = parseISO(ded.startDate);
-      if (dateFilter.start && dateFilter.end) {
-        return isWithinInterval(dedDate, {
-          start: parseISO(dateFilter.start),
-          end: parseISO(dateFilter.end),
-        });
-      } else if (dateFilter.start) {
-        return dedDate >= parseISO(dateFilter.start);
-      } else if (dateFilter.end) {
-        return dedDate <= parseISO(dateFilter.end);
-      }
+      const d = (ded.startDate ?? '').slice(0, 10);
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
       return true;
     });
   }
@@ -446,7 +458,7 @@ export function Deduction() {
   useEffect(() => {
     deductionsPagination.resetPage();
     setSelectedIds(new Set());
-  }, [dateFilter, typeFilter, statusFilter, searchQuery]);
+  }, [dateFrom, dateTo, typeFilter, statusFilter, searchQuery]);
 
   // V154 — load per-tenant hide-list. Soft-fail leaves all cards
   // visible (the default-shown contract).
@@ -482,6 +494,17 @@ export function Deduction() {
 
   const handleBulkUpdateStatus = async () => {
     if (selectedIds.size === 0) return;
+    if (bulkStatus === 'cancelled') {
+      const n = selectedIds.size;
+      const ok = await confirm({
+        title: `Cancel ${n} deduction${n > 1 ? 's' : ''}?`,
+        message: 'Cancelled deductions stop applying to payroll.',
+        confirmLabel: 'Cancel deductions',
+        cancelLabel: 'Keep',
+        variant: 'destructive',
+      });
+      if (!ok) return;
+    }
     if (USE_MOCKS) {
       setDeductions(prev => prev.map(d => (selectedIds.has(d.id) ? { ...d, status: bulkStatus } : d)));
       toast.success(`Updated ${selectedIds.size} deduction(s) to ${bulkStatus}`);
@@ -504,68 +527,44 @@ export function Deduction() {
     setTypeFilter('all');
     setStatusFilter('all');
     setSearchQuery('');
+    setDateFrom('');
+    setDateTo('');
   };
 
-  const hasActiveFilters = typeFilter !== 'all' || statusFilter !== 'all' || !!searchQuery;
+  const hasActiveFilters = typeFilter !== 'all' || statusFilter !== 'all' || !!searchQuery
+    || !!dateFrom || !!dateTo;
+
+  const handleStop = async (target: SalaryDeduction) => {
+    const ok = await confirm({
+      title: 'Stop this deduction?',
+      message: `"${target.name}" will be cancelled and no longer apply to payroll.`,
+      confirmLabel: 'Stop',
+      variant: 'destructive',
+    });
+    if (!ok) return;
+    if (USE_MOCKS) {
+      setDeductions(prev => prev.map(d => d.id === target.id ? { ...d, status: 'cancelled' } : d));
+      toast.success(`Stopped "${target.name}"`);
+      setDetailsTarget(null);
+      return;
+    }
+    try {
+      await deductionsApi.setStatus(target.id, 'cancelled');
+      toast.success(`Stopped "${target.name}"`);
+      setDetailsTarget(null);
+      await loadDeductions();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to stop deduction');
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold">{t('page.deduction.title')}</h1>
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search employee or name…"
-              className="h-9 pl-8 pr-7 border rounded-md text-sm bg-white w-56"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                aria-label="Clear search"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Filter className="h-4 w-4 text-gray-500" />
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="h-9 px-2 border rounded-md text-sm bg-white"
-            >
-              <option value="all">All Types</option>
-              {deductionCategories.map((c) => (
-                <option key={c.id} value={c.code}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              className="h-9 px-2 border rounded-md text-sm bg-white"
-            >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            {hasActiveFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9 px-2">
-                <X className="h-3.5 w-3.5 mr-1" />
-                Clear
-              </Button>
-            )}
-          </div>
+        <div className="flex gap-2 items-center shrink-0">
           {canAdd && (
             <Button
               variant="outline"
@@ -593,7 +592,7 @@ export function Deduction() {
               {isMultiTargetMode ? (
                 <div className="space-y-2">
                   <Label>
-                    Apply to employees
+                    Apply to employees <span className="text-red-500">*</span>
                     <span className="ml-2 text-xs font-normal text-gray-500">
                       ({multiEmployeeIds.length} selected)
                     </span>
@@ -665,7 +664,7 @@ export function Deduction() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Label>Employee</Label>
+                  <Label>Employee <span className="text-red-500">*</span></Label>
                   {/* Same searchable picker as Salary Increase / Manager-Lead.
                       Inactive employees are filtered out of the list. */}
                   <SearchablePicker
@@ -689,21 +688,22 @@ export function Deduction() {
                 </div>
               )}
               <div className="space-y-2">
-                <Label>Deduction Type</Label>
-                <select
-                  className="w-full px-3 py-2 border rounded-md"
-                  value={newType}
-                  onChange={(e) => setNewType(e.target.value)}
-                >
-                  {deductionCategories.map((c) => (
-                    <option key={c.id} value={c.code}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+                <Label>Deduction Type <span className="text-red-500">*</span></Label>
+                <Select value={newType} onValueChange={setNewType}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select type…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {deductionCategories.map((c) => (
+                      <SelectItem key={c.id} value={c.code}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
-                <Label>Name</Label>
+                <Label>Name <span className="text-red-500">*</span></Label>
                 <Input
                   placeholder="e.g., Health Insurance"
                   value={newName}
@@ -733,36 +733,38 @@ export function Deduction() {
               )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>{newUnit === 'day' ? 'Days' : 'Amount'}</Label>
-                  <Input
-                    type="number"
-                    step={newUnit === 'day' ? '0.5' : '0.01'}
+                  <Label>{newUnit === 'day' ? 'Days' : 'Amount'} <span className="text-red-500">*</span></Label>
+                  <NumericInput
+                    decimals={2}
                     placeholder={newUnit === 'day' ? '7.5' : '100'}
                     value={newAmount}
-                    onChange={(e) => setNewAmount(e.target.value)}
+                    onChange={setNewAmount}
                     disabled={isFormulaDrivenType && !overrideFormula}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Unit</Label>
-                  <select
-                    className="w-full px-3 py-2 border rounded-md disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  <Select
                     value={isFormulaDrivenType ? 'amount' : newUnit}
-                    onChange={(e) => setNewUnit(e.target.value as 'amount' | 'percentage' | 'day')}
+                    onValueChange={(v) => setNewUnit(v as 'amount' | 'percentage' | 'day')}
                     disabled={isFormulaDrivenType}
                   >
-                    <option value="amount">Fixed Amount ($)</option>
-                    <option value="percentage">Percentage (%)</option>
-                    <option value="day">Day(s)</option>
-                  </select>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="amount">Fixed Amount ($)</SelectItem>
+                      <SelectItem value="percentage">Percentage (%)</SelectItem>
+                      <SelectItem value="day">Day(s)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Start Date</Label>
-                <Input
-                  type="date"
-                  value={newStartDate}
-                  onChange={(e) => setNewStartDate(e.target.value)}
+                <Label>Start Date <span className="text-red-500">*</span></Label>
+                <DateInput
+                  value={newStartDate || null}
+                  onChange={(v) => setNewStartDate(v ?? '')}
                 />
               </div>
               {/* Recurrence picker — same two-button UX as Add Salary
@@ -800,18 +802,18 @@ export function Deduction() {
                   <Label>
                     End Date <span className="text-xs text-gray-500 font-normal">(blank = open-ended)</span>
                   </Label>
-                  <Input
-                    type="date"
-                    value={newEndDate}
+                  <DateInput
+                    value={newEndDate || null}
                     min={newStartDate || undefined}
-                    onChange={(e) => setNewEndDate(e.target.value)}
+                    onChange={(v) => setNewEndDate(v ?? '')}
                   />
                 </div>
               )}
-              <Button onClick={handleAddDeduction} className="w-full">
-                Add Deduction
-              </Button>
             </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleAddDeduction}>Create Deduction</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>}
         </div>
@@ -820,16 +822,19 @@ export function Deduction() {
       {/* One summary card per enabled Deduction category from Payroll
           Categories settings. Counts only currently-active rows.
           Layout matches the Attendance summary strip. */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        {deductionCategories.length === 0 && (
-          <Card className="col-span-full">
-            <CardContent className="py-6 text-center text-sm text-gray-500">
-              No deduction categories configured. Add one under{' '}
-              <strong>Settings → Payroll Categories</strong> to start
-              tracking deductions here.
-            </CardContent>
-          </Card>
-        )}
+      {deductionCategories.length === 0 && (
+        <Card>
+          <CardContent className="py-6 text-center text-sm text-gray-500">
+            No deduction categories configured. Add one under{' '}
+            <strong>Settings → Payroll Categories</strong> to start
+            tracking deductions here.
+          </CardContent>
+        </Card>
+      )}
+      {loading && deductions.length === 0 && deductionCategories.length > 0 ? (
+        <StatCardsSkeleton cards={Math.min(deductionCategories.length, 6)} className="stat-strip stat-cols-5" />
+      ) : deductionCategories.length > 0 && (
+      <div className="stat-strip stat-cols-5">
         {deductionCategories
           .filter((cat) => !hiddenCategoryCodes.has(cat.code))
           .map((cat) => {
@@ -841,21 +846,18 @@ export function Deduction() {
             .filter((d) => !d.isPercentage)
             .reduce((sum, d) => sum + d.amount, 0);
           return (
-            <Card key={cat.id} className="border-gray-200">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <Minus className="h-5 w-5 text-red-600" />
-                  <span className="text-2xl font-bold text-red-600">{count}</span>
-                </div>
-                <p className="text-xs font-medium text-gray-700 truncate" title={cat.label}>{cat.label}</p>
-                <p className="text-[11px] text-gray-500 truncate">
-                  {total > 0 ? `$${formatMoney(total)}/mo` : 'No active rows'}
-                </p>
-              </CardContent>
-            </Card>
+            <StatCard
+              key={cat.id}
+              label={cat.label}
+              value={count}
+              hint={total > 0 ? `$${formatMoney(total)}/mo in active flat-amount rows` : 'No active rows'}
+              icon={Minus}
+              tone="red"
+            />
           );
         })}
       </div>
+      )}
 
       {/* Bulk-action toolbar floats above the Card when rows are
           selected. Lives outside the Card now that the CardHeader is
@@ -891,6 +893,52 @@ export function Deduction() {
       )}
 
       <Card>
+        <CardHeader>
+          <div className="filter-strip">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search employee or name…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
+            </div>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              <option value="all">Type : All</option>
+              {deductionCategories.map((c) => (
+                <option key={c.id} value={c.code}>
+                  Type : {c.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              <option value="all">Status : All</option>
+              <option value="active">Status : Active</option>
+              <option value="completed">Status : Completed</option>
+              <option value="cancelled">Status : Cancelled</option>
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            {hasActiveFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
+          </div>
+        </CardHeader>
         {/* Default padding, not p-0 — the bordered scroller needs the
             side gutter to read as an inset panel (see Items). */}
         <CardContent>
@@ -920,13 +968,13 @@ export function Deduction() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredDeductions.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={11} className="text-center text-sm text-gray-500 py-8">
-                    No deductions recorded.
-                  </TableCell>
-                </TableRow>
-              )}
+              {loading && deductions.length === 0 ? (
+                <TableBodySkeletonRows rows={6} columns={11} />
+              ) : loadError && deductions.length === 0 ? (
+                <ListError colSpan={11} message={loadError} onRetry={() => void reload()} />
+              ) : filteredDeductions.length === 0 ? (
+                <ListEmpty colSpan={11} noun="deductions" filtered={hasActiveFilters} />
+              ) : null}
               {deductionsPagination.paginatedItems.map((deduction) => {
                 const employee = employees.find(
                   (e) => e.id === deduction.employeeId || e.apiId === deduction.employeeId,
@@ -965,7 +1013,7 @@ export function Deduction() {
                       {deduction.endDate ? formatDate(deduction.endDate) : 'Ongoing'}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={deduction.status === 'active' ? 'default' : 'secondary'}>
+                      <Badge variant="outline" className={`capitalize ${statusBadgeClass(deduction.status)}`}>
                         {deduction.status}
                       </Badge>
                     </TableCell>
@@ -983,12 +1031,14 @@ export function Deduction() {
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
-                        size="sm"
+                        size="icon"
                         variant="ghost"
-                        className="h-7"
+                        className="h-7 w-7"
+                        title="View details"
+                        aria-label="View details"
                         onClick={(e) => { e.stopPropagation(); setDetailsTarget(deduction); }}
                       >
-                        View
+                        <Eye className="h-4 w-4" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -1034,7 +1084,9 @@ export function Deduction() {
                   <div className="flex items-center gap-2">
                     <UserIcon className="h-3.5 w-3.5 text-gray-400" />
                     <span className="text-sm font-medium">{employee?.name ?? '—'}</span>
-                    {employee?.empNo && <span className="text-xs text-gray-500">· {employee.empNo}</span>}
+                    {/* The front-end Employee keeps the human empNo on `.id`
+                        (adaptApiEmployee); `.empNo` was never set. */}
+                    {employee?.id && <span className="text-xs text-gray-500">· {employee.id}</span>}
                   </div>
                 </DetailRow>
                 <DetailRow label="Name">{detailsTarget.name}</DetailRow>
@@ -1051,7 +1103,7 @@ export function Deduction() {
                   </span>
                 </DetailRow>
                 <DetailRow label="Status">
-                  <Badge variant={detailsTarget.status === 'active' ? 'default' : 'secondary'}>
+                  <Badge variant="outline" className={`capitalize ${statusBadgeClass(detailsTarget.status)}`}>
                     {detailsTarget.status}
                   </Badge>
                 </DetailRow>
@@ -1087,6 +1139,7 @@ export function Deduction() {
                 onClick={() => {
                   setEditTarget(detailsTarget);
                   setEditForm({ ...detailsTarget });
+                  setEditAmountText(String(detailsTarget.amount ?? ''));
                   setDetailsTarget(null);
                 }}
               >
@@ -1096,24 +1149,9 @@ export function Deduction() {
             {canRemove && detailsTarget && (
               <Button
                 variant="outline"
+                className="text-red-600 hover:text-red-700"
                 disabled={detailsTarget.status !== 'active'}
-                onClick={async () => {
-                  const target = detailsTarget;
-                  if (USE_MOCKS) {
-                    setDeductions(prev => prev.map(d => d.id === target.id ? { ...d, status: 'cancelled' } : d));
-                    toast.success(`Stopped "${target.name}"`);
-                    setDetailsTarget(null);
-                    return;
-                  }
-                  try {
-                    await deductionsApi.setStatus(target.id, 'cancelled');
-                    toast.success(`Stopped "${target.name}"`);
-                    setDetailsTarget(null);
-                    await loadDeductions();
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : 'Failed to stop deduction');
-                  }
-                }}
+                onClick={() => void handleStop(detailsTarget)}
               >
                 Stop
               </Button>
@@ -1158,45 +1196,54 @@ export function Deduction() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Type</Label>
-                    <select
+                    <Select
                       value={editForm.type}
-                      onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}
-                      className="w-full h-9 px-3 border rounded-md text-sm"
+                      onValueChange={(v) => setEditForm({ ...editForm, type: v })}
                     >
-                      {/* Keep the historical value visible even if its category was later disabled. */}
-                      {!deductionCategories.some((c) => c.code === editForm.type) && editForm.type && (
-                        <option value={editForm.type}>{editForm.type} (inactive)</option>
-                      )}
-                      {deductionCategories.map((c) => (
-                        <option key={c.id} value={c.code}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* Keep the historical value visible even if its category was later disabled. */}
+                        {!deductionCategories.some((c) => c.code === editForm.type) && editForm.type && (
+                          <SelectItem value={editForm.type}>{editForm.type} (inactive)</SelectItem>
+                        )}
+                        {deductionCategories.map((c) => (
+                          <SelectItem key={c.id} value={c.code}>
+                            {c.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1.5">
                     <Label>Status</Label>
-                    <select
+                    <Select
                       value={editForm.status}
-                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value as SalaryDeduction['status'] })}
-                      className="w-full h-9 px-3 border rounded-md text-sm"
+                      onValueChange={(v) => setEditForm({ ...editForm, status: v as SalaryDeduction['status'] })}
                     >
-                      <option value="active">Active</option>
-                      <option value="completed">Completed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Amount <span className="text-red-500">*</span></Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={editForm.amount}
-                      onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })}
+                    <NumericInput
+                      decimals={2}
+                      value={editAmountText}
+                      onChange={(v) => {
+                        setEditAmountText(v);
+                        setEditForm({ ...editForm, amount: parseFloat(v) || 0 });
+                      }}
                     />
                   </div>
                   <div className="space-y-1.5">
@@ -1217,24 +1264,23 @@ export function Deduction() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label>Start Date</Label>
-                    <Input
-                      type="date"
-                      value={editForm.startDate}
-                      onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                    <Label>Start Date <span className="text-red-500">*</span></Label>
+                    <DateInput
+                      value={editForm.startDate || null}
+                      onChange={(v) => setEditForm({ ...editForm, startDate: v ?? '' })}
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label>End Date</Label>
-                    <Input
-                      type="date"
-                      value={editForm.endDate ?? ''}
-                      onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value || undefined })}
+                    <DateInput
+                      value={editForm.endDate ?? null}
+                      min={editForm.startDate || undefined}
+                      onChange={(v) => setEditForm({ ...editForm, endDate: v || undefined })}
                     />
                   </div>
                 </div>
 
-                <div className="page-header-strip p-3 rounded-md border">
+                <div className="flex items-center justify-between gap-3 p-3 rounded-md border">
                   <div className="space-y-0.5">
                     <p className="font-medium text-sm">Recurring</p>
                     <p className="text-[11px] text-gray-500">
@@ -1258,6 +1304,7 @@ export function Deduction() {
                 if (!editForm) return;
                 if (!editForm.name.trim()) { toast.error('Name is required'); return; }
                 if (!Number.isFinite(editForm.amount) || editForm.amount < 0) { toast.error('Amount must be ≥ 0'); return; }
+                if (!editForm.startDate) { toast.error('Start date is required'); return; }
 
                 if (USE_MOCKS) {
                   setDeductions(prev => prev.map(d => d.id === editForm.id ? editForm : d));
@@ -1301,7 +1348,7 @@ export function Deduction() {
               }}
             >
               <Save className="h-4 w-4 mr-2" />
-              Save Changes
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

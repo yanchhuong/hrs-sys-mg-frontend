@@ -1,12 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
-import { Switch } from '../ui/switch';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { StatCard } from '../common/StatCard';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { useConfirm } from '../../context/ConfirmContext';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
@@ -29,7 +32,7 @@ import {
 } from '../ui/command';
 import { ChevronsUpDown, Check } from 'lucide-react';
 import {
-  Plus, Pencil, Trash2, Save, Search, Users, Building2, MoreHorizontal,
+  Plus, Pencil, Trash2, Search, Users, Building2, MoreHorizontal,
   FolderTree, UserCheck, Info, UserPlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -59,21 +62,27 @@ const TYPE_SHORT: Record<DeptGroupType, string> = {
   team: 'Team',
 };
 
-const COLORS = [
-  { value: 'blue', label: 'Blue', class: 'bg-blue-100 text-blue-800 border-blue-200' },
-  { value: 'green', label: 'Green', class: 'bg-green-100 text-green-800 border-green-200' },
-  { value: 'purple', label: 'Purple', class: 'bg-purple-100 text-purple-800 border-purple-200' },
-  { value: 'orange', label: 'Orange', class: 'bg-orange-100 text-orange-800 border-orange-200' },
-  { value: 'red', label: 'Red', class: 'bg-red-100 text-red-800 border-red-200' },
-  { value: 'teal', label: 'Teal', class: 'bg-teal-100 text-teal-800 border-teal-200' },
-  { value: 'pink', label: 'Pink', class: 'bg-pink-100 text-pink-800 border-pink-200' },
-  { value: 'yellow', label: 'Yellow', class: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-];
+// Colour dot per row. Static class strings — Tailwind only generates
+// classes it can see verbatim in source, so a template-built
+// `bg-${c}-500` rendered no colour at all.
+const COLOR_DOT_CLASS: Record<string, string> = {
+  blue: 'bg-blue-500',
+  green: 'bg-green-500',
+  purple: 'bg-purple-500',
+  orange: 'bg-orange-500',
+  red: 'bg-red-500',
+  teal: 'bg-teal-500',
+  pink: 'bg-pink-500',
+  yellow: 'bg-yellow-500',
+};
+const COLOR_KEYS = Object.keys(COLOR_DOT_CLASS);
 
 // Helper: turn a raw Department (from mocks or API) into the UI's DeptGroup shape.
-// The backend persists {id, name, description, parentId, managerId, type}.
-// employeeCount / isActive / color are presentation-only and get sensible
-// defaults on each load.
+// The backend persists {id, name, description, parentId, managerId, type} only.
+// There is no active flag or colour column, so `isActive` is always true and
+// `color` is a display-only tag derived from the row's position. The old
+// Active switch and Color Tag picker were dropped because nothing they set
+// survived a reload.
 const departmentToDeptGroup = (d: Department, index: number): DeptGroup => {
   const apiType = (d as { type?: string }).type;
   const type: DeptGroupType =
@@ -82,14 +91,12 @@ const departmentToDeptGroup = (d: Department, index: number): DeptGroup => {
     ...d,
     type,
     isActive: true,
-    color: COLORS[index % COLORS.length].value,
+    color: COLOR_KEYS[index % COLOR_KEYS.length],
   };
 };
 
-// Local-only groups — the backend currently does not track sub-team / shift
-// groups, so these stay on mock data even when USE_MOCKS is false. managerId
-// is intentionally blank in the seed so the picker doesn't get pre-loaded
-// with empNos that don't exist in the live roster.
+// Mock-mode-only sample groups. Live mode loads every department / group /
+// team from the API (they share one table since V17) and never shows these.
 const localGroups: DeptGroup[] = [
   {
     id: 'GRP001',
@@ -108,7 +115,7 @@ const localGroups: DeptGroup[] = [
     employeeCount: 0,
     description: 'Night shift workers group',
     type: 'group',
-    isActive: false,
+    isActive: true,
     color: 'orange',
   },
 ];
@@ -134,26 +141,36 @@ interface DepsGroupProps {
       render inside an existing page (e.g. a tab). The Add button moves into
       the first card header instead. */
   embedded?: boolean;
+  /** Called after a create / edit / delete / member move succeeds, so a
+      host page (Employee Settings) can refresh its own KPIs. */
+  onChanged?: () => void;
 }
 
-export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
+export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) {
   const { t } = useI18n();
+  const confirm = useConfirm();
   const { canCreate, canUpdate, canDelete } = useAuth();
   // Departments / Groups live under Settings → Employee Settings.
   const canCreateDept = canCreate('settings');
   const canUpdateDept = canUpdate('settings');
   const canDeleteDept = canDelete('settings');
-  // When USE_MOCKS, seed with the bundled mock departments + local groups.
-  // Otherwise start with just the local-only groups; departments are loaded
-  // from the API in `loadDepartments` below.
-  const [items, setItems] = useState<DeptGroup[]>(USE_MOCKS ? initialDepts : [...localGroups]);
+  // Mock mode seeds the bundled mock departments + sample groups. Live mode
+  // starts empty and loads everything from the API — it used to seed the
+  // two fake mock groups, which flashed before the load and stayed on
+  // screen if the load failed.
+  const [items, setItems] = useState<DeptGroup[]>(USE_MOCKS ? initialDepts : []);
+  const [loading, setLoading] = useState(!USE_MOCKS);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  // Raw API rows keyed by employee UUID — the member-move PUT is a full
+  // replace, so it round-trips the stored record rather than the trimmed
+  // UI shape (which drops attendance-exception / TOS / status fields).
+  const rawEmployeesRef = useRef(new Map<string, employeesApi.Employee>());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DeptGroup | null>(null);
   const [form, setForm] = useState<Omit<DeptGroup, 'id'>>(emptyForm);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'department' | 'group' | 'team'>('all');
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   // Add-member dialog state. When set, opens a picker that lists every
   // employee not already in this dept/group/team and assigns the picked one.
   const [addMemberFor, setAddMemberFor] = useState<DeptGroup | null>(null);
@@ -171,11 +188,15 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
       ]);
       return;
     }
+    setLoading(true);
     try {
       const apiDepts = await departmentsApi.list();
       setItems(apiDepts.map((d, i) => departmentToDeptGroup(d, i)));
+      setLoadError(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load departments');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load departments');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -186,6 +207,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     if (USE_MOCKS) { setEmployees([...mockEmployees]); return; }
     try {
       const res = await employeesApi.list({ size: 500 });
+      rawEmployeesRef.current = new Map(res.content.map(e => [e.id, e]));
       setEmployees(res.content.map(e => ({
         id: e.empNo,
         apiId: e.id,
@@ -246,7 +268,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
   const departments = items.filter(i => i.type === 'department');
   const groups = items.filter(i => i.type === 'group');
   const teams = items.filter(i => i.type === 'team');
-  const activeCount = items.filter(i => i.isActive).length;
+  const isFiltered = !!search.trim() || filterType !== 'all';
   // Live count of employees per department/group/team — drives the Members
   // column and the "X total members" headline. Employees attached to a
   // department that no longer exists (orphaned by a delete with SET NULL)
@@ -404,37 +426,35 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
       }
       await loadDepartments();
       setDialogOpen(false);
+      onChanged?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save department');
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const item = items.find(i => i.id === id);
-    if (!item) {
-      setDeleteConfirm(null);
-      return;
-    }
+  const handleDelete = async (item: DeptGroup) => {
+    const ok = await confirm({
+      title: `Delete this ${TYPE_LABEL[item.type].toLowerCase()}?`,
+      message: `"${item.name}" will be deleted. This action cannot be undone.`,
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (!ok) return;
 
     if (USE_MOCKS) {
-      setItems(items.filter(i => i.id !== id));
-      setDeleteConfirm(null);
+      setItems(prev => prev.filter(i => i.id !== item.id));
       toast.success(`"${item.name}" deleted`);
       return;
     }
 
     try {
-      await departmentsApi.remove(id);
+      await departmentsApi.remove(item.id);
       toast.success(`"${item.name}" deleted`);
       await loadDepartments();
-      setDeleteConfirm(null);
+      onChanged?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete department');
     }
-  };
-
-  const toggleActive = (id: string) => {
-    setItems(items.map(i => i.id === id ? { ...i, isActive: !i.isActive } : i));
   };
 
   /**
@@ -464,6 +484,16 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     );
     const managerId = nextManager !== undefined ? nextManager : (emp.managerId ?? null);
 
+    if (!newDeptId) {
+      const ok = await confirm({
+        title: `Remove ${emp.name} from this ${addMemberFor ? TYPE_LABEL[addMemberFor.type].toLowerCase() : 'unit'}?`,
+        message: `${emp.name} will no longer belong to "${addMemberFor?.name ?? ''}".`,
+        confirmLabel: 'Remove',
+        variant: 'destructive',
+      });
+      if (!ok) return;
+    }
+
     setAddingMemberId(emp.id);
     try {
       if (USE_MOCKS) {
@@ -478,39 +508,54 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
         return;
       }
       // Backend's PUT /employees/{id} overwrites every field, so round-trip
-      // the existing record with only departmentId changed.
-      await employeesApi.update(targetEmployeeId, {
-        empNo: emp.id,
-        name: emp.name,
-        khmerName: emp.khmerName,
-        email: emp.email,
-        position: emp.position,
+      // the stored record with only departmentId / managerId changed. Same
+      // field list as Employees.tsx's quick-edit save. The body used to be
+      // built from the trimmed UI shape, which never carried
+      // attendanceYn / the Long-term Exception dates / decouple /
+      // claimSpouse / resignDate and collapsed status to active|inactive,
+      // so a department move wiped them.
+      const raw = rawEmployeesRef.current.get(targetEmployeeId);
+      if (!raw) {
+        toast.error('Could not locate the employee record to update');
+        return;
+      }
+      await employeesApi.update(raw.id, {
+        empNo: raw.empNo,
+        name: raw.name,
+        khmerName: raw.khmerName ?? null,
+        email: raw.email,
+        position: raw.position,
         departmentId: newDeptId,
-        joinDate: emp.joinDate,
-        baseSalary: emp.baseSalary,
+        joinDate: raw.joinDate,
+        status: raw.status,
+        contactNumber: raw.contactNumber ?? null,
+        baseSalary: raw.baseSalary,
         managerId,
-        gender: emp.gender,
-        dateOfBirth: emp.dateOfBirth,
-        placeOfBirth: emp.placeOfBirth,
-        contactNumber: emp.contactNumber,
-        currentAddress: emp.currentAddress,
-        nffNo: emp.nffNo,
+        gender: raw.gender ?? null,
+        dateOfBirth: raw.dateOfBirth ?? null,
+        placeOfBirth: raw.placeOfBirth ?? null,
+        currentAddress: raw.currentAddress ?? null,
+        nffNo: raw.nffNo ?? null,
         // Full-replace PUT: a missing allowance is coerced to ZERO server-side,
-        // so a department move used to wipe both allowances and marital status.
-        positionAllowance: emp.positionAllowance ?? 0,
-        evaluationAllowance: emp.evaluationAllowance ?? 0,
-        maritalStatus: emp.maritalStatus ?? null,
-        tid: emp.tid,
-        // The comment above says 'round-trip the existing record' — this
-        // list predates V300/V301 and never got them, so moving a
-        // passport holder between departments cleared their ID type and
-        // deleted their visa expiry. Full-replace PUT: omitted = NULL.
-        tidType: emp.tidType ?? null,
-        nationalityType: emp.nationalityType ?? null,
-        visaExpireDate: emp.visaExpireDate ?? null,
-        contractExpireDate: emp.contractExpireDate,
-        resignDate: emp.resignDate,
-        status: emp.status,
+        // and maritalStatus is assigned unconditionally.
+        positionAllowance: raw.positionAllowance ?? 0,
+        evaluationAllowance: raw.evaluationAllowance ?? 0,
+        maritalStatus: raw.maritalStatus ?? null,
+        tid: raw.tid ?? null,
+        // ID trio (V300/V301) round-tripped exactly as stored.
+        tidType: raw.tidType ?? null,
+        nationalityType: raw.nationalityType ?? null,
+        visaExpireDate: raw.visaExpireDate ?? null,
+        contractExpireDate: raw.contractExpireDate ?? null,
+        resignDate: raw.resignDate ?? null,
+        attendanceYn: raw.attendanceYn,
+        attendanceExceptionStartDate: raw.attendanceExceptionStartDate ?? null,
+        attendanceExceptionEndDate: raw.attendanceExceptionEndDate ?? null,
+        attendanceExceptionRemark: raw.attendanceExceptionRemark ?? null,
+        decouple: raw.decouple ?? false,
+        claimSpouse: raw.claimSpouse ?? false,
+      }).then(updated => {
+        rawEmployeesRef.current.set(updated.id, updated);
       });
       // Optimistic update so the Members count refreshes immediately.
       setEmployees(prev => prev.map(e =>
@@ -521,6 +566,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
       toast.success(newDeptId
         ? `${emp.name} moved to "${targetDept?.name ?? newDeptId}"`
         : `${emp.name} removed`);
+      onChanged?.();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to update member');
     } finally {
@@ -571,7 +617,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
     <div className="space-y-6">
       {/* Page header — hidden when embedded in another page's tab */}
       {!embedded && (
-        <div className="flex items-center justify-between">
+        <div className="page-header-strip">
           <div>
             <h1 className="text-3xl font-bold">{t('page.depsgroup.title')}</h1>
           </div>
@@ -594,94 +640,51 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
 
       {/* Summary Cards — hidden when embedded in Employee Settings, which
           renders its own KPI strip above the tabs. Standalone page keeps
-          the detailed Departments / Groups / Teams / Active breakdown. */}
+          the Departments / Groups / Teams / Members breakdown. */}
       {!embedded && (
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <FolderTree className="h-5 w-5 text-gray-500" />
-              <span className="text-2xl font-bold text-gray-700">{items.length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Total</p>
-            <p className="text-[11px] text-gray-500 truncate">Departments & groups</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <Building2 className="h-5 w-5 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-600">{departments.length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Departments</p>
-            <p className="text-[11px] text-gray-500 truncate">Organizational units</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <Users className="h-5 w-5 text-purple-600" />
-              <span className="text-2xl font-bold text-purple-600">{groups.length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Groups</p>
-            <p className="text-[11px] text-gray-500 truncate">Custom groups</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <UserCheck className="h-5 w-5 text-teal-600" />
-              <span className="text-2xl font-bold text-teal-600">{teams.length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Teams</p>
-            <p className="text-[11px] text-gray-500 truncate">Project / squad teams</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <UserCheck className="h-5 w-5 text-green-600" />
-              <span className="text-2xl font-bold text-green-600">{activeCount}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Active</p>
-            <p className="text-[11px] text-gray-500 truncate">{totalMembers} total members</p>
-          </CardContent>
-        </Card>
-      </div>
+        <div className="stat-strip stat-cols-5">
+          <StatCard label="Total" value={items.length} hint="Departments, groups & teams" icon={FolderTree} tone="blue" />
+          <StatCard label="Departments" value={departments.length} hint="Organizational units" icon={Building2} tone="blue" />
+          <StatCard label="Groups" value={groups.length} hint="Custom groups" icon={Users} tone="purple" />
+          <StatCard label="Teams" value={teams.length} hint="Project / squad teams" icon={UserCheck} tone="green" />
+          <StatCard label="Members" value={totalMembers} hint="Employees assigned to a department, group or team" icon={UserCheck} tone="amber" />
+        </div>
       )}
 
       {/* Filters & Table */}
       <Card>
         <CardHeader>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-base">All Departments & Groups</CardTitle>
-              <CardDescription>{filtered.length} items</CardDescription>
+          <div className="filter-strip">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                placeholder="Search name or description…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-9 pl-7 w-64 text-sm"
+              />
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="pl-9 h-9 w-56"
-                />
-              </div>
-              <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg">
-                {(['all', 'department', 'group', 'team'] as const).map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setFilterType(t)}
-                    className={`px-3 py-1.5 rounded-md text-xs transition-colors ${
-                      filterType === t ? 'bg-white shadow-sm font-medium text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    {t === 'all' ? 'All' : t === 'department' ? 'Departments' : t === 'group' ? 'Groups' : 'Teams'}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <select
+              value={filterType}
+              onChange={e => setFilterType(e.target.value as typeof filterType)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              <option value="all">Type : All</option>
+              <option value="department">Type : Departments</option>
+              <option value="group">Type : Groups</option>
+              <option value="team">Type : Teams</option>
+            </select>
+            {isFiltered && (
+              <Button
+                size="sm" variant="ghost"
+                className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setFilterType('all'); }}
+              >
+                Clear
+              </Button>
+            )}
+            <span className="text-xs text-gray-500 shrink-0">{filtered.length} items</span>
           </div>
         </CardHeader>
         <CardContent>
@@ -694,22 +697,20 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                 <TableHead>Parent</TableHead>
                 <TableHead title="Person In Charge">PIC</TableHead>
                 <TableHead className="text-center">Members</TableHead>
-                <TableHead>Status</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="w-20"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-gray-400">
-                    <FolderTree className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No departments or groups found</p>
-                  </TableCell>
-                </TableRow>
+              {loading && items.length === 0 ? (
+                <TableBodySkeletonRows rows={6} columns={7} />
+              ) : loadError && items.length === 0 ? (
+                <ListError colSpan={7} message={loadError} onRetry={() => void loadDepartments()} />
+              ) : filtered.length === 0 ? (
+                <ListEmpty colSpan={7} noun="departments or groups" filtered={isFiltered} />
               ) : (
                 depsPagination.paginatedItems.map(item => (
-                  <TableRow key={item.id} className={!item.isActive ? 'opacity-50' : ''}>
+                  <TableRow key={item.id}>
                     <TableCell>
                       <div className="flex items-center gap-2.5">
                         {/* Indent + branching arrow per nesting depth so the
@@ -724,14 +725,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                           </span>
                         )}
                         <div className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                          item.color === 'blue' ? 'bg-blue-500' :
-                          item.color === 'green' ? 'bg-green-500' :
-                          item.color === 'purple' ? 'bg-purple-500' :
-                          item.color === 'orange' ? 'bg-orange-500' :
-                          item.color === 'red' ? 'bg-red-500' :
-                          item.color === 'teal' ? 'bg-teal-500' :
-                          item.color === 'pink' ? 'bg-pink-500' :
-                          item.color === 'yellow' ? 'bg-yellow-500' : 'bg-gray-500'
+                          COLOR_DOT_CLASS[item.color] ?? 'bg-gray-500'
                         }`} />
                         <div>
                           <p className="font-medium text-sm">{item.name}</p>
@@ -781,12 +775,6 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                       })()}
                     </TableCell>
                     <TableCell>
-                      <Switch
-                        checked={item.isActive}
-                        onCheckedChange={() => toggleActive(item.id)}
-                      />
-                    </TableCell>
-                    <TableCell>
                       <p className="text-xs text-gray-500 max-w-[200px] truncate">{item.description || '-'}</p>
                     </TableCell>
                     <TableCell>
@@ -813,7 +801,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                             {canDeleteDept && (
                               <DropdownMenuItem
                                 className="text-red-600"
-                                onClick={() => setDeleteConfirm(item.id)}
+                                onClick={() => void handleDelete(item)}
                               >
                                 <Trash2 className="mr-2 h-3.5 w-3.5" />
                                 Delete
@@ -916,7 +904,7 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
 
             {/* Name */}
             <div className="space-y-2">
-              <Label className="text-sm">Name</Label>
+              <Label className="text-sm">Name <span className="text-red-500">*</span></Label>
               <Input
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
@@ -927,35 +915,6 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                 }
                 className="h-9"
               />
-            </div>
-
-            {/* Color */}
-            <div className="space-y-2">
-              <Label className="text-sm">Color Tag</Label>
-              <div className="flex items-center gap-2 flex-wrap">
-                {COLORS.map(c => (
-                  <button
-                    key={c.value}
-                    onClick={() => setForm({ ...form, color: c.value })}
-                    className={`h-7 w-7 rounded-full border-2 transition-transform ${
-                      `bg-${c.value}-500`
-                    } ${
-                      form.color === c.value ? 'scale-125 border-gray-800' : 'border-transparent hover:scale-110'
-                    }`}
-                    style={{
-                      backgroundColor:
-                        c.value === 'blue' ? '#3b82f6' :
-                        c.value === 'green' ? '#22c55e' :
-                        c.value === 'purple' ? '#a855f7' :
-                        c.value === 'orange' ? '#f97316' :
-                        c.value === 'red' ? '#ef4444' :
-                        c.value === 'teal' ? '#14b8a6' :
-                        c.value === 'pink' ? '#ec4899' :
-                        '#eab308'
-                    }}
-                  />
-                ))}
-              </div>
             </div>
 
             {/* Manager/Lead */}
@@ -1004,44 +963,11 @@ export function DepsGroup({ embedded = false }: DepsGroupProps = {}) {
                 className="h-9"
               />
             </div>
-
-            {/* Active Toggle */}
-            <div className="flex items-center justify-between border-t pt-4">
-              <div>
-                <p className="text-sm font-medium">Active</p>
-                <p className="text-xs text-gray-400">Inactive items are hidden from dropdowns</p>
-              </div>
-              <Switch checked={form.isActive} onCheckedChange={v => setForm({ ...form, isActive: v })} />
-            </div>
-
-            {/* Save */}
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleSave}>
-                <Save className="mr-1.5 h-4 w-4" />
-                {editing ? 'Update' : 'Create'}
-              </Button>
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete Confirmation</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete "{items.find(i => i.id === deleteConfirm)?.name}"? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => deleteConfirm && handleDelete(deleteConfirm)}>
-              <Trash2 className="mr-1.5 h-4 w-4" />
-              Delete
-            </Button>
-          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave}>Save</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

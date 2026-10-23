@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Card, CardContent } from '../ui/card';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { StatCard } from '../common/StatCard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   Briefcase, FolderTree, DollarSign, Users, Receipt,
@@ -38,118 +38,103 @@ export function EmployeeSettings() {
   const { t } = useI18n();
   const { isModuleAvailable } = useAuth();
   const [kpis, setKpis] = useState<SettingsKpis>(EMPTY_KPIS);
+  const [tab, setTab] = useState('positions');
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (USE_MOCKS) {
-        // In mock mode the underlying lists aren't fetched — derive what
-        // we can from the seed arrays so the cards aren't all zero.
-        if (!cancelled) {
-          setKpis({
-            totalPositions: new Set(mockEmployees.map(e => e.position).filter(Boolean)).size,
-            positionsAssigned: new Set(mockEmployees.map(e => e.position).filter(Boolean)).size,
-            totalDepartments: mockDepartments.length,
-            totalSalaryRules: 0,
-            unmatchedDeviceUsers: 0,
-          });
-        }
-        return;
-      }
-      try {
-        // v-employee-settings-module-preflight — the unmatched-device
-        // list is gated by the `attendance` module. Tenants without it
-        // (e.g. School System) would 403; preflight so the network tab
-        // stays clean.
-        const unmatchedCall = isModuleAvailable('attendance')
-          ? unmatchedApi.list().catch(() => [])
-          : Promise.resolve([]);
-        const [positions, departments, salaryRules, employeesPage, unmatched] = await Promise.all([
-          positionsApi.list().catch(() => []),
-          departmentsApi.list().catch(() => []),
-          salaryRulesApi.list().catch(() => []),
-          // Page 0 size 1 just to read totalElements for the assigned-positions
-          // count fallback (we don't actually need the rows here).
-          employeesApi.list({ size: 500 }).catch(() => ({ content: [] as employeesApi.Employee[] } as never)),
-          unmatchedCall,
-        ]);
-        if (cancelled) return;
-        const assigned = new Set(
-          ((employeesPage as { content: employeesApi.Employee[] }).content ?? [])
-            .map(e => e.position)
-            .filter((p): p is string => !!p && p.length > 0),
-        ).size;
-        setKpis({
-          totalPositions: positions.length,
-          positionsAssigned: assigned,
-          totalDepartments: departments.length,
-          totalSalaryRules: salaryRules.length,
-          unmatchedDeviceUsers: unmatched.length,
-        });
-      } catch {
-        // Per-call .catch already swallowed individual failures; this catch
-        // is a belt-and-braces against an unexpected rejection.
-      }
-    })();
-    return () => { cancelled = true; };
+  // KPIs used to be fetched once on mount, so they went stale as soon as
+  // a position / department / rule was added or removed in a tab below.
+  // loadKpis now re-runs on tab switch, on window focus, and whenever an
+  // embedded tab reports a change (DepsGroup's onChanged).
+  const reqSeq = useRef(0);
+  const loadKpis = useCallback(async () => {
+    const seq = ++reqSeq.current;
+    if (USE_MOCKS) {
+      // In mock mode the underlying lists aren't fetched — derive what
+      // we can from the seed arrays so the cards aren't all zero.
+      setKpis({
+        totalPositions: new Set(mockEmployees.map(e => e.position).filter(Boolean)).size,
+        positionsAssigned: new Set(mockEmployees.map(e => e.position).filter(Boolean)).size,
+        totalDepartments: mockDepartments.length,
+        totalSalaryRules: 0,
+        unmatchedDeviceUsers: 0,
+      });
+      return;
+    }
+    try {
+      // v-employee-settings-module-preflight — the unmatched-device
+      // list is gated by the `attendance` module. Tenants without it
+      // (e.g. School System) would 403; preflight so the network tab
+      // stays clean.
+      const unmatchedCall = isModuleAvailable('attendance')
+        ? unmatchedApi.list().catch(() => [])
+        : Promise.resolve([]);
+      const [positions, departments, salaryRules, employeesPage, unmatched] = await Promise.all([
+        positionsApi.list().catch(() => []),
+        departmentsApi.list().catch(() => []),
+        salaryRulesApi.list().catch(() => []),
+        // Rows are read only to count the distinct assigned positions.
+        employeesApi.list({ size: 500 }).catch(() => ({ content: [] as employeesApi.Employee[] } as never)),
+        unmatchedCall,
+      ]);
+      // A newer refresh (or unmount) superseded this one.
+      if (seq !== reqSeq.current) return;
+      const assigned = new Set(
+        ((employeesPage as { content: employeesApi.Employee[] }).content ?? [])
+          .map(e => e.position)
+          .filter((p): p is string => !!p && p.length > 0),
+      ).size;
+      setKpis({
+        totalPositions: positions.length,
+        positionsAssigned: assigned,
+        totalDepartments: departments.length,
+        totalSalaryRules: salaryRules.length,
+        unmatchedDeviceUsers: unmatched.length,
+      });
+    } catch {
+      // Per-call .catch already swallowed individual failures; this catch
+      // is a belt-and-braces against an unexpected rejection.
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => { void loadKpis(); }, [loadKpis, tab]);
+  useEffect(() => {
+    const onFocus = () => { void loadKpis(); };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      reqSeq.current++; // drop any in-flight result after unmount
+    };
+  }, [loadKpis]);
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="page-header-strip">
         <h1 className="text-3xl font-bold">{t('page.employeeSettings.title')}</h1>
       </div>
 
       {/* Global KPI cards — mirror the User Management page layout: cards
           first, tab filter below. Each card is a tenant-wide summary of
           the entity managed in the matching tab. */}
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <Briefcase className="h-5 w-5 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-600">{kpis.totalPositions}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Total Positions</p>
-            <p className="text-[11px] text-gray-500 truncate">{kpis.positionsAssigned} assigned</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <FolderTree className="h-5 w-5 text-emerald-600" />
-              <span className="text-2xl font-bold text-emerald-600">{kpis.totalDepartments}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Departments / Groups</p>
-            <p className="text-[11px] text-gray-500 truncate">All units</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <DollarSign className="h-5 w-5 text-amber-600" />
-              <span className="text-2xl font-bold text-amber-600">{kpis.totalSalaryRules}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Salary Rules</p>
-            <p className="text-[11px] text-gray-500 truncate">Tenure brackets</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <Users className="h-5 w-5 text-rose-600" />
-              <span className="text-2xl font-bold text-rose-600">{kpis.unmatchedDeviceUsers}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Device Users</p>
-            <p className="text-[11px] text-gray-500 truncate">Unmatched / pending</p>
-          </CardContent>
-        </Card>
+      <div className="stat-strip stat-cols-4">
+        <StatCard
+          label="Total Positions" value={kpis.totalPositions}
+          hint={`${kpis.positionsAssigned} assigned`} icon={Briefcase} tone="blue"
+        />
+        <StatCard
+          label="Departments / Groups" value={kpis.totalDepartments}
+          hint="All units" icon={FolderTree} tone="green"
+        />
+        <StatCard
+          label="Salary Rules" value={kpis.totalSalaryRules}
+          hint="Tenure brackets" icon={DollarSign} tone="amber"
+        />
+        <StatCard
+          label="Device Users" value={kpis.unmatchedDeviceUsers}
+          hint="Unmatched / pending" icon={Users} tone="red"
+        />
       </div>
 
-      <Tabs defaultValue="positions" className="space-y-6">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="positions">
             <Briefcase className="mr-2 h-4 w-4" />
@@ -174,7 +159,7 @@ export function EmployeeSettings() {
         </TabsContent>
 
         <TabsContent value="departments" className="space-y-4">
-          <DepsGroup embedded />
+          <DepsGroup embedded onChanged={() => { void loadKpis(); }} />
         </TabsContent>
 
         <TabsContent value="salary-rules" className="space-y-4">

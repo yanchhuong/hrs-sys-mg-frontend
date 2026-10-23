@@ -15,11 +15,16 @@ import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import {
   Users, Clock, TimerIcon, FileText, AlertCircle, CheckCircle,
-  RefreshCw, CalendarDays, LayoutDashboard, Wallet, Landmark,
-  ShoppingCart, Gauge, Sparkles, Loader2, TrendingUp, TrendingDown,
+  CalendarDays, LayoutDashboard, Wallet, Landmark,
+  ShoppingCart, Gauge, Sparkles, TrendingUp, TrendingDown,
   GraduationCap, Stethoscope,
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
+import { Skeleton } from '../ui/skeleton';
+import { StatCard } from '../common/StatCard';
+import { StatCardsSkeleton } from '../common/LoadingSkeletons';
+import { ListError } from '../common/ListStates';
+import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
 import { format, differenceInDays, parseISO } from 'date-fns';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { toast } from 'sonner';
@@ -60,10 +65,13 @@ export function Dashboard() {
   const [selected, setSelected] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setLoading(true);
+      setError(null);
       try {
         const list = await dashboardsApi.listCategories();
         if (cancelled) return;
@@ -83,7 +91,7 @@ export function Dashboard() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [attempt]);
 
   const pick = (code: string) => {
     setSelected(code);
@@ -92,21 +100,37 @@ export function Dashboard() {
     }
   };
 
+  // One page title for every category — bundles no longer render their own.
+  const header = (
+    <div className="page-header-strip">
+      <h1 className="text-3xl font-bold">Dashboard</h1>
+    </div>
+  );
+
   if (loading) {
     return (
-      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading dashboards…
+      <div className="space-y-4">
+        {header}
+        <BundleSkeleton />
       </div>
     );
   }
   if (error) {
-    return <div className="p-6 text-sm text-red-600">{error}</div>;
+    return (
+      <div className="space-y-4">
+        {header}
+        <ListError message={error} onRetry={() => setAttempt(a => a + 1)} />
+      </div>
+    );
   }
   if (categories.length === 0) {
     return (
-      <div className="p-8 text-center text-sm text-gray-500 space-y-1">
-        <div className="text-gray-700 font-medium">No dashboards available.</div>
-        <div>Ask an admin to grant a dashboard permission on your role.</div>
+      <div className="space-y-4">
+        {header}
+        <div className="p-8 text-center text-sm text-gray-500 space-y-1">
+          <div className="text-gray-700 font-medium">No dashboards available.</div>
+          <div>Ask an admin to grant a dashboard permission on your role.</div>
+        </div>
       </div>
     );
   }
@@ -115,6 +139,7 @@ export function Dashboard() {
 
   return (
     <div className="space-y-4">
+      {header}
       {/* Category tab strip. Hidden entirely when the user has access
           to just one category — no signal there, keeps the page clean
           (a Cashier with only POS shouldn't see a "POS" tab as their
@@ -159,6 +184,46 @@ export function Dashboard() {
 }
 
 /* ============================================================== */
+/* Shared bundle plumbing                                          */
+/* ============================================================== */
+
+/** Fetches one category's summary with a Retry-able error state.
+ *  Every bundle used to inline this effect and show a bare red error
+ *  line with no way to retry short of reloading the page. */
+function useCategorySummary(code: string) {
+  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    dashboardsApi.getCategorySummary(code)
+      .then(s => { if (!cancelled) setData(s); })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [code, attempt]);
+
+  return { data, loading, error, reload: () => setAttempt(a => a + 1) };
+}
+
+/** Loading placeholder for a bundle: KPI tiles + the two panels below. */
+function BundleSkeleton({ cards = 5 }: { cards?: number }) {
+  return (
+    <div className="space-y-4">
+      <StatCardsSkeleton cards={cards} className={`stat-strip stat-cols-${cards % 4 === 0 ? 4 : 5}`} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Skeleton className="h-56 lg:col-span-2" />
+        <Skeleton className="h-56" />
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================== */
 /* POS dashboard bundle                                            */
 /* ============================================================== */
 
@@ -169,19 +234,7 @@ export function Dashboard() {
  *  widget HTTP calls. */
 function PosDashboardBundle() {
   const { formatDate } = useDateFormat();
-  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    dashboardsApi.getCategorySummary('pos')
-      .then(s => { if (!cancelled) setData(s); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+  const { data, loading, error, reload } = useCategorySummary('pos');
 
   const usd = (v: number | string | undefined) => {
     const n = typeof v === 'string' ? Number(v) : (v ?? 0);
@@ -204,27 +257,19 @@ function PosDashboardBundle() {
 
   const recent = data?.recentOrders ?? [];
 
-  if (loading) {
-    return (
-      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading POS dashboard…
-      </div>
-    );
-  }
-  if (error) {
-    return <div className="p-6 text-sm text-red-600">{error}</div>;
-  }
+  if (loading) return <BundleSkeleton />;
+  if (error) return <ListError message={error} onRetry={reload} />;
 
   return (
     <div className="space-y-4">
       {/* KPI strip — five tiles, wraps on small screens. Same
           rhythm the other pages' stat-strip uses. */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <PosKpiTile label="Today's Sales"   value={usd(data?.kpi?.todaySales)}     icon={ShoppingCart} tone="emerald" />
-        <PosKpiTile label="Orders"          value={num(data?.kpi?.todayOrders)}    icon={FileText}     tone="blue" />
-        <PosKpiTile label="Avg. Order"      value={usd(data?.kpi?.avgOrderValue)}  icon={Wallet}       tone="amber" />
-        <PosKpiTile label="Customers"       value={num(data?.kpi?.todayCustomers)} icon={Users}        tone="violet" />
-        <PosKpiTile label="Discounts"       value={usd(data?.kpi?.todayDiscount)}  icon={Landmark}     tone="rose" />
+      <div className="stat-strip stat-cols-5">
+        <StatCard label="Today's Sales"   value={usd(data?.kpi?.todaySales)}     icon={ShoppingCart} tone="green" />
+        <StatCard label="Orders"          value={num(data?.kpi?.todayOrders)}    icon={FileText}     tone="blue" />
+        <StatCard label="Avg. Order"      value={usd(data?.kpi?.avgOrderValue)}  icon={Wallet}       tone="amber" />
+        <StatCard label="Customers"       value={num(data?.kpi?.todayCustomers)} icon={Users}        tone="purple" />
+        <StatCard label="Discounts"       value={usd(data?.kpi?.todayDiscount)}  icon={Landmark}     tone="red" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -294,33 +339,6 @@ function PosDashboardBundle() {
   );
 }
 
-type PosKpiTone = 'emerald' | 'blue' | 'amber' | 'violet' | 'rose';
-const POS_KPI_TONE_CLASS: Record<PosKpiTone, string> = {
-  emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  blue:    'bg-blue-50 text-blue-700 border-blue-200',
-  amber:   'bg-amber-50 text-amber-700 border-amber-200',
-  violet:  'bg-violet-50 text-violet-700 border-violet-200',
-  rose:    'bg-rose-50 text-rose-700 border-rose-200',
-};
-
-function PosKpiTile({ label, value, icon: Icon, tone }: {
-  label: string;
-  value: string;
-  icon: ComponentType<{ className?: string }>;
-  tone: PosKpiTone;
-}) {
-  return (
-    <div className="rounded-md border bg-white px-3 py-2.5 flex items-start justify-between gap-2">
-      <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-wide text-gray-500">{label}</div>
-        <div className="text-lg font-semibold tabular-nums mt-0.5 truncate" title={value}>{value}</div>
-      </div>
-      <div className={`h-8 w-8 rounded-md border flex items-center justify-center ${POS_KPI_TONE_CLASS[tone]}`}>
-        <Icon className="h-4 w-4" />
-      </div>
-    </div>
-  );
-}
 
 /* ============================================================== */
 /* Accounting dashboard bundle                                     */
@@ -333,19 +351,7 @@ function PosKpiTile({ label, value, icon: Icon, tone }: {
  *  each row's captured exchange rate. */
 function AccountingDashboardBundle() {
   const { formatDate } = useDateFormat();
-  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    dashboardsApi.getCategorySummary('accounting')
-      .then(s => { if (!cancelled) setData(s); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+  const { data, loading, error, reload } = useCategorySummary('accounting');
 
   const usd = (v: number | string | undefined) => {
     const n = typeof v === 'string' ? Number(v) : (v ?? 0);
@@ -362,27 +368,21 @@ function AccountingDashboardBundle() {
   ), [trend]);
   const recent = data?.recentTransactions ?? [];
 
-  if (loading) {
-    return (
-      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading Accounting dashboard…
-      </div>
-    );
-  }
-  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+  if (loading) return <BundleSkeleton />;
+  if (error) return <ListError message={error} onRetry={reload} />;
 
   return (
     <div className="space-y-4">
       {/* KPI strip — 5 tiles. Profit tone shifts to rose when
           negative so an operator sees the sign at a glance. */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <PosKpiTile label="Revenue (MTD)" value={usd(kpi.revenueMtd)} icon={TrendingUp} tone="emerald" />
-        <PosKpiTile label="Expense (MTD)" value={usd(kpi.expenseMtd)} icon={TrendingDown} tone="rose" />
-        <PosKpiTile label="Profit (MTD)"  value={usd(kpi.profitMtd)}
+      <div className="stat-strip stat-cols-5">
+        <StatCard label="Revenue (MTD)" value={usd(kpi.revenueMtd)} icon={TrendingUp} tone="green" />
+        <StatCard label="Expense (MTD)" value={usd(kpi.expenseMtd)} icon={TrendingDown} tone="red" />
+        <StatCard label="Profit (MTD)"  value={usd(kpi.profitMtd)}
           icon={Wallet}
-          tone={Number(kpi.profitMtd ?? 0) >= 0 ? 'emerald' : 'rose'} />
-        <PosKpiTile label="AR (open)"     value={usd(kpi.arOpen)} icon={FileText} tone="blue" />
-        <PosKpiTile label="AP (open)"     value={usd(kpi.apOpen)} icon={Landmark}  tone="amber" />
+          tone={Number(kpi.profitMtd ?? 0) >= 0 ? 'green' : 'red'} />
+        <StatCard label="AR (open)"     value={usd(kpi.arOpen)} icon={FileText} tone="blue" />
+        <StatCard label="AP (open)"     value={usd(kpi.apOpen)} icon={Landmark}  tone="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -471,31 +471,13 @@ function AccountingDashboardBundle() {
 /* Payroll dashboard bundle                                        */
 /* ============================================================== */
 
-const PAYROLL_STATUS_TONE: Record<string, string> = {
-  pending:  'bg-amber-100 text-amber-800',
-  approved: 'bg-blue-100 text-blue-800',
-  done:     'bg-emerald-100 text-emerald-800',
-  rejected: 'bg-rose-100 text-rose-800',
-};
 
 /** V316 — Payroll category widgets. MTD KPI row + 6-month payroll-
  *  cost trend + recent batches log. All money figures come from
  *  payroll_batches directly so the numbers match the Payroll page's
  *  own aggregations. */
 function PayrollDashboardBundle() {
-  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    dashboardsApi.getCategorySummary('payroll')
-      .then(s => { if (!cancelled) setData(s); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+  const { data, loading, error, reload } = useCategorySummary('payroll');
 
   const usd = (v: number | string | undefined) => {
     const n = typeof v === 'string' ? Number(v) : (v ?? 0);
@@ -517,26 +499,20 @@ function PayrollDashboardBundle() {
   ), [trend]);
   const recent = data?.recentBatches ?? [];
 
-  if (loading) {
-    return (
-      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading Payroll dashboard…
-      </div>
-    );
-  }
-  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+  if (loading) return <BundleSkeleton />;
+  if (error) return <ListError message={error} onRetry={reload} />;
 
   return (
     <div className="space-y-4">
       {/* KPI strip. Net stays the headline number; earnings +
           deductions live on the trend chart so operators can eye the
           gross-to-net gap without a second row of tiles. */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <PosKpiTile label="Net (MTD)"    value={usd(kpi.netMtd)}       icon={Wallet}    tone="emerald" />
-        <PosKpiTile label="Employees"    value={num(kpi.employeesMtd)} icon={Users}     tone="blue" />
-        <PosKpiTile label="Avg. Salary"  value={usd(kpi.avgSalary)}    icon={FileText}  tone="violet" />
-        <PosKpiTile label="Paid batches" value={num(kpi.paidBatchesMtd)} icon={CheckCircle} tone="emerald" />
-        <PosKpiTile label="Pending"      value={num(kpi.pendingBatches)} icon={AlertCircle} tone="amber" />
+      <div className="stat-strip stat-cols-5">
+        <StatCard label="Net (MTD)"    value={usd(kpi.netMtd)}       icon={Wallet}    tone="green" />
+        <StatCard label="Employees"    value={num(kpi.employeesMtd)} icon={Users}     tone="blue" />
+        <StatCard label="Avg. Salary"  value={usd(kpi.avgSalary)}    icon={FileText}  tone="purple" />
+        <StatCard label="Paid batches" value={num(kpi.paidBatchesMtd)} icon={CheckCircle} tone="green" />
+        <StatCard label="Pending"      value={num(kpi.pendingBatches)} icon={AlertCircle} tone="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -604,7 +580,7 @@ function PayrollDashboardBundle() {
                       <div className="text-xs font-medium tabular-nums text-emerald-700">
                         {usd(r.netSalaryTotal)}
                       </div>
-                      <Badge className={`text-[10px] px-1.5 py-0 capitalize ${PAYROLL_STATUS_TONE[r.status] ?? 'bg-gray-100 text-gray-700'}`}>
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 capitalize ${statusBadgeClass(r.status)}`}>
                         {r.status}
                       </Badge>
                     </div>
@@ -636,19 +612,8 @@ const ACTIVITY_SOURCE_TONE: Record<string, string> = {
  *  revenue-vs-expense trend, and a merged activity feed so an
  *  owner scans one page. */
 function ManagementDashboardBundle() {
-  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    dashboardsApi.getCategorySummary('management')
-      .then(s => { if (!cancelled) setData(s); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+  const { formatDate } = useDateFormat();
+  const { data, loading, error, reload } = useCategorySummary('management');
 
   const usd = (v: number | string | undefined) => {
     const n = typeof v === 'string' ? Number(v) : (v ?? 0);
@@ -667,14 +632,8 @@ function ManagementDashboardBundle() {
   ), [trend]);
   const activity = data?.activity ?? [];
 
-  if (loading) {
-    return (
-      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading Management dashboard…
-      </div>
-    );
-  }
-  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+  if (loading) return <BundleSkeleton cards={8} />;
+  if (error) return <ListError message={error} onRetry={reload} />;
 
   return (
     <div className="space-y-4">
@@ -682,17 +641,17 @@ function ManagementDashboardBundle() {
           the whole business status without scrolling. Profit tone
           flips rose when negative — same rule the Accounting bundle
           uses so the two dashboards read consistently. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <PosKpiTile label="Revenue (MTD)"  value={usd(kpi.revenueMtd)} icon={TrendingUp}   tone="emerald" />
-        <PosKpiTile label="Expense (MTD)"  value={usd(kpi.expenseMtd)} icon={TrendingDown} tone="rose" />
-        <PosKpiTile label="Profit (MTD)"   value={usd(kpi.profitMtd)}
+      <div className="stat-strip stat-cols-4">
+        <StatCard label="Revenue (MTD)"  value={usd(kpi.revenueMtd)} icon={TrendingUp}   tone="green" />
+        <StatCard label="Expense (MTD)"  value={usd(kpi.expenseMtd)} icon={TrendingDown} tone="red" />
+        <StatCard label="Profit (MTD)"   value={usd(kpi.profitMtd)}
           icon={Wallet}
-          tone={Number(kpi.profitMtd ?? 0) >= 0 ? 'emerald' : 'rose'} />
-        <PosKpiTile label="Payroll (MTD)"  value={usd(kpi.payrollNetMtd)} icon={Landmark} tone="violet" />
-        <PosKpiTile label="POS today"      value={usd(kpi.todaySales)}    icon={ShoppingCart} tone="emerald" />
-        <PosKpiTile label="Employees"      value={num(kpi.employees)}     icon={Users} tone="blue" />
-        <PosKpiTile label="AR (open)"      value={usd(kpi.arOpen)}        icon={FileText} tone="blue" />
-        <PosKpiTile label="AP (open)"      value={usd(kpi.apOpen)}        icon={Gauge} tone="amber" />
+          tone={Number(kpi.profitMtd ?? 0) >= 0 ? 'green' : 'red'} />
+        <StatCard label="Payroll (MTD)"  value={usd(kpi.payrollNetMtd)} icon={Landmark} tone="purple" />
+        <StatCard label="POS today"      value={usd(kpi.todaySales)}    icon={ShoppingCart} tone="green" />
+        <StatCard label="Employees"      value={num(kpi.employees)}     icon={Users} tone="blue" />
+        <StatCard label="AR (open)"      value={usd(kpi.arOpen)}        icon={FileText} tone="blue" />
+        <StatCard label="AP (open)"      value={usd(kpi.apOpen)}        icon={Gauge} tone="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -770,7 +729,7 @@ function ManagementDashboardBundle() {
                           positive ? 'text-emerald-700' : 'text-rose-700'
                         }`}>{usd(amt)}</div>
                         <div className="text-[10px] text-gray-400">
-                          {r.date ? String(r.date).slice(0, 10) : '—'}
+                          {r.date ? formatDate(String(r.date)) : '—'}
                         </div>
                       </div>
                     </li>
@@ -789,30 +748,17 @@ function ManagementDashboardBundle() {
 /* School dashboard bundle                                         */
 /* ============================================================== */
 
-const ENROLLMENT_STATUS_TONE: Record<string, string> = {
-  enrolled:  'bg-blue-100 text-blue-800',
-  active:    'bg-emerald-100 text-emerald-800',
-  completed: 'bg-slate-100 text-slate-700',
-  withdrawn: 'bg-rose-100 text-rose-800',
-};
+/** 'enrolled' is open and moving (info / blue); every other status
+ *  uses the app-wide palette. */
+const enrollmentBadgeClass = (status: string) =>
+  status === 'enrolled' ? TONE_CLASS.info : statusBadgeClass(status);
 
 /** V319 — School category widgets. KPI strip + 6-month enrollment
  *  trend + a recent enrollments log. Same recipe every operational
  *  bundle uses. */
 function SchoolDashboardBundle() {
-  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    dashboardsApi.getCategorySummary('school')
-      .then(s => { if (!cancelled) setData(s); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+  const { formatDate } = useDateFormat();
+  const { data, loading, error, reload } = useCategorySummary('school');
 
   const num = (v: number | string | undefined) => {
     const n = typeof v === 'string' ? Number(v) : (v ?? 0);
@@ -826,23 +772,17 @@ function SchoolDashboardBundle() {
   ), [trend]);
   const recent = data?.recentEnrollments ?? [];
 
-  if (loading) {
-    return (
-      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading School dashboard…
-      </div>
-    );
-  }
-  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+  if (loading) return <BundleSkeleton />;
+  if (error) return <ListError message={error} onRetry={reload} />;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <PosKpiTile label="Active students"    value={num(kpi.activeStudents)}    icon={GraduationCap} tone="emerald" />
-        <PosKpiTile label="Total students"     value={num(kpi.totalStudents)}     icon={Users} tone="blue" />
-        <PosKpiTile label="New (MTD)"          value={num(kpi.newEnrollmentsMtd)} icon={FileText} tone="violet" />
-        <PosKpiTile label="Completed"          value={num(kpi.completed)}         icon={CheckCircle} tone="emerald" />
-        <PosKpiTile label="Withdrawn"          value={num(kpi.withdrawn)}         icon={AlertCircle} tone="rose" />
+      <div className="stat-strip stat-cols-5">
+        <StatCard label="Active students"    value={num(kpi.activeStudents)}    icon={GraduationCap} tone="green" />
+        <StatCard label="Total students"     value={num(kpi.totalStudents)}     icon={Users} tone="blue" />
+        <StatCard label="New (MTD)"          value={num(kpi.newEnrollmentsMtd)} icon={FileText} tone="purple" />
+        <StatCard label="Completed"          value={num(kpi.completed)}         icon={CheckCircle} tone="green" />
+        <StatCard label="Withdrawn"          value={num(kpi.withdrawn)}         icon={AlertCircle} tone="red" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -890,11 +830,11 @@ function SchoolDashboardBundle() {
                     <div className="min-w-0">
                       <div className="font-medium tabular-nums text-xs truncate">{r.enrollmentNo}</div>
                       <div className="text-[10px] text-gray-400">
-                        {r.enrollmentDate ?? '—'}
+                        {r.enrollmentDate ? formatDate(r.enrollmentDate) : '—'}
                       </div>
                     </div>
-                    <Badge className={`text-[10px] px-1.5 py-0 capitalize ${
-                      ENROLLMENT_STATUS_TONE[r.status] ?? 'bg-gray-100 text-gray-700'
+                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 capitalize ${
+                      enrollmentBadgeClass(r.status)
                     }`}>{r.status}</Badge>
                   </li>
                 ))}
@@ -911,31 +851,13 @@ function SchoolDashboardBundle() {
 /* Hospital dashboard bundle                                       */
 /* ============================================================== */
 
-const ENCOUNTER_STATUS_TONE: Record<string, string> = {
-  pending:  'bg-amber-100 text-amber-800',
-  progress: 'bg-blue-100 text-blue-800',
-  done:     'bg-emerald-100 text-emerald-800',
-  close:    'bg-slate-100 text-slate-700',
-  void:     'bg-rose-100 text-rose-800',
-};
 
 /** V319 — Hospital category widgets. KPI strip + 6-month encounter
  *  trend + a recent encounters log. Same recipe every operational
  *  bundle uses. */
 function HospitalDashboardBundle() {
-  const [data, setData] = useState<dashboardsApi.DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    dashboardsApi.getCategorySummary('hospital')
-      .then(s => { if (!cancelled) setData(s); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+  const { formatDate } = useDateFormat();
+  const { data, loading, error, reload } = useCategorySummary('hospital');
 
   const num = (v: number | string | undefined) => {
     const n = typeof v === 'string' ? Number(v) : (v ?? 0);
@@ -949,22 +871,16 @@ function HospitalDashboardBundle() {
   ), [trend]);
   const recent = data?.recentEncounters ?? [];
 
-  if (loading) {
-    return (
-      <div className="p-6 text-sm text-gray-500 flex items-center gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading Hospital dashboard…
-      </div>
-    );
-  }
-  if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
+  if (loading) return <BundleSkeleton cards={4} />;
+  if (error) return <ListError message={error} onRetry={reload} />;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <PosKpiTile label="Encounters today"    value={num(kpi.encountersToday)}   icon={Stethoscope} tone="emerald" />
-        <PosKpiTile label="Encounters (MTD)"    value={num(kpi.encountersMtd)}     icon={FileText}    tone="blue" />
-        <PosKpiTile label="Appointments today"  value={num(kpi.appointmentsToday)} icon={CalendarDays} tone="violet" />
-        <PosKpiTile label="Pending"             value={num(kpi.pending)}           icon={AlertCircle}  tone="amber" />
+      <div className="stat-strip stat-cols-4">
+        <StatCard label="Encounters today"    value={num(kpi.encountersToday)}   icon={Stethoscope} tone="green" />
+        <StatCard label="Encounters (MTD)"    value={num(kpi.encountersMtd)}     icon={FileText}    tone="blue" />
+        <StatCard label="Appointments today"  value={num(kpi.appointmentsToday)} icon={CalendarDays} tone="purple" />
+        <StatCard label="Pending"             value={num(kpi.pending)}           icon={AlertCircle}  tone="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1012,11 +928,11 @@ function HospitalDashboardBundle() {
                     <div className="min-w-0">
                       <div className="font-medium tabular-nums text-xs truncate">{r.encounterNo}</div>
                       <div className="text-[10px] text-gray-400">
-                        {r.encounterDate ?? '—'}
+                        {r.encounterDate ? formatDate(r.encounterDate) : '—'}
                       </div>
                     </div>
-                    <Badge className={`text-[10px] px-1.5 py-0 capitalize ${
-                      ENCOUNTER_STATUS_TONE[r.status] ?? 'bg-gray-100 text-gray-700'
+                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 capitalize ${
+                      statusBadgeClass(r.status)
                     }`}>{r.status}</Badge>
                   </li>
                 ))}
@@ -1057,7 +973,7 @@ function ComingSoonBundle({ category }: { category: dashboardsApi.DashboardCateg
           </div>
           <div className="text-sm text-gray-500 max-w-md">
             {loading
-              ? 'Loading…'
+              ? <Skeleton className="h-4 w-64 mx-auto" />
               : (summary?.message
                   ?? 'Widgets for this dashboard are on the roadmap.')}
           </div>
@@ -1206,19 +1122,9 @@ function HrDashboardWidgets() {
   }, [deptList, employees]);
 
   // ---------- Loading screen
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-        </div>
-        <div className="rounded-md border border-blue-200 bg-blue-50 p-6 flex items-center gap-3">
-          <RefreshCw className="h-5 w-5 text-blue-600 animate-spin" />
-          <span className="text-sm text-blue-900">Loading your dashboard…</span>
-        </div>
-      </div>
-    );
-  }
+  // The page title lives on the Dashboard shell above, so the HR views
+  // below no longer render their own h1.
+  if (loading) return <BundleSkeleton />;
 
   // ---------- Admin view (also drives custom roles, since they're seeded
   // from the Admin base and expect tenant-wide visibility).
@@ -1228,67 +1134,18 @@ function HrDashboardWidgets() {
           && currentUser.role !== 'employee')) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-        </div>
-
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <Users className="h-5 w-5 text-blue-600" />
-                <span className="text-2xl font-bold text-blue-600">{employees.length}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Total Employees</p>
-              <p className="text-[11px] text-gray-500 truncate">{activeEmployeeCount} active</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <Clock className="h-5 w-5 text-green-600" />
-                <span className="text-2xl font-bold text-green-600">{todayAttendance.length}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Today&apos;s Attendance</p>
-              <p className="text-[11px] text-gray-500 truncate">
-                {todayAttendance.filter((a: any) => a.status === 'late').length} late arrivals
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <TimerIcon className="h-5 w-5 text-orange-600" />
-                <span className="text-2xl font-bold text-orange-600">{pendingOT.length}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Pending OT</p>
-              <p className="text-[11px] text-gray-500 truncate">Require approval</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <CalendarDays className="h-5 w-5 text-purple-600" />
-                <span className="text-2xl font-bold text-purple-600">{pendingLeaves.length}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Pending Leave</p>
-              <p className="text-[11px] text-gray-500 truncate">Awaiting approval</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <FileText className="h-5 w-5 text-red-600" />
-                <span className="text-2xl font-bold text-red-600">{expiringContracts.length}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Expiring Contracts</p>
-              <p className="text-[11px] text-gray-500 truncate">Within 30 days</p>
-            </CardContent>
-          </Card>
+        <div className="stat-strip stat-cols-5">
+          <StatCard label="Total Employees" value={employees.length}
+            hint={`${activeEmployeeCount} active`} icon={Users} tone="blue" />
+          <StatCard label="Today's Attendance" value={todayAttendance.length}
+            hint={`${todayAttendance.filter((a: any) => a.status === 'late').length} late arrivals`}
+            icon={Clock} tone="green" />
+          <StatCard label="Pending OT" value={pendingOT.length}
+            hint="Require approval" icon={TimerIcon} tone="orange" />
+          <StatCard label="Pending Leave" value={pendingLeaves.length}
+            hint="Awaiting approval" icon={CalendarDays} tone="purple" />
+          <StatCard label="Expiring Contracts" value={expiringContracts.length}
+            hint="Within 30 days" icon={FileText} tone="red" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1334,7 +1191,7 @@ function HrDashboardWidgets() {
                       <div className="flex-1">
                         <p className="text-sm font-medium">Pending Leave Approval</p>
                         <p className="text-sm text-gray-600">
-                          {(employee?.name ?? lr.employeeName) ?? '—'} – {lr.type.replace('_', ' ')} on {formatDate(lr.date)}
+                          {(employee?.name ?? lr.employeeName) ?? '—'} – {lr.type.replace(/_/g, ' ')} on {formatDate(lr.date)}
                         </p>
                       </div>
                     </div>
@@ -1379,46 +1236,20 @@ function HrDashboardWidgets() {
       teamMembers.map((t: any) => t.apiId ?? t.id).filter(Boolean),
     );
     const teamPresentToday = todayAttendance.filter((a: any) => teamIds.has(a.employeeId)).length;
+    // The tile and the list used the tenant-wide pendingOT, so a manager
+    // saw every pending OT request in the company as "their" approvals.
+    // Scope both to the manager's own team.
+    const teamPendingOT = pendingOT.filter((r: any) => teamIds.has(r.employeeId));
 
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-        </div>
-
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <Users className="h-5 w-5 text-blue-600" />
-                <span className="text-2xl font-bold text-blue-600">{teamMembers.length}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Team Members</p>
-              <p className="text-[11px] text-gray-500 truncate">Under your management</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <TimerIcon className="h-5 w-5 text-orange-600" />
-                <span className="text-2xl font-bold text-orange-600">{pendingOT.length}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Pending Approvals</p>
-              <p className="text-[11px] text-gray-500 truncate">OT requests</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <Clock className="h-5 w-5 text-green-600" />
-                <span className="text-2xl font-bold text-green-600">{teamPresentToday}</span>
-              </div>
-              <p className="text-xs font-medium text-gray-700 truncate">Team Attendance</p>
-              <p className="text-[11px] text-gray-500 truncate">Present today</p>
-            </CardContent>
-          </Card>
+        <div className="stat-strip stat-cols-3">
+          <StatCard label="Team Members" value={teamMembers.length}
+            hint="Under your management" icon={Users} tone="blue" />
+          <StatCard label="Pending Approvals" value={teamPendingOT.length}
+            hint="OT requests from your team" icon={TimerIcon} tone="orange" />
+          <StatCard label="Team Attendance" value={teamPresentToday}
+            hint="Present today" icon={Clock} tone="green" />
         </div>
 
         <Card>
@@ -1427,7 +1258,7 @@ function HrDashboardWidgets() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {myPendingOT.map((ot: any) => {
+              {teamPendingOT.map((ot: any) => {
                 const employee = findEmployee(ot.employeeId);
                 return (
                   <div key={ot.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -1437,11 +1268,11 @@ function HrDashboardWidgets() {
                         {ot.hours} hours on {formatDate(ot.date)} – {ot.reason ?? 'no reason provided'}
                       </p>
                     </div>
-                    <Badge variant="secondary">Pending</Badge>
+                    <Badge variant="outline" className={statusBadgeClass('pending')}>Pending</Badge>
                   </div>
                 );
               })}
-              {myPendingOT.length === 0 && (
+              {teamPendingOT.length === 0 && (
                 <p className="text-center text-gray-500 py-4">No pending approvals</p>
               )}
             </div>
@@ -1454,10 +1285,6 @@ function HrDashboardWidgets() {
   // ---------- Employee view (self)
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -1476,8 +1303,8 @@ function HrDashboardWidgets() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Status</span>
-                  <Badge variant={(myAttendance as any).status === 'present' ? 'default' : 'secondary'}>
-                    {String((myAttendance as any).status).replace('_', ' ')}
+                  <Badge variant="outline" className={`capitalize ${statusBadgeClass((myAttendance as any).status)}`}>
+                    {String((myAttendance as any).status).replace(/_/g, ' ')}
                   </Badge>
                 </div>
                 {(myAttendance as any).hoursWorked != null && (
@@ -1508,7 +1335,7 @@ function HrDashboardWidgets() {
                     <p className="text-sm font-medium">{formatDate(ot.date)}</p>
                     <p className="text-sm text-gray-600">{ot.hours} hours – {ot.reason ?? '—'}</p>
                   </div>
-                  <Badge variant="secondary">{ot.status}</Badge>
+                  <Badge variant="outline" className={`capitalize ${statusBadgeClass(ot.status)}`}>{ot.status}</Badge>
                 </div>
               ))}
               {myPendingOT.length === 0 && (
@@ -1555,7 +1382,9 @@ function HrDashboardWidgets() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Status</p>
-              <Badge variant="default">{currentEmployee?.status ?? 'active'}</Badge>
+              <Badge variant="outline" className={`capitalize ${statusBadgeClass(currentEmployee?.status ?? 'active')}`}>
+                {currentEmployee?.status ?? 'active'}
+              </Badge>
             </div>
           </div>
         </CardContent>

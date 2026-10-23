@@ -19,6 +19,9 @@ import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
 import { InlineTextCell } from '../common/InlineTextCell';
 import { DocAuditLine } from '../common/DocAuditLine';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import * as customersApi from '../../api/customers';
 import * as telegramApi from '../../api/telegram';
 import * as invoicesApi from '../../api/invoices';
@@ -79,6 +82,32 @@ function ageInYears(birthDate: string | null | undefined): number | null {
   const dayDiff = today.getDate() - d;
   if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) age -= 1;
   return age >= 0 && age < 200 ? age : null;
+}
+
+/** Sex picker shared by the Student and Patient blocks of the form.
+ *  Radix Select can't hold an empty-string item, so "not set" travels
+ *  as the sentinel `none` and maps back to null. */
+function SexSelect({ id, value, onChange }: {
+  id?: string;
+  value: customersApi.PatientSex | null;
+  onChange: (next: customersApi.PatientSex | null) => void;
+}) {
+  return (
+    <Select
+      value={value ?? 'none'}
+      onValueChange={(v) => onChange(v === 'none' ? null : (v as customersApi.PatientSex))}
+    >
+      <SelectTrigger id={id} className="w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">—</SelectItem>
+        <SelectItem value="male">Male</SelectItem>
+        <SelectItem value="female">Female</SelectItem>
+        <SelectItem value="other">Other</SelectItem>
+      </SelectContent>
+    </Select>
+  );
 }
 
 /** Display labels for the Business sub-type dropdown. */
@@ -221,7 +250,11 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<customersApi.Customer | null>(null);
 
-  const load = async () => {
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  /** `q` overrides the search box — Clear resets the box and reloads in
+   *  the same tick, before the state update has landed. */
+  const load = async (q: string = search) => {
     setLoading(true);
     try {
       // Server-side pagination would matter at the 5k-row scale; for now
@@ -231,14 +264,17 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
        // its own kind so Sale > Customers, Healthcare > Patients, and
        // Education > Students never leak rows into each other.
       const res = await customersApi.list({
-        q: search.trim() || undefined,
+        q: q.trim() || undefined,
         type: typeFilter === 'all' ? undefined : typeFilter,
         kind: isStudent ? 'student' : isPatient ? 'patient' : 'customer',
         size: 200,
       });
       setRows(res.content ?? []);
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : T.toastLoadFail);
+      // Shown inline with Retry instead of a toast over an empty table
+      // that read as "no customers".
+      setLoadError(e instanceof Error ? e.message : T.toastLoadFail);
     } finally {
       setLoading(false);
     }
@@ -300,6 +336,21 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
   }, [rows, typeFilter, isStudent, fromDate, toDate]);
 
   const pagination = usePagination(filtered, 25);
+
+  const hasFilters = !!search.trim() || typeFilter !== 'all' || !!fromDate || !!toDate;
+  const clearFilters = () => {
+    const reloadNeeded = !!search.trim() && typeFilter === 'all';
+    setSearch('');
+    setFromDate('');
+    setToDate('');
+    // Changing typeFilter triggers a reload through its effect; otherwise
+    // reload explicitly so the cleared search actually refetches.
+    if (typeFilter !== 'all') setTypeFilter('all');
+    else if (reloadNeeded) void load('');
+  };
+  /** Plural lens noun for the empty state. */
+  const listNoun = isStudent ? 'students' : isPatient ? 'patients' : 'customers';
+  const columnCount = (isStudent ? 9 : isPatient ? 10 : 8) + (canViewTelegram ? 1 : 0);
 
   const openAdd = (defaultType: customersApi.CustomerType = 'individual') => {
     setEditing(null);
@@ -588,62 +639,50 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                 on the Patients + Students lenses: those lenses each
                 pin to a single stored shape so the operator has no
                 reason to filter by shape. */}
-            {!isPatient && !isStudent ? (
-              <div className="flex items-center gap-1.5">
+            <form onSubmit={onSearchSubmit} className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onBlur={() => void load()}
+                placeholder="Search name, phone, TIN…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
+            </form>
+            {!isPatient && !isStudent && (
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                aria-label="Filter by type"
+              >
                 {TYPE_FILTERS.map(f => (
-                  <button
-                    key={f.value}
-                    onClick={() => setTypeFilter(f.value)}
-                    className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
-                      typeFilter === f.value
-                        ? 'bg-blue-50 border-blue-300 text-blue-700'
-                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    {f.label}
-                  </button>
+                  <option key={f.value} value={f.value}>Type : {f.label}</option>
                 ))}
-              </div>
-            ) : (
-              <div />
+              </select>
             )}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Student lens: From/To range on createdAt, matching
-                  [[feedback-filter-strip-consistency]]. */}
-              {isStudent && (
-                <>
-                  <Label className="text-xs text-gray-500">From</Label>
-                  <DateInput value={fromDate || null} onChange={v => setFromDate(v ?? '')} max={toDate || undefined} />
-                  <Label className="text-xs text-gray-500">To</Label>
-                  <DateInput value={toDate || null} onChange={v => setToDate(v ?? '')} min={fromDate || undefined} />
-                  {(fromDate || toDate) && (
-                    <Button
-                      size="sm" variant="ghost" className="h-9"
-                      onClick={() => { setFromDate(''); setToDate(''); }}
-                    >
-                      Clear
-                    </Button>
-                  )}
-                </>
-              )}
-              <form onSubmit={onSearchSubmit} className="flex items-center gap-2">
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                  <Input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    onBlur={() => void load()}
-                    placeholder="Search name, phone, TIN…"
-                    className="h-8 pl-7 w-64 text-sm"
-                  />
-                </div>
-              </form>
-            </div>
+            {/* Student lens: From/To range on createdAt, matching
+                [[feedback-filter-strip-consistency]]. */}
+            {isStudent && (
+              <>
+                <Label className="text-xs text-gray-500 shrink-0">From</Label>
+                <div className="shrink-0"><DateInput value={fromDate || null} onChange={v => setFromDate(v ?? '')} max={toDate || undefined} /></div>
+                <Label className="text-xs text-gray-500 shrink-0">To</Label>
+                <div className="shrink-0"><DateInput value={toDate || null} onChange={v => setToDate(v ?? '')} min={fromDate || undefined} /></div>
+              </>
+            )}
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          {loading && filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+          {loading && rows.length === 0 ? (
+            <TableRowsSkeleton rows={8} columns={Math.min(columnCount, 7)} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : (
             <>
               {/* v-list-table-invoice-shape — border+scroll wrapper +
@@ -703,14 +742,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                 </TableHeader>
                 <TableBody>
                   {filtered.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={(isStudent ? 9 : isPatient ? 10 : 8) + (canViewTelegram ? 1 : 0)}
-                        className="text-center text-sm text-gray-500 py-8"
-                      >
-                        No customers yet.
-                      </TableCell>
-                    </TableRow>
+                    <ListEmpty colSpan={columnCount} noun={listNoun} filtered={hasFilters} />
                   )}
                   {pagination.paginatedItems.map(c => (
                     <TableRow key={c.id}>
@@ -1181,31 +1213,20 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                         );
                       })()}
                     </Label>
-                    <Input
-                      id="cust-student-dob"
-                      type="date"
-                      value={form.birthDate ?? ''}
-                      onChange={(e) => setForm(f => ({ ...f, birthDate: e.target.value || null }))}
+                    <DateInput
+                      value={form.birthDate ?? null}
+                      onChange={(v) => setForm(f => ({ ...f, birthDate: v || null }))}
                     />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label htmlFor="cust-student-sex" className="text-xs">Sex</Label>
-                    <select
+                    <SexSelect
                       id="cust-student-sex"
-                      className="w-full h-9 px-3 border rounded-md text-sm bg-white capitalize"
-                      value={form.sex ?? ''}
-                      onChange={(e) => setForm(f => ({
-                        ...f,
-                        sex: (e.target.value || null) as customersApi.PatientSex | null,
-                      }))}
-                    >
-                      <option value="">—</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
+                      value={form.sex ?? null}
+                      onChange={(sex) => setForm(f => ({ ...f, sex }))}
+                    />
                   </div>
                   {/* V214 / v-student-remark-swap — Insurance
                       dropped for students (belongs to Patients).
@@ -1263,29 +1284,18 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                         );
                       })()}
                     </Label>
-                    <Input
-                      id="cust-birth-date"
-                      type="date"
-                      value={form.birthDate ?? ''}
-                      onChange={(e) => setForm(f => ({ ...f, birthDate: e.target.value || null }))}
+                    <DateInput
+                      value={form.birthDate ?? null}
+                      onChange={(v) => setForm(f => ({ ...f, birthDate: v || null }))}
                     />
                   </div>
                   <div className="space-y-1.5 col-span-2">
                     <Label htmlFor="cust-sex" className="text-xs">Sex</Label>
-                    <select
+                    <SexSelect
                       id="cust-sex"
-                      className="w-full h-9 px-3 border rounded-md text-sm bg-white capitalize"
-                      value={form.sex ?? ''}
-                      onChange={(e) => setForm(f => ({
-                        ...f,
-                        sex: (e.target.value || null) as customersApi.PatientSex | null,
-                      }))}
-                    >
-                      <option value="">—</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
+                      value={form.sex ?? null}
+                      onChange={(sex) => setForm(f => ({ ...f, sex }))}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
