@@ -25,7 +25,15 @@ import * as vendorsApi from '../../api/vendors';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useConfirm } from '../../context/ConfirmContext';
-import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { TableBodySkeletonRows, TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { StatCard } from '../common/StatCard';
+import { DateInput } from '../common/DateInput';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
+import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
+import { format } from 'date-fns';
+import { Search } from 'lucide-react';
 
 type StatusFilter = 'active' | 'all' | 'pending' | 'approved' | 'rejected';
 
@@ -87,6 +95,11 @@ export function Approvals() {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>('active');
   const [selected, setSelected] = useState<approvalsApi.Approval | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const quickApprove = async (r: approvalsApi.Approval) => {
     if (!(await confirm({
@@ -107,24 +120,59 @@ export function Approvals() {
     setLoading(true);
     try {
       setRows(await approvalsApi.pending());
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load approvals');
+      // Inline error + Retry — a toast over an empty inbox read as "nothing to approve".
+      setLoadError(e instanceof Error ? e.message : 'Failed to load approvals');
     } finally {
       setLoading(false);
     }
   };
   useEffect(() => { void load(); }, []);
 
+  /** Source types actually present — drives the Type dropdown. */
+  const sourceTypes = useMemo(
+    () => Array.from(new Set(rows.map(r => r.sourceType))).sort((a, b) => sourceLabel(a).localeCompare(sourceLabel(b))),
+    [rows],
+  );
+
   const filtered = useMemo(() => {
+    let list: approvalsApi.Approval[];
     switch (filter) {
-      case 'active':   return rows.filter(r => r.viewerRole === 'active');
-      case 'pending':  return rows.filter(r => r.status === 'pending');
-      case 'approved': return rows.filter(r => r.status === 'approved' || r.status === 'auto_approved');
-      case 'rejected': return rows.filter(r => r.status === 'rejected');
+      case 'active':   list = rows.filter(r => r.viewerRole === 'active'); break;
+      case 'pending':  list = rows.filter(r => r.status === 'pending'); break;
+      case 'approved': list = rows.filter(r => r.status === 'approved' || r.status === 'auto_approved'); break;
+      case 'rejected': list = rows.filter(r => r.status === 'rejected'); break;
       case 'all':
-      default:         return rows;
+      default:         list = rows;
     }
-  }, [rows, filter]);
+    if (typeFilter) list = list.filter(r => r.sourceType === typeFilter);
+    if (dateFrom || dateTo) {
+      // Compare on the LOCAL calendar day the request was submitted.
+      list = list.filter(r => {
+        const day = format(new Date(r.createdAt), 'yyyy-MM-dd');
+        return (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
+      });
+    }
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter(r => {
+        const summary = Object.values(r.sourceSummary ?? {})
+          .filter(v => typeof v === 'string' || typeof v === 'number')
+          .join(' ');
+        return `${sourceLabel(r.sourceType)} ${r.requesterName ?? ''} ${summary}`.toLowerCase().includes(q);
+      });
+    }
+    return list;
+  }, [rows, filter, typeFilter, dateFrom, dateTo, search]);
+
+  const hasFilters = !!(search || typeFilter || dateFrom || dateTo);
+  const clearFilters = () => {
+    setSearch('');
+    setTypeFilter('');
+    setDateFrom('');
+    setDateTo('');
+  };
 
   const kpis = useMemo(() => ({
     awaiting: rows.filter(r => r.viewerRole === 'active').length,
@@ -161,16 +209,16 @@ export function Approvals() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        <KpiCard label="Awaiting you" value={kpis.awaiting} icon={<Clock className="h-5 w-5 text-amber-600" />} tone="amber" />
-        <KpiCard label="In progress" value={kpis.inProgress} icon={<ClipboardCheck className="h-5 w-5 text-blue-600" />} tone="blue" />
-        <KpiCard label="Approved" value={kpis.approved} icon={<CheckCircle2 className="h-5 w-5 text-emerald-600" />} tone="emerald" />
-        <KpiCard label="Rejected" value={kpis.rejected} icon={<XCircle className="h-5 w-5 text-rose-600" />} tone="rose" />
+      <div className="stat-strip stat-cols-4">
+        <StatCard label="Awaiting you" value={kpis.awaiting} icon={Clock} tone="amber" />
+        <StatCard label="In progress" value={kpis.inProgress} icon={ClipboardCheck} tone="blue" />
+        <StatCard label="Approved" value={kpis.approved} icon={CheckCircle2} tone="green" />
+        <StatCard label="Rejected" value={kpis.rejected} icon={XCircle} tone="red" />
       </div>
 
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-start gap-3 flex-wrap">
+          <div className="filter-strip">
             <Tabs value={filter} onValueChange={(v) => setFilter(v as StatusFilter)}>
               <TabsList>
                 {STATUS_TABS.map(f => (
@@ -178,6 +226,35 @@ export function Approvals() {
                 ))}
               </TabsList>
             </Tabs>
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search requester, document no, reason…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
+            </div>
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              <option value="">Type : All</option>
+              {sourceTypes.map(st => (
+                <option key={st} value={st}>Type : {sourceLabel(st)}</option>
+              ))}
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         {/* Default padding, not p-0 — the bordered scroller needs the
@@ -197,16 +274,19 @@ export function Approvals() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && rows.length === 0 && (
+              {loading && rows.length === 0 ? (
                 <TableBodySkeletonRows rows={6} columns={7} />
-              )}
-              {!loading && filtered.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-sm text-gray-400 py-8">
-                  {filter === 'active'
-                    ? 'No requests waiting on you right now — nice.'
-                    : 'Nothing to show in this view.'}
-                </TableCell></TableRow>
-              )}
+              ) : loadError && rows.length === 0 ? (
+                <ListError colSpan={7} message={loadError} onRetry={() => void load()} />
+              ) : filtered.length === 0 ? (
+                filter === 'active' && !hasFilters ? (
+                  <TableRow className="hover:bg-transparent"><TableCell colSpan={7} className="text-center text-sm text-gray-500 py-8">
+                    No requests waiting on you right now — nice.
+                  </TableCell></TableRow>
+                ) : (
+                  <ListEmpty colSpan={7} noun="requests" filtered={hasFilters} />
+                )
+              ) : null}
               {pagination.paginatedItems.map(r => (
                 <TableRow key={r.chainId} className="cursor-pointer hover:bg-gray-50" onClick={() => setSelected(r)}>
                   <TableCell><Badge variant="outline" className="text-xs">{sourceLabel(r.sourceType)}</Badge></TableCell>
@@ -226,22 +306,24 @@ export function Approvals() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs text-rose-700 border-rose-200 hover:bg-rose-50"
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-red-600 hover:bg-red-50 hover:text-red-700"
                           onClick={() => setSelected(r)}
-                          title="Reject requires a comment — opens the detail dialog"
+                          title="Reject — requires a comment, opens the detail dialog"
+                          aria-label="Reject"
                         >
-                          <X className="h-3 w-3 mr-1" />
-                          Reject
+                          <X className="h-4 w-4" />
                         </Button>
                         <Button
-                          size="sm"
-                          className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700"
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                           onClick={() => { void quickApprove(r); }}
+                          title="Approve"
+                          aria-label="Approve"
                         >
-                          <Check className="h-3 w-3 mr-1" />
-                          Approve
+                          <Check className="h-4 w-4" />
                         </Button>
                       </div>
                     ) : (
@@ -283,27 +365,15 @@ export function Approvals() {
 /* Building blocks                                                      */
 /* -------------------------------------------------------------------- */
 
-function KpiCard({ label, value, icon, tone }: { label: string; value: number; icon: React.ReactNode; tone: 'amber' | 'blue' | 'emerald' | 'rose' }) {
-  const color =
-    tone === 'amber'   ? 'text-amber-600' :
-    tone === 'blue'    ? 'text-blue-600' :
-    tone === 'emerald' ? 'text-emerald-600' :
-                         'text-rose-600';
-  return (
-    <Card className="border-gray-200">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          {icon}
-          <span className={`text-2xl font-bold ${color}`}>{value}</span>
-        </div>
-        <p className="text-xs font-medium text-gray-700 truncate">{label}</p>
-      </CardContent>
-    </Card>
-  );
+/** ISO "yyyy-MM-dd" summary field → tenant date format; '' when absent. */
+function useSummaryDate() {
+  const { formatDate } = useDateFormat();
+  return (v: unknown): string => (typeof v === 'string' && v ? formatDate(v) : '');
 }
 
 function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
   const s = approval.sourceSummary;
+  const fd = useSummaryDate();
   if (approval.sourceType === 'cash_advance') {
     return (
       <div className="text-sm">
@@ -321,8 +391,8 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
   }
   if (approval.sourceType === 'overtime') {
     const hours = hoursLabel(s.hours);
-    const start = typeof s.startDate === 'string' ? s.startDate : '';
-    const end = typeof s.endDate === 'string' ? s.endDate : '';
+    const start = fd(s.startDate);
+    const end = fd(s.endDate);
     const dateLine = start && end && start !== end ? `${start} → ${end}` : start;
     const startHour = typeof s.startHour === 'string' ? s.startHour : '';
     const endHour = typeof s.endHour === 'string' ? s.endHour : '';
@@ -346,8 +416,8 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
     const category = typeof s.category === 'string' ? capitalize(s.category) : '';
     const leaveType = typeof s.leaveType === 'string' ? capitalize(s.leaveType) : '';
     const days = typeof s.days === 'number' ? `${s.days} day${s.days !== 1 ? 's' : ''}` : '';
-    const start = typeof s.startDate === 'string' ? s.startDate : '';
-    const end = typeof s.endDate === 'string' ? s.endDate : '';
+    const start = fd(s.startDate);
+    const end = fd(s.endDate);
     const dateLine = start && end && start !== end ? `${start} → ${end}` : start;
     return (
       <div className="text-sm">
@@ -374,7 +444,7 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
         </div>
         <div className="text-[11px] text-gray-500 truncate max-w-md">
           {typeof s.customerName === 'string' ? s.customerName : ''}
-          {typeof s.expiryDate === 'string' && s.expiryDate ? ` — expires ${s.expiryDate}` : ''}
+          {typeof s.expiryDate === 'string' && s.expiryDate ? ` — expires ${fd(s.expiryDate)}` : ''}
         </div>
       </div>
     );
@@ -404,7 +474,7 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
         </div>
         <div className="text-[11px] text-gray-500 truncate max-w-md">
           {typeof s.vendorName === 'string' ? s.vendorName : ''}
-          {typeof s.dueDate === 'string' && s.dueDate ? ` — due ${s.dueDate}` : ''}
+          {typeof s.dueDate === 'string' && s.dueDate ? ` — due ${fd(s.dueDate)}` : ''}
         </div>
       </div>
     );
@@ -419,7 +489,7 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
         </div>
         <div className="text-[11px] text-gray-500 truncate max-w-md">
           {typeof s.vendorName === 'string' ? s.vendorName : ''}
-          {typeof s.issueDate === 'string' && s.issueDate ? ` — ${s.issueDate}` : ''}
+          {typeof s.issueDate === 'string' && s.issueDate ? ` — ${fd(s.issueDate)}` : ''}
         </div>
       </div>
     );
@@ -489,7 +559,7 @@ function ProgressBadge({ approval }: { approval: approvalsApi.Approval }) {
       ? Math.max(0, approval.currentStep - (approval.viewerRole === 'active' ? 1 : 0))
       : approval.currentStep - 1;
   const tone = approval.status === 'approved' ? 'text-emerald-700'
-    : approval.status === 'rejected' ? 'text-rose-700'
+    : approval.status === 'rejected' ? 'text-red-700'
     : 'text-blue-700';
   return (
     <span className={`text-xs font-medium tabular-nums ${tone}`}>
@@ -498,14 +568,16 @@ function ProgressBadge({ approval }: { approval: approvalsApi.Approval }) {
   );
 }
 
+/** Shared palette (utils/statusTones): approved green, rejected red,
+ *  awaiting you amber, in progress blue. */
 function StatusBadge({ status, viewerRole }: { status: approvalsApi.ApprovalStatus; viewerRole: approvalsApi.ViewerRole }) {
-  if (status === 'approved') return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Approved</Badge>;
-  if (status === 'auto_approved') return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Auto-approved</Badge>;
-  if (status === 'rejected') return <Badge className="bg-rose-100 text-rose-700 border-rose-200">Rejected</Badge>;
+  if (status === 'approved') return <Badge variant="outline" className={TONE_CLASS.success}>Approved</Badge>;
+  if (status === 'auto_approved') return <Badge variant="outline" className={TONE_CLASS.success}>Auto-approved</Badge>;
+  if (status === 'rejected') return <Badge variant="outline" className={TONE_CLASS.danger}>Rejected</Badge>;
   // pending — highlight if it's the viewer's turn
   return viewerRole === 'active'
-    ? <Badge className="bg-amber-100 text-amber-700 border-amber-200">Awaiting you</Badge>
-    : <Badge className="bg-blue-100 text-blue-700 border-blue-200">In progress</Badge>;
+    ? <Badge variant="outline" className={TONE_CLASS.attention}>Awaiting you</Badge>
+    : <Badge variant="outline" className={TONE_CLASS.info}>In progress</Badge>;
 }
 
 /* -------------------------------------------------------------------- */
@@ -519,7 +591,7 @@ function ApprovalDetailDialog({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
   const [current, setCurrent] = useState<approvalsApi.Approval>(approval);
   const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState('');
@@ -591,8 +663,8 @@ function ApprovalDetailDialog({
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-gray-500">Employee:</span> <span className="font-medium">{String(s.employeeName ?? '—')}</span></div>
                 <div><span className="text-gray-500">Hours:</span> <span className="font-medium tabular-nums">{hoursLabel(s.hours) || '—'}</span></div>
-                <div><span className="text-gray-500">Start date:</span> <span className="font-medium tabular-nums">{s.startDate ? String(s.startDate) : '—'}</span></div>
-                <div><span className="text-gray-500">End date:</span> <span className="font-medium tabular-nums">{s.endDate ? String(s.endDate) : '—'}</span></div>
+                <div><span className="text-gray-500">Start date:</span> <span className="font-medium tabular-nums">{s.startDate ? formatDate(String(s.startDate)) : '—'}</span></div>
+                <div><span className="text-gray-500">End date:</span> <span className="font-medium tabular-nums">{s.endDate ? formatDate(String(s.endDate)) : '—'}</span></div>
                 <div><span className="text-gray-500">Window:</span> <span className="font-medium tabular-nums">
                   {s.startHour && s.endHour ? `${s.startHour}–${s.endHour}` : '—'}
                 </span></div>
@@ -612,8 +684,8 @@ function ApprovalDetailDialog({
                 <div><span className="text-gray-500">Category:</span> <span className="font-medium">{s.category ? capitalize(String(s.category)) : '—'}</span></div>
                 <div><span className="text-gray-500">Type:</span> <span className="font-medium">{s.leaveType ? capitalize(String(s.leaveType)) : '—'}</span></div>
                 <div><span className="text-gray-500">Duration:</span> <span className="font-medium">{typeof s.days === 'number' ? `${s.days} day${s.days !== 1 ? 's' : ''}` : '—'}</span></div>
-                <div><span className="text-gray-500">Start:</span> <span className="font-medium tabular-nums">{s.startDate ? String(s.startDate) : '—'}</span></div>
-                <div><span className="text-gray-500">End:</span> <span className="font-medium tabular-nums">{s.endDate ? String(s.endDate) : '—'}</span></div>
+                <div><span className="text-gray-500">Start:</span> <span className="font-medium tabular-nums">{s.startDate ? formatDate(String(s.startDate)) : '—'}</span></div>
+                <div><span className="text-gray-500">End:</span> <span className="font-medium tabular-nums">{s.endDate ? formatDate(String(s.endDate)) : '—'}</span></div>
                 <div className="col-span-2">
                   <span className="text-gray-500">Reason:</span>{' '}
                   <span className="font-medium italic">"{String(s.reason ?? '—')}"</span>
@@ -655,7 +727,7 @@ function ApprovalDetailDialog({
                 <div><span className="text-gray-500">Type:</span> <span className="font-medium">{s.type ? capitalize(String(s.type).replace(/_/g, ' ')) : '—'}</span></div>
                 <div><span className="text-gray-500">Employees:</span> <span className="font-medium tabular-nums">{typeof s.totalEmployees === 'number' ? s.totalEmployees : '—'}</span></div>
                 <div><span className="text-gray-500">Net total:</span> <span className="font-medium tabular-nums">{money(s.amount, s.currency)}</span></div>
-                <div><span className="text-gray-500">Batch date:</span> <span className="font-medium tabular-nums">{s.batchDate ? String(s.batchDate) : '—'}</span></div>
+                <div><span className="text-gray-500">Batch date:</span> <span className="font-medium tabular-nums">{s.batchDate ? formatDate(String(s.batchDate)) : '—'}</span></div>
                 <div><span className="text-gray-500">Status:</span> <span className="font-medium">{s.status ? capitalize(String(s.status)) : '—'}</span></div>
               </div>
             ) : current.sourceType === 'encounter' ? (
@@ -673,7 +745,7 @@ function ApprovalDetailDialog({
                 <div><span className="text-gray-500">Status:</span> <span className="font-medium">{s.status ? capitalize(String(s.status)) : '—'}</span></div>
                 <div className="col-span-2">
                   <span className="text-gray-500">Encounter date:</span>{' '}
-                  <span className="font-medium tabular-nums">{s.encounterDate ? String(s.encounterDate) : '—'}</span>
+                  <span className="font-medium tabular-nums">{s.encounterDate ? formatDate(String(s.encounterDate)) : '—'}</span>
                 </div>
                 {s.reason ? (
                   <div className="col-span-2">
@@ -708,7 +780,7 @@ function ApprovalDetailDialog({
                 key={step.stepId}
                 className={`rounded-md border p-3 text-sm ${
                   step.decision === 'approved' ? 'bg-emerald-50/40 border-emerald-200'
-                  : step.decision === 'rejected' ? 'bg-rose-50/40 border-rose-200'
+                  : step.decision === 'rejected' ? 'bg-red-50/40 border-red-200'
                   : step.stepOrder === current.currentStep && current.status === 'pending' ? 'bg-amber-50/40 border-amber-200'
                   : 'bg-gray-50/40 border-gray-200'
                 }`}
@@ -718,10 +790,10 @@ function ApprovalDetailDialog({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs text-gray-500 tabular-nums">#{step.stepOrder}</span>
                       <span className="font-medium">{step.approverName ?? '—'}</span>
-                      {step.decision === 'approved' && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px]">Approved</Badge>}
-                      {step.decision === 'rejected' && <Badge className="bg-rose-100 text-rose-700 border-rose-200 text-[10px]">Rejected</Badge>}
+                      {step.decision === 'approved' && <Badge variant="outline" className={`text-[10px] ${TONE_CLASS.success}`}>Approved</Badge>}
+                      {step.decision === 'rejected' && <Badge variant="outline" className={`text-[10px] ${TONE_CLASS.danger}`}>Rejected</Badge>}
                       {!step.decision && step.stepOrder === current.currentStep && current.status === 'pending' && (
-                        <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">Current</Badge>
+                        <Badge variant="outline" className={`text-[10px] ${TONE_CLASS.attention}`}>Current</Badge>
                       )}
                     </div>
                     {step.comment && (
@@ -729,7 +801,7 @@ function ApprovalDetailDialog({
                     )}
                   </div>
                   {step.decisionAt && (
-                    <div className="text-[11px] text-gray-500 shrink-0 tabular-nums">{formatDate(step.decisionAt)}</div>
+                    <div className="text-[11px] text-gray-500 shrink-0 tabular-nums">{formatDateTime(step.decisionAt)}</div>
                   )}
                 </div>
               </div>
@@ -761,7 +833,7 @@ function ApprovalDetailDialog({
             border-t stripe. */}
         {canAct && (
           <DialogFooter className="px-6 py-3 border-t gap-2 shrink-0">
-            <Button variant="outline" onClick={() => act('rejected')} disabled={busy} className="text-rose-700 border-rose-200 hover:bg-rose-50">
+            <Button variant="outline" onClick={() => act('rejected')} disabled={busy} className="text-red-700 border-red-200 hover:bg-red-50">
               <X className="h-4 w-4 mr-1.5" />
               Reject
             </Button>
@@ -794,19 +866,14 @@ function fmt(v: number, ccy: string): string {
   return `${ccy} ${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** Status chip — matches the amber/pending pattern used in the list
- *  page for chain-gated docs. Falls back to slate for anything else. */
+/** Status chip — the shared app-wide palette (utils/statusTones). */
 function StatusPill({ status }: { status: string }) {
-  const color =
-    status === 'pending'  ? 'border-amber-300 text-amber-700 bg-amber-50'   :
-    status === 'progress' ? 'border-blue-300 text-blue-700 bg-blue-50'      :
-    status === 'done' || status === 'approved' || status === 'issued'
-                          ? 'border-emerald-300 text-emerald-700 bg-emerald-50' :
-    status === 'rejected' ? 'border-red-300 text-red-700 bg-red-50'          :
-    status === 'close' || status === 'void'
-                          ? 'border-slate-300 text-slate-700 bg-slate-50'    :
-                            'border-slate-300 text-slate-700 bg-slate-50';
-  return <Badge variant="outline" className={`capitalize text-[10px] ${color}`}>{status}</Badge>;
+  return <Badge variant="outline" className={`capitalize text-[10px] ${statusBadgeClass(status)}`}>{status}</Badge>;
+}
+
+/** Placeholder while a source document loads — skeleton, not "Loading…". */
+function PreviewSkeleton() {
+  return <TableRowsSkeleton rows={4} columns={4} />;
 }
 
 function QuotationPreview({ quotationId, formatDate }: PreviewProps & { quotationId: string }) {
@@ -836,7 +903,7 @@ function QuotationPreview({ quotationId, formatDate }: PreviewProps & { quotatio
     })();
     return () => { cancelled = true; };
   }, [quotationId]);
-  if (loading && !quote) return <div className="text-sm text-gray-500 py-6 text-center">Loading…</div>;
+  if (loading && !quote) return <PreviewSkeleton />;
   if (!quote) return <div className="text-sm text-gray-500 py-6 text-center">Quotation not found.</div>;
   const subtotal = quote.subtotal ?? 0;
   const total    = quote.total ?? 0;
@@ -959,7 +1026,7 @@ function VoucherPreview({ voucherId, formatDate }: PreviewProps & { voucherId: s
     })();
     return () => { cancelled = true; };
   }, [voucherId]);
-  if (loading && !voucher) return <div className="text-sm text-gray-500 py-6 text-center">Loading…</div>;
+  if (loading && !voucher) return <PreviewSkeleton />;
   if (!voucher) return <div className="text-sm text-gray-500 py-6 text-center">Voucher not found.</div>;
   const ccy = voucher.currency;
   // Voucher forces a 100% discount so `total` is always 0. Sum the
@@ -1068,7 +1135,7 @@ function BillPreview({ billId, formatDate }: PreviewProps & { billId: string }) 
     })();
     return () => { cancelled = true; };
   }, [billId]);
-  if (loading && !bill) return <div className="text-sm text-gray-500 py-6 text-center">Loading…</div>;
+  if (loading && !bill) return <PreviewSkeleton />;
   if (!bill) return <div className="text-sm text-gray-500 py-6 text-center">Bill not found.</div>;
   const ccy = bill.currency;
   return (
@@ -1178,7 +1245,7 @@ function ReceiptPreview({ receiptId, formatDate }: PreviewProps & { receiptId: s
     })();
     return () => { cancelled = true; };
   }, [receiptId]);
-  if (loading && !receipt) return <div className="text-sm text-gray-500 py-6 text-center">Loading…</div>;
+  if (loading && !receipt) return <PreviewSkeleton />;
   if (!receipt) return <div className="text-sm text-gray-500 py-6 text-center">Expense not found.</div>;
   const ccy = receipt.currency;
   // Receipt is a single-amount doc — no items to list, so the totals

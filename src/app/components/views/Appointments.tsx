@@ -27,6 +27,21 @@ import * as employeesApi from '../../api/employees';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import { useConfirm } from '../../context/ConfirmContext';
+import { TONE_CLASS } from '../../utils/statusTones';
+import { format } from 'date-fns';
+
+/** "2026-10-23T09:30" for <input type="datetime-local"> in LOCAL time.
+ *  toISOString() is UTC, so seeding the input from it shifted the
+ *  appointment by the zone offset (+7h in Cambodia) on every save. */
+function toLocalDateTimeInput(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : format(d, "yyyy-MM-dd'T'HH:mm");
+}
 
 /**
  * Healthcare > Appointment — the waiting-room queue (V194 /
@@ -44,6 +59,7 @@ import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 export function Appointments() {
   const { canCreate, canUpdate, canDelete } = useAuth();
   const { formatDateTime } = useDateFormat();
+  const confirm = useConfirm();
   const canAdd    = canCreate('appointment');
   const canEdit   = canUpdate('appointment');
   const canRemove = canDelete('appointment');
@@ -53,8 +69,11 @@ export function Appointments() {
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [doctors, setDoctors]     = useState<employeesApi.Employee[]>([]);
   const [loading, setLoading]     = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [search, setSearch]       = useState('');
+  const [dateFrom, setDateFrom]   = useState('');
+  const [dateTo, setDateTo]       = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | appointmentsApi.AppointmentStatus>('all');
   const [doctorFilter, setDoctorFilter] = useState<'all' | string>('all');
 
@@ -78,8 +97,10 @@ export function Appointments() {
       setEncounters(encs.content ?? []);
       setCustomers(custs.content ?? []);
       setDoctors(emps.content ?? []);
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load appointments');
+      // Inline error + Retry — a toast over an empty table read as "no appointments".
+      setLoadError(e instanceof Error ? e.message : 'Failed to load appointments');
     } finally {
       setLoading(false);
     }
@@ -95,6 +116,14 @@ export function Appointments() {
     return rows.filter(a => {
       if (statusFilter !== 'all' && a.status !== statusFilter) return false;
       if (doctorFilter !== 'all' && a.doctorId !== doctorFilter) return false;
+      if (dateFrom || dateTo) {
+        // Walk-ins have no scheduled time — fall back to when they were booked.
+        const when = a.scheduledAt ?? a.createdAt;
+        if (!when) return false;
+        const day = format(new Date(when), 'yyyy-MM-dd');
+        if (dateFrom && day < dateFrom) return false;
+        if (dateTo && day > dateTo) return false;
+      }
       if (!q) return true;
       const patient = a.patientId ? custById.get(a.patientId)?.name?.toLowerCase() ?? '' : '';
       const doctor  = a.doctorId  ? docById.get(a.doctorId)?.name?.toLowerCase() ?? '' : '';
@@ -104,12 +133,30 @@ export function Appointments() {
           || patient.includes(q)
           || doctor.includes(q);
     });
-  }, [rows, search, statusFilter, doctorFilter, custById, docById, encById]);
+  }, [rows, search, statusFilter, doctorFilter, dateFrom, dateTo, custById, docById, encById]);
+
+  const hasFilters = !!(search || statusFilter !== 'all' || doctorFilter !== 'all' || dateFrom || dateTo);
+  const clearFilters = () => {
+    setSearch('');
+    setStatusFilter('all');
+    setDoctorFilter('all');
+    setDateFrom('');
+    setDateTo('');
+  };
 
   // 10 rows per page — same rhythm as the Encounter + Invoice lists.
   const pagination = usePagination(filtered, 10);
 
   const doTransition = async (a: appointmentsApi.Appointment, next: appointmentsApi.AppointmentStatus) => {
+    if (next === 'cancelled') {
+      const ok = await confirm({
+        title: `Cancel appointment #${a.queueNo}?`,
+        message: 'The patient is taken off the queue. You can reopen it later.',
+        confirmLabel: 'Cancel appointment',
+        variant: 'destructive',
+      });
+      if (!ok) return;
+    }
     setBusyId(a.id);
     try {
       await appointmentsApi.transition(a.id, next);
@@ -123,7 +170,13 @@ export function Appointments() {
   };
 
   const doDelete = async (a: appointmentsApi.Appointment) => {
-    if (!confirm(`Delete appointment #${a.queueNo}?`)) return;
+    const ok = await confirm({
+      title: `Delete appointment #${a.queueNo}?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     setBusyId(a.id);
     try {
       await appointmentsApi.remove(a.id);
@@ -136,13 +189,14 @@ export function Appointments() {
     }
   };
 
+  // Shared status palette (utils/statusTones): waiting = pending (amber),
+  // in progress = blue, completed = green, cancelled = slate.
   const statusBadge = (s: appointmentsApi.AppointmentStatus): string => {
     switch (s) {
-      case 'waiting':     return 'border-amber-300 text-amber-700 bg-amber-50';
-      case 'in_progress': return 'border-blue-300 text-blue-700 bg-blue-50';
-      case 'completed':   return 'border-emerald-300 text-emerald-700 bg-emerald-50';
-      case 'cancelled':   return 'border-gray-300 text-gray-500 bg-gray-50';
-      default:            return 'border-gray-200 text-gray-700 bg-gray-50';
+      case 'waiting':     return TONE_CLASS.attention;
+      case 'in_progress': return TONE_CLASS.info;
+      case 'completed':   return TONE_CLASS.success;
+      default:            return TONE_CLASS.neutral;
     }
   };
 
@@ -191,26 +245,26 @@ export function Appointments() {
       <Card>
         <CardHeader className="pb-3">
           <div className="filter-strip">
-            <div className="flex items-center gap-1.5">
-              {statusFilters.map(f => {
-                const active = statusFilter === f.value;
-                return (
-                  <button
-                    key={f.value}
-                    onClick={() => setStatusFilter(f.value)}
-                    className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
-                      active
-                        ? 'bg-teal-50 border-teal-300 text-teal-800'
-                        : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                );
-              })}
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search queue no, encounter, patient, doctor…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-[220px]">
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              {statusFilters.map(f => (
+                <option key={f.value} value={f.value}>Status : {f.label}</option>
+              ))}
+            </select>
+              <div className="w-[220px] shrink-0">
                 <SearchablePicker
                   options={[
                     { value: 'all', label: 'All doctors' },
@@ -233,16 +287,15 @@ export function Appointments() {
                   allowClear={false}
                 />
               </div>
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search queue no, encounter, patient, doctor…"
-                  className="pl-7 w-[280px]"
-                />
-              </div>
-            </div>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -263,16 +316,12 @@ export function Appointments() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? (
+              {loading && rows.length === 0 ? (
                 <TableBodySkeletonRows rows={6} columns={7} />
+              ) : loadError && rows.length === 0 ? (
+                <ListError colSpan={7} message={loadError} onRetry={() => void load()} />
               ) : filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-gray-500 py-8">
-                    {search || statusFilter !== 'all' || doctorFilter !== 'all'
-                      ? 'No appointments match your filter.'
-                      : 'No appointments yet — click Book Appointment to add the first one.'}
-                  </TableCell>
-                </TableRow>
+                <ListEmpty colSpan={7} noun="appointments" filtered={hasFilters} />
               ) : (
                 pagination.paginatedItems.map(a => {
                   const enc     = encById.get(a.encounterId);
@@ -323,63 +372,69 @@ export function Appointments() {
                         <div className="inline-flex gap-1 justify-end">
                           {canEdit && a.status === 'waiting' && (
                             <Button
-                              size="sm" variant="ghost" className="h-7 text-blue-700"
+                              variant="ghost" size="icon" className="h-7 w-7 text-blue-700"
                               onClick={() => doTransition(a, 'in_progress')}
                               disabled={busy}
                               title="Start consultation"
+                              aria-label="Start consultation"
                             >
-                              <Play className="h-3 w-3 mr-1" /> Start
+                              <Play className="h-4 w-4" />
                             </Button>
                           )}
                           {canEdit && a.status === 'in_progress' && (
                             <Button
-                              size="sm" variant="ghost" className="h-7 text-emerald-700"
+                              variant="ghost" size="icon" className="h-7 w-7 text-emerald-700"
                               onClick={() => doTransition(a, 'completed')}
                               disabled={busy}
                               title="Complete consultation"
+                              aria-label="Complete consultation"
                             >
-                              <Check className="h-3 w-3 mr-1" /> Complete
+                              <Check className="h-4 w-4" />
                             </Button>
                           )}
                           {canEdit && !terminal && (
                             <Button
-                              size="sm" variant="ghost" className="h-7 text-gray-600"
+                              variant="ghost" size="icon" className="h-7 w-7 text-gray-600"
                               onClick={() => doTransition(a, 'cancelled')}
                               disabled={busy}
                               title="Cancel appointment"
+                              aria-label="Cancel appointment"
                             >
-                              <Ban className="h-3 w-3 mr-1" /> Cancel
+                              <Ban className="h-4 w-4" />
                             </Button>
                           )}
                           {canEdit && terminal && (
                             <Button
-                              size="sm" variant="ghost" className="h-7"
+                              variant="ghost" size="icon" className="h-7 w-7"
                               onClick={() => doTransition(a, 'waiting')}
                               disabled={busy}
                               title="Reopen — back to waiting"
+                              aria-label="Reopen"
                             >
-                              <Undo2 className="h-3 w-3 mr-1" /> Reopen
+                              <Undo2 className="h-4 w-4" />
                             </Button>
                           )}
                           {canEdit && (
                             <Button
-                              size="sm" variant="ghost" className="h-7"
+                              variant="ghost" size="icon" className="h-7 w-7"
                               onClick={() => setEditing(a)}
                               disabled={busy}
                               title="Edit appointment — doctor fills diagnosis here"
+                              aria-label="Edit appointment"
                             >
-                              <Pencil className="h-3 w-3" />
+                              <Pencil className="h-4 w-4" />
                             </Button>
                           )}
                           {canRemove && (
                             <Button
-                              size="sm" variant="ghost"
-                              className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              variant="ghost" size="icon"
+                              className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => doDelete(a)}
                               disabled={busy}
                               title="Delete appointment"
+                              aria-label="Delete appointment"
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           )}
                         </div>
@@ -581,7 +636,7 @@ function BookAppointmentDialog({ open, onOpenChange, encounters, customers, doct
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Patient *</Label>
+              <Label className="text-xs">Patient <span className="text-red-500">*</span></Label>
               <SearchablePicker
                 options={patientOptions}
                 value={patientId}
@@ -641,7 +696,7 @@ function BookAppointmentDialog({ open, onOpenChange, encounters, customers, doct
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={!canSave}>
             {saving ? 'Booking…' : 'Book Appointment'}
           </Button>
@@ -695,10 +750,10 @@ function EditAppointmentDialog({ open, onOpenChange, appointment, encounters, cu
     setEncounterId(appointment.encounterId ?? '');
     setPatientId(appointment.patientId ?? '');
     setDoctorId(appointment.doctorId ?? '');
-    // Local datetime string for <input type="datetime-local">.
-    setScheduledAt(appointment.scheduledAt
-      ? new Date(appointment.scheduledAt).toISOString().slice(0, 16)
-      : '');
+    // LOCAL datetime string for <input type="datetime-local">. The old
+    // toISOString().slice(0,16) seeded UTC, so every save moved the
+    // appointment by the zone offset.
+    setScheduledAt(toLocalDateTimeInput(appointment.scheduledAt));
     setCashierNote(appointment.cashierNote ?? '');
     setDiagnosis(appointment.diagnosis ?? '');
     // Split existing items by category. Untagged rows drop into the
@@ -964,7 +1019,7 @@ function EditAppointmentDialog({ open, onOpenChange, appointment, encounters, cu
           />
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </Button>
@@ -1036,17 +1091,16 @@ function ClinicalSectionCard({ title, placeholder, rows, onAdd, onRemove, onUpda
                   onChange={e => onUpdate(r.rowId, { description: e.target.value })}
                   disabled={!canEdit}
                 />
-                <Input
-                  type="number" step="0.01" min="0"
-                  className="text-right tabular-nums"
+                <NumericInput
+                  decimals={2}
                   value={r.quantity}
-                  onChange={e => onUpdate(r.rowId, { quantity: e.target.value })}
+                  onChange={v => onUpdate(r.rowId, { quantity: v })}
                   disabled={!canEdit}
                 />
                 {canEdit ? (
                   <Button
-                    size="sm" variant="ghost"
-                    className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    variant="ghost" size="icon"
+                    className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                     onClick={() => onRemove(r.rowId)}
                     title="Remove line"
                   >

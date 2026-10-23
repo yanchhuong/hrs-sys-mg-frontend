@@ -40,7 +40,13 @@ import * as settingsApi from '../../api/settings';
 import * as systemHolidaysApi from '../../api/systemHolidays';
 import * as telegramApi from '../../api/telegram';
 import * as hrTelegramApi from '../../api/hrTelegramBots';
-import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { TableBodySkeletonRows, TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { Pagination } from '../common/Pagination';
+import { usePagination } from '../../hooks/usePagination';
+import { Checkbox } from '../ui/checkbox';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
 import { DocAuditLine } from '../common/DocAuditLine';
 
 /**
@@ -62,8 +68,13 @@ export function Announcements() {
   const employeesAvailable = isModuleAvailable('employees') && canView('employees');
   const customersAvailable = isModuleAvailable('customer')  && canView('customer');
 
+  const { formatDateTime } = useDateFormat();
   const [rows, setRows]     = useState<api.Announcement[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'' | api.LifecycleStatus>('');
+  const [typeFilter, setTypeFilter] = useState<'' | api.AnnouncementType>('');
 
   // Create-dialog state — kept here rather than inside a child so
   // the form can be reset cleanly on every open without prop drilling.
@@ -163,15 +174,43 @@ export function Announcements() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.list(0, 50);
-      setRows(res.content ?? []);
+      // The old list(0, 50) silently hid everything past the 50th row.
+      // The server caps a page at 100 and has no filter params, so walk
+      // the pages (bounded) and filter + paginate on the client.
+      const PAGE = 100;
+      const MAX_PAGES = 10;
+      const first = await api.list(0, PAGE);
+      let all = first.content ?? [];
+      const pages = Math.min(first.totalPages ?? 1, MAX_PAGES);
+      if (pages > 1) {
+        const rest = await Promise.all(
+          Array.from({ length: pages - 1 }, (_, i) => api.list(i + 1, PAGE)),
+        );
+        all = all.concat(...rest.map(r => r.content ?? []));
+      }
+      setRows(all);
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load announcements');
+      // Inline error + Retry — a toast over an empty table read as "no announcements".
+      setLoadError(e instanceof Error ? e.message : 'Failed to load announcements');
     } finally {
       setLoading(false);
     }
   };
   useEffect(() => { if (canViewAnnouncement) void load(); }, [canViewAnnouncement]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(a => {
+      if (statusFilter && a.status !== statusFilter) return false;
+      if (typeFilter && a.type !== typeFilter) return false;
+      if (!q) return true;
+      return `${a.title ?? ''} ${a.body ?? ''} ${a.createdByName ?? ''}`.toLowerCase().includes(q);
+    });
+  }, [rows, search, statusFilter, typeFilter]);
+  const hasFilters = !!(search || statusFilter || typeFilter);
+  const clearFilters = () => { setSearch(''); setStatusFilter(''); setTypeFilter(''); };
+  const listPagination = usePagination(filteredRows, 15);
 
   // Pull recipient candidates lazily — only when the dialog opens AND
   // a SPECIFIC audience type is in play. ALL_* doesn't render the
@@ -545,6 +584,48 @@ export function Announcements() {
       </div>
 
       <Card>
+        <div className="px-6 pt-6 pb-3">
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search title, message, author…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              <option value="">Status : All</option>
+              <option value="DRAFT">Status : Draft</option>
+              <option value="SCHEDULED">Status : Scheduled</option>
+              <option value="PUBLISHED">Status : Published</option>
+              <option value="EXPIRED">Status : Expired</option>
+            </select>
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by type"
+            >
+              <option value="">Type : All</option>
+              <option value="HOLIDAY">Type : Holiday</option>
+              <option value="NEWS">Type : News</option>
+              <option value="EVENTS">Type : Events</option>
+              <option value="OTHERS">Type : Others</option>
+            </select>
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
+          </div>
+        </div>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -558,15 +639,20 @@ export function Announcements() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && rows.length === 0 && (
+              {loading && rows.length === 0 ? (
                 <TableBodySkeletonRows rows={6} columns={6} />
-              )}
-              {!loading && rows.length === 0 && (
-                <TableRow><TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">
-                  No announcements yet. {canCreateAnnouncement && <>Click <strong>New Announcement</strong> to publish the first one.</>}
-                </TableCell></TableRow>
-              )}
-              {rows.map(a => (
+              ) : loadError && rows.length === 0 ? (
+                <ListError colSpan={6} message={loadError} onRetry={() => void load()} />
+              ) : filteredRows.length === 0 ? (
+                <ListEmpty colSpan={6} noun="announcements" filtered={hasFilters}>
+                  {!hasFilters && canCreateAnnouncement && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Click <strong>New Announcement</strong> to publish the first one.
+                    </p>
+                  )}
+                </ListEmpty>
+              ) : null}
+              {listPagination.paginatedItems.map(a => (
                 <TableRow key={a.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => void openDetail(a)}>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -589,7 +675,7 @@ export function Announcements() {
                   <TableCell><TelegramStatusBadge status={a.telegramSentStatus} sendTelegram={a.sendTelegram} /></TableCell>
                   <TableCell className="text-xs text-gray-600">
                     {a.publishAt
-                      ? new Date(a.publishAt).toLocaleString()
+                      ? formatDateTime(a.publishAt)
                       : <span className="text-gray-400 italic">draft</span>}
                     {/* v-doc-audit-line — creator / last editor */}
                     <DocAuditLine compact createdBy={a.createdByName} updatedBy={a.updatedByName} className="max-w-[180px]" />
@@ -603,6 +689,18 @@ export function Announcements() {
               ))}
             </TableBody>
           </Table>
+          {filteredRows.length > 0 && (
+            <div className="px-4 py-3 border-t">
+              <Pagination
+                currentPage={listPagination.currentPage}
+                totalPages={listPagination.totalPages}
+                onPageChange={listPagination.goToPage}
+                startIndex={listPagination.startIndex}
+                endIndex={listPagination.endIndex}
+                totalItems={listPagination.totalItems}
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -733,7 +831,7 @@ export function Announcements() {
                     where the plate's KH-line block of the plate's
                     lede actually renders side-by-side. */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Title</Label>
+                  <Label className="text-xs">Title <span className="text-red-500">*</span></Label>
                   <div className="flex gap-2">
                     <Input
                       value={title}
@@ -750,7 +848,7 @@ export function Announcements() {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Message</Label>
+                  <Label className="text-xs">Message <span className="text-red-500">*</span></Label>
                   {/* Side-by-side bilingual lede so the plate's
                       two-column body layout (KM | EN) is mirrored in
                       the editor — admin sees the same column shape
@@ -775,7 +873,7 @@ export function Announcements() {
             ) : (
               <>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Title</Label>
+                  <Label className="text-xs">Title <span className="text-red-500">*</span></Label>
                   <div className="flex gap-2">
                     <Input
                       value={title}
@@ -798,7 +896,7 @@ export function Announcements() {
                   )}
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Message</Label>
+                  <Label className="text-xs">Message <span className="text-red-500">*</span></Label>
                   <Textarea rows={4} value={body} onChange={e => setBody(e.target.value)}
                     placeholder="Office closed tomorrow." />
                 </div>
@@ -822,10 +920,10 @@ export function Announcements() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     {recipientIds.length > 0 && (
-                      <button type="button" className="text-[11px] text-blue-600 hover:underline"
+                      <Button type="button" size="sm" variant="ghost" className="h-7"
                         onClick={() => setRecipientIds([])}>
                         Clear
-                      </button>
+                      </Button>
                     )}
                     <Button size="sm" variant="outline" className="h-7"
                       onClick={() => { setPickerSearch(''); setRecipientsPickerOpen(true); }}>
@@ -1119,17 +1217,17 @@ export function Announcements() {
                 className="pl-7 h-8 text-sm" autoFocus />
             </div>
             {recipientIds.length > 0 && (
-              <button type="button" className="text-[11px] text-blue-600 hover:underline"
+              <Button type="button" size="sm" variant="ghost" className="h-8 shrink-0"
                 onClick={() => setRecipientIds([])}>
                 Clear all
-              </button>
+              </Button>
             )}
           </div>
 
           <div className="overflow-y-auto flex-1 min-h-0 divide-y">
             {pickerLoading && (
-              <div className="p-6 text-center text-xs text-gray-500">
-                <Loader2 className="h-3.5 w-3.5 inline animate-spin mr-1" /> Loading…
+              <div className="px-4">
+                <TableRowsSkeleton rows={6} columns={2} />
               </div>
             )}
             {!pickerLoading && pickerOptions.length === 0 && (
@@ -1140,8 +1238,8 @@ export function Announcements() {
                 className={`flex items-center gap-2 px-4 py-2 cursor-pointer ${
                   opt.linked ? 'bg-emerald-50/40 hover:bg-emerald-50' : 'hover:bg-gray-50'
                 }`}>
-                <input type="checkbox" checked={recipientIds.includes(opt.id)}
-                  onChange={() => toggleRecipient(opt.id)} className="h-3.5 w-3.5" />
+                <Checkbox checked={recipientIds.includes(opt.id)}
+                  onCheckedChange={() => toggleRecipient(opt.id)} />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm flex items-center gap-1.5">
                     <span className={opt.linked ? 'text-emerald-800 font-medium' : ''}>{opt.label}</span>
@@ -1179,7 +1277,14 @@ export function Announcements() {
             </DialogTitle>
             <DialogDescription>
               {detail && <>
-                Published {new Date(detail.createdAt).toLocaleString()} ·{' '}
+                {/* Status-aware: a Draft was never published and a
+                    Scheduled row goes live at publishAt, not createdAt. */}
+                {detail.status === 'DRAFT'
+                  ? <>Created {formatDateTime(detail.createdAt)}</>
+                  : detail.status === 'SCHEDULED'
+                    ? <>Scheduled for {formatDateTime(detail.publishAt ?? detail.createdAt)}</>
+                    : <>Published {formatDateTime(detail.publishAt ?? detail.createdAt)}</>}
+                {' · '}
                 <TypeBadge type={detail.type} /> ·{' '}
                 <AudienceBadge type={detail.audienceType} />
               </>}
@@ -1239,8 +1344,8 @@ export function Announcements() {
                 ) : (
                   <div className="border rounded-md max-h-[200px] overflow-y-auto divide-y">
                     {readersLoading && (
-                      <div className="p-3 text-center text-xs text-gray-500">
-                        <Loader2 className="h-3.5 w-3.5 inline animate-spin mr-1" /> Loading…
+                      <div className="px-3">
+                        <TableRowsSkeleton rows={3} columns={2} />
                       </div>
                     )}
                     {!readersLoading && readers.map(r => (
@@ -1253,7 +1358,7 @@ export function Announcements() {
                           )}
                         </div>
                         <div className="text-[10px] text-gray-400 whitespace-nowrap">
-                          {new Date(r.readAt).toLocaleString()}
+                          {formatDateTime(r.readAt)}
                         </div>
                       </div>
                     ))}
@@ -1277,8 +1382,8 @@ export function Announcements() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {logsLoading && (
-                          <TableRow><TableCell colSpan={3} className="text-center text-xs text-gray-500 py-4">Loading…</TableCell></TableRow>
+                        {logsLoading && logs.length === 0 && (
+                          <TableBodySkeletonRows rows={3} columns={3} />
                         )}
                         {!logsLoading && logs.length === 0 && (
                           <TableRow><TableCell colSpan={3} className="text-center text-xs text-gray-500 py-4">No deliveries yet — fan-out may still be in progress.</TableCell></TableRow>
@@ -1464,12 +1569,15 @@ function audienceLabel(type: api.AudienceType, count: number): string {
 
 /* ----- helpers ----- */
 
+/** Lifecycle status on the shared palette (utils/statusTones):
+ *  Draft / Expired slate, Scheduled blue, Published green. */
 function StatusBadge({ status }: { status: api.LifecycleStatus }) {
+  const cls = `gap-1 ${statusBadgeClass(status === 'PUBLISHED' ? 'active' : status)}`;
   switch (status) {
-    case 'DRAFT':     return <Badge variant="outline" className="text-gray-500 gap-1"><FileEdit className="h-3 w-3" />Draft</Badge>;
-    case 'SCHEDULED': return <Badge className="bg-violet-100 text-violet-700 border-violet-200 gap-1"><Calendar className="h-3 w-3" />Scheduled</Badge>;
-    case 'PUBLISHED': return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1"><CheckCircle2 className="h-3 w-3" />Published</Badge>;
-    case 'EXPIRED':   return <Badge className="bg-gray-100 text-gray-600 border-gray-200 gap-1"><Hourglass className="h-3 w-3" />Expired</Badge>;
+    case 'DRAFT':     return <Badge variant="outline" className={cls}><FileEdit className="h-3 w-3" />Draft</Badge>;
+    case 'SCHEDULED': return <Badge variant="outline" className={cls}><Calendar className="h-3 w-3" />Scheduled</Badge>;
+    case 'PUBLISHED': return <Badge variant="outline" className={cls}><CheckCircle2 className="h-3 w-3" />Published</Badge>;
+    case 'EXPIRED':   return <Badge variant="outline" className={cls}><Hourglass className="h-3 w-3" />Expired</Badge>;
   }
 }
 
@@ -1487,10 +1595,10 @@ function AudienceBadge({ type }: { type: api.AudienceType }) {
 function TelegramStatusBadge({ status, sendTelegram }: { status: api.TelegramSentStatus; sendTelegram: boolean }) {
   if (!sendTelegram) return <Badge variant="outline" className="text-gray-500 gap-1"><MinusCircle className="h-3 w-3" />Off</Badge>;
   switch (status) {
-    case 'SENT':     return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1"><CheckCircle2 className="h-3 w-3" />Sent</Badge>;
-    case 'PARTIAL':  return <Badge className="bg-amber-100 text-amber-800 border-amber-200 gap-1"><AlertCircle className="h-3 w-3" />Partial</Badge>;
-    case 'FAILED':   return <Badge className="bg-red-100 text-red-700 border-red-200 gap-1"><XCircle className="h-3 w-3" />Failed</Badge>;
-    case 'PENDING':  return <Badge className="bg-blue-100 text-blue-700 border-blue-200 gap-1"><Loader2 className="h-3 w-3 animate-spin" />Sending…</Badge>;
+    case 'SENT':     return <Badge variant="outline" className={`gap-1 ${TONE_CLASS.success}`}><CheckCircle2 className="h-3 w-3" />Sent</Badge>;
+    case 'PARTIAL':  return <Badge variant="outline" className={`gap-1 ${TONE_CLASS.warning}`}><AlertCircle className="h-3 w-3" />Partial</Badge>;
+    case 'FAILED':   return <Badge variant="outline" className={`gap-1 ${TONE_CLASS.danger}`}><XCircle className="h-3 w-3" />Failed</Badge>;
+    case 'PENDING':  return <Badge variant="outline" className={`gap-1 ${TONE_CLASS.info}`}><Loader2 className="h-3 w-3 animate-spin" />Sending…</Badge>;
     case 'SKIPPED':  return <Badge variant="outline" className="text-gray-500">Off</Badge>;
   }
 }

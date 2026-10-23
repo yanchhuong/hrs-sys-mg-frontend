@@ -19,12 +19,20 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '../ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
-import { DateRangeFilter } from '../common/DateRangeFilter';
+import { DateInput } from '../common/DateInput';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../ui/select';
+import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
+import { useConfirm } from '../../context/ConfirmContext';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
 import { DocAuditLine } from '../common/DocAuditLine';
@@ -34,7 +42,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { mockEmployees } from '../../data/mockData';
 import { useTeamScope, ScopeMode } from '../../hooks/useTeamScope';
 import { ScopePicker } from '../common/ScopePicker';
-import { Check, X, Plus, Search, Download } from 'lucide-react';
+import { Check, X, Plus, Search, Download, Eye } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import {
   format, isWithinInterval, parseISO, eachDayOfInterval,
@@ -134,9 +142,11 @@ const LEAVE_CATEGORIES_DEDUCTIBLE = [
 export const LEAVE_CATEGORY_STYLES: Record<string, string> = {
   annual:    'bg-blue-100 text-blue-800 hover:bg-blue-100',
   sick:      'bg-rose-100 text-rose-800 hover:bg-rose-100',
-  special:   'bg-violet-100 text-violet-800 hover:bg-violet-100',
+  // Exception is violet on Attendance, so it is violet here too;
+  // Special moved to indigo to keep the two apart.
+  special:   'bg-indigo-100 text-indigo-800 hover:bg-indigo-100',
   maternity: 'bg-pink-100 text-pink-800 hover:bg-pink-100',
-  exception: 'bg-amber-100 text-amber-800 hover:bg-amber-100',
+  exception: 'bg-violet-100 text-violet-800 hover:bg-violet-100',
 };
 export const LEAVE_CATEGORY_LABELS: Record<string, string> = {
   annual:    'Annual',
@@ -148,10 +158,12 @@ export const LEAVE_CATEGORY_LABELS: Record<string, string> = {
 
 export function AllLeave() {
   const { t } = useI18n();
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
+  const confirm = useConfirm();
   const [leaves, setLeaves] = useState<AttendanceException[]>(USE_MOCKS ? mockExceptions : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
-  const [, setLoading] = useState<boolean>(!USE_MOCKS);
+  const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
   const deptName = makeDeptName(deptList, '');
   const [dateFilter, setDateFilter] = useState<{ start: string | null; end: string | null }>({
@@ -218,15 +230,13 @@ export function AllLeave() {
   } = useTeamScope();
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
 
-  const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
-    setDateFilter({ start: startDate, end: endDate });
-  };
 
   const loadLeaves = async () => {
     if (USE_MOCKS) {
       setLeaves([...mockExceptions]);
       return;
     }
+    setLoading(true);
     try {
       const res = await leaveApi.list({
         from: dateFilter.start || undefined,
@@ -234,8 +244,10 @@ export function AllLeave() {
         size: 500,
       });
       setLeaves(res.data.map(adaptApiLeave));
+      setLoadError(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load leave requests');
+      // Inline error + Retry instead of a toast over an empty table.
+      setLoadError(err instanceof Error ? err.message : 'Failed to load leave requests');
     } finally {
       setLoading(false);
     }
@@ -292,14 +304,22 @@ export function AllLeave() {
   };
 
   const handleReject = async (id: string) => {
+    const ok = await confirm({
+      title: 'Reject this leave request?',
+      message: 'The employee will see the request as rejected.',
+      confirmLabel: 'Reject',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     if (USE_MOCKS) {
       setLeaves(prev => prev.map(l => l.id === id ? { ...l, status: 'rejected' } : l));
-      toast.error('Leave rejected');
+      toast.success('Leave rejected');
       return;
     }
     try {
       await leaveApi.reject(id);
-      toast.error('Leave rejected');
+      // The reject succeeded — a red error toast read as a failure.
+      toast.success('Leave rejected');
       await loadLeaves();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to reject leave');
@@ -379,13 +399,18 @@ export function AllLeave() {
     return labels[type] || type;
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100',
-      approved: 'bg-green-100 text-green-800 hover:bg-green-100',
-      rejected: 'bg-red-100 text-red-800 hover:bg-red-100',
-    };
-    return variants[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100';
+  // Shared status palette — Pending amber, Approved green, Rejected red.
+  const getStatusBadge = (status: string) => statusBadgeClass(status);
+
+  const hasFilters = !!(
+    search || categoryFilter !== 'all' || statusFilter !== 'all'
+    || dateFilter.start || dateFilter.end
+  );
+  const clearFilters = () => {
+    setSearch('');
+    setCategoryFilter('all');
+    setStatusFilter('all');
+    setDateFilter({ start: null, end: null });
   };
 
   let filteredLeaves = leaves;
@@ -476,13 +501,10 @@ export function AllLeave() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-bold">{t('page.allleave.title')}</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold">{t('page.allleave.title')}</h1>
+        <div className="flex items-center gap-2">
           {showScopePicker && <ScopePicker value={scopeMode} onChange={setScopeMode} />}
-          <DateRangeFilter onFilterChange={handleDateFilterChange} />
           <Button
             variant="outline"
             size="icon"
@@ -513,16 +535,19 @@ export function AllLeave() {
                       Exception, not here. */}
                   <div className="space-y-2">
                     <Label htmlFor="lv-category">Leave Type</Label>
-                    <select
-                      id="lv-category"
+                    <Select
                       value={newCategory}
-                      onChange={(e) => handleCategoryChange(e.target.value as typeof newCategory)}
-                      className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                      onValueChange={(v) => handleCategoryChange(v as typeof newCategory)}
                     >
-                      {LEAVE_CATEGORIES_DEDUCTIBLE.map(c => (
-                        <option key={c.value} value={c.value}>{c.label}</option>
-                      ))}
-                    </select>
+                      <SelectTrigger id="lv-category" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LEAVE_CATEGORIES_DEDUCTIBLE.map(c => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <p className="text-[11px] text-gray-500">
                       {LEAVE_CATEGORIES_DEDUCTIBLE.find(c => c.value === newCategory)?.hint}
                     </p>
@@ -531,32 +556,35 @@ export function AllLeave() {
                       (end_date gets locked to start_date below). */}
                   <div className="space-y-2">
                     <Label htmlFor="lv-duration">Duration</Label>
-                    <select
-                      id="lv-duration"
+                    <Select
                       value={newDuration}
-                      onChange={(e) => handleDurationChange(e.target.value as typeof newDuration)}
-                      className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                      onValueChange={(v) => handleDurationChange(v as typeof newDuration)}
                     >
-                      <option value="full">Full Day</option>
-                      {/* Wording matches the badge labels above and the
-                          Telegram bot's duration buttons — the same leave
-                          should read the same in every surface. */}
-                      <option value="half_morning">Half Morning</option>
-                      <option value="half_noon">Half Noon</option>
-                    </select>
+                      <SelectTrigger id="lv-duration" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">Full Day</SelectItem>
+                        {/* Wording matches the badge labels above and the
+                            Telegram bot's duration buttons — the same leave
+                            should read the same in every surface. */}
+                        <SelectItem value="half_morning">Half Morning</SelectItem>
+                        <SelectItem value="half_noon">Half Noon</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   {/* Date range — Start + End. End is read-only for
                       half-day durations. For Maternity it auto-fills to
                       Start + 89 days (90-day inclusive window). */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label htmlFor="lv-date">Start Date</Label>
-                      <Input
-                        id="lv-date"
-                        type="date"
+                      <Label>Start Date <span className="text-red-500">*</span></Label>
+                      <DateInput
                         value={newDate}
-                        onChange={(e) => {
-                          const v = e.target.value;
+                        className="w-full"
+                        clearable={false}
+                        onChange={(val) => {
+                          const v = val ?? '';
                           setNewDate(v);
                           if (newDuration !== 'full') setNewEndDate(v);
                           else if (newCategory === 'maternity' && v) {
@@ -571,14 +599,14 @@ export function AllLeave() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="lv-end">End Date</Label>
-                      <Input
-                        id="lv-end"
-                        type="date"
+                      <Label>End Date <span className="text-red-500">*</span></Label>
+                      <DateInput
                         value={newEndDate}
                         min={newDate}
+                        className="w-full"
+                        clearable={false}
                         disabled={newDuration !== 'full'}
-                        onChange={(e) => setNewEndDate(e.target.value)}
+                        onChange={(v) => setNewEndDate(v ?? '')}
                       />
                     </div>
                   </div>
@@ -617,7 +645,7 @@ export function AllLeave() {
                     </div>
                   )}
                   <div className="space-y-2">
-                    <Label htmlFor="lv-reason">Reason</Label>
+                    <Label htmlFor="lv-reason">Reason <span className="text-red-500">*</span></Label>
                     <Textarea
                       id="lv-reason"
                       placeholder="Explain why you need this leave…"
@@ -626,10 +654,11 @@ export function AllLeave() {
                       rows={3}
                     />
                   </div>
-                  <Button onClick={handleSubmitNew} className="w-full">
-                    Submit Leave
-                  </Button>
                 </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={handleSubmitNew}>Submit Leave</Button>
+                </DialogFooter>
               </DialogContent>
             </Dialog>
           )}
@@ -638,10 +667,8 @@ export function AllLeave() {
 
       <Card>
         <CardHeader className="pb-3">
-          {/* Single-row header: status tabs on the left, search box +
-              Leave Type filter on the right. Page title above the card
-              already labels the section so the redundant "All Leave"
-              card title is dropped. */}
+          {/* One filter strip, Transactions-style: status tabs, search,
+              Leave Type, From / To and a single Clear that resets all. */}
           <div className="filter-strip">
             <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
               <TabsList>
@@ -651,59 +678,62 @@ export function AllLeave() {
                 </TabsTrigger>
                 <TabsTrigger value="pending">
                   Pending
-                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-yellow-100 text-yellow-800 hover:bg-yellow-100">{statusCounts.pending}</Badge>
+                  <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${TONE_CLASS.attention}`}>{statusCounts.pending}</Badge>
                 </TabsTrigger>
                 <TabsTrigger value="approved">
                   Approved
-                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-green-100 text-green-800 hover:bg-green-100">{statusCounts.approved}</Badge>
+                  <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${TONE_CLASS.success}`}>{statusCounts.approved}</Badge>
                 </TabsTrigger>
                 <TabsTrigger value="rejected">
                   Rejected
-                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-red-100 text-red-800 hover:bg-red-100">{statusCounts.rejected}</Badge>
+                  <Badge variant="outline" className={`ml-1.5 h-5 px-1.5 text-[10px] ${TONE_CLASS.danger}`}>{statusCounts.rejected}</Badge>
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            <div className="flex items-center gap-2 ml-auto">
-              {/* Search shrinks on phones / narrow cards and grows up
-                  to ~15rem on sm+. Stays on the same row as the status
-                  tabs (parent is flex with flex-wrap, so on really
-                  cramped widths the search just wraps to the next line). */}
-              <div className="relative w-40 sm:w-56">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search…"
-                  className="h-8 pl-8 pr-8 text-sm"
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    title="Clear search"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-              {/* Leave Type filter — values match the LeaveCategory enum.
-                  Reusing the native select keeps the styling consistent
-                  with the existing Type filter on Increase / Deduction. */}
-              <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
-                className="h-8 px-2 border rounded-md text-sm bg-white"
-                title="Filter by Leave Type"
-              >
-                <option value="all">All Leave Types</option>
-                <option value="annual">Annual</option>
-                <option value="sick">Sick</option>
-                <option value="special">Special</option>
-                <option value="maternity">Maternity</option>
-                <option value="exception">Exception</option>
-              </select>
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search employee, department, reason…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
             </div>
+            {/* Leave Type filter — values match the LeaveCategory enum. */}
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by leave type"
+            >
+              <option value="all">Leave Type : All</option>
+              <option value="annual">Leave Type : Annual</option>
+              <option value="sick">Leave Type : Sick</option>
+              <option value="special">Leave Type : Special</option>
+              <option value="maternity">Leave Type : Maternity</option>
+              <option value="exception">Leave Type : Exception</option>
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0">
+              <DateInput
+                value={dateFilter.start}
+                onChange={v => setDateFilter(f => ({ ...f, start: v || null }))}
+                max={dateFilter.end || undefined}
+              />
+            </div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0">
+              <DateInput
+                value={dateFilter.end}
+                onChange={v => setDateFilter(f => ({ ...f, end: v || null }))}
+                min={dateFilter.start || undefined}
+              />
+            </div>
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -726,13 +756,13 @@ export function AllLeave() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {leavesPagination.paginatedItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={13} className="text-center text-sm text-gray-400 py-10">
-                    No leaves in this status.
-                  </TableCell>
-                </TableRow>
-              )}
+              {loading && leaves.length === 0 ? (
+                <TableBodySkeletonRows rows={6} columns={13} />
+              ) : loadError && leaves.length === 0 ? (
+                <ListError colSpan={13} message={loadError} onRetry={() => void loadLeaves()} />
+              ) : leavesPagination.paginatedItems.length === 0 ? (
+                <ListEmpty colSpan={13} noun="leave requests" filtered={hasFilters} />
+              ) : null}
               {leavesPagination.paginatedItems.map((leave) => {
                 const employee = employees.find(
                   (e) => e.id === leave.employeeId || (e as any).apiId === leave.employeeId,
@@ -741,7 +771,7 @@ export function AllLeave() {
                 const isPending = leave.status === 'pending';
                 const canActOnThis = isPending && canApproveLeaveOf(leave.employeeId, employees);
                 return (
-                  <TableRow key={leave.id} className={isPending ? 'bg-yellow-50/50' : ''}>
+                  <TableRow key={leave.id} className={`hover:bg-gray-50 ${isPending ? 'bg-amber-50/50' : ''}`}>
                     <TableCell>
                       <EmployeeCell employee={employee} subtitle={employee?.id} />
                     </TableCell>
@@ -776,12 +806,12 @@ export function AllLeave() {
                       {leave.reason || <span className="text-gray-300">—</span>}
                     </TableCell>
                     <TableCell>
-                      <Badge className={getStatusBadge(leave.status)}>
+                      <Badge variant="outline" className={getStatusBadge(leave.status)}>
                         {leave.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-gray-600">
-                      {format(new Date(leave.submittedAt), 'MMM dd, HH:mm')}
+                      {formatDateTime(leave.submittedAt)}
                     </TableCell>
                     <TableCell>
                       <AuditCell
@@ -797,24 +827,26 @@ export function AllLeave() {
                     </TableCell>
                     <TableCell className="text-right">
                       {canActOnThis ? (
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1">
                           <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs text-green-700 border-green-200 hover:bg-green-50 hover:text-green-800"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-green-700 hover:bg-green-50 hover:text-green-800"
                             onClick={() => handleApprove(leave.id)}
+                            title="Approve"
+                            aria-label="Approve"
                           >
-                            <Check className="h-3.5 w-3.5 mr-1" />
-                            Approve
+                            <Check className="h-4 w-4" />
                           </Button>
                           <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs text-red-700 border-red-200 hover:bg-red-50 hover:text-red-800"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-600 hover:bg-red-50 hover:text-red-700"
                             onClick={() => handleReject(leave.id)}
+                            title="Reject"
+                            aria-label="Reject"
                           >
-                            <X className="h-3.5 w-3.5 mr-1" />
-                            Reject
+                            <X className="h-4 w-4" />
                           </Button>
                         </div>
                       ) : isPending && role !== 'admin' ? (
@@ -829,12 +861,13 @@ export function AllLeave() {
                       ) : (
                         <Button
                           variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs"
+                          size="icon"
+                          className="h-7 w-7"
                           onClick={() => setViewTarget(leave)}
-                          title="Read-only view. Approve / Reject is only available while pending."
+                          title="View (read-only). Approve / Reject is only available while pending."
+                          aria-label="View"
                         >
-                          View
+                          <Eye className="h-4 w-4" />
                         </Button>
                       )}
                     </TableCell>
@@ -875,10 +908,11 @@ export function AllLeave() {
                   (e) => e.id === viewTarget.approvedBy || (e as any).apiId === viewTarget.approvedBy,
                 )
               : null;
-            const safeFmt = (s: string | undefined, pat: string) => {
+            const safeFmt = (s: string | undefined, withTime: boolean) => {
               if (!s) return '—';
               const d = new Date(s);
-              return Number.isNaN(d.getTime()) ? '—' : format(d, pat);
+              if (Number.isNaN(d.getTime())) return '—';
+              return withTime ? formatDateTime(s) : formatDate(s);
             };
             return (
               <div className="space-y-3 text-sm">
@@ -887,20 +921,36 @@ export function AllLeave() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-xs text-gray-500">Date</p>
-                    <p className="font-medium">{safeFmt(viewTarget.date, 'MMM dd, yyyy')}</p>
+                    <p className="text-xs text-gray-500">Start Date</p>
+                    <p className="font-medium">{safeFmt(viewTarget.date, false)}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Type</p>
+                    <p className="text-xs text-gray-500">End Date</p>
+                    <p className="font-medium">{safeFmt(viewTarget.endDate ?? viewTarget.date, false)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Leave Type</p>
+                    <p>
+                      {viewTarget.category ? (
+                        <Badge className={LEAVE_CATEGORY_STYLES[viewTarget.category]}>
+                          {LEAVE_CATEGORY_LABELS[viewTarget.category] ?? viewTarget.category}
+                        </Badge>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Duration</p>
                     <p><Badge variant="outline">{getTypeLabel(viewTarget.type)}</Badge></p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Status</p>
-                    <p><Badge className={getStatusBadge(viewTarget.status)}>{viewTarget.status}</Badge></p>
+                    <p><Badge variant="outline" className={getStatusBadge(viewTarget.status)}>{viewTarget.status}</Badge></p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Submitted</p>
-                    <p className="font-medium">{safeFmt(viewTarget.submittedAt, 'MMM dd, HH:mm')}</p>
+                    <p className="font-medium">{safeFmt(viewTarget.submittedAt, true)}</p>
                   </div>
                 </div>
                 {viewTarget.correctedCheckIn || viewTarget.correctedCheckOut ? (
@@ -926,7 +976,7 @@ export function AllLeave() {
                     <p className="text-xs text-gray-500">{viewTarget.status === 'rejected' ? 'Rejected' : 'Approved'}{approver ? ' By' : ''}</p>
                     {approver && <p className="font-medium">{approver.name}</p>}
                     {viewTarget.approvedAt && (
-                      <p className="text-xs text-gray-500">{safeFmt(viewTarget.approvedAt, 'MMM dd, yyyy HH:mm')}</p>
+                      <p className="text-xs text-gray-500">{safeFmt(viewTarget.approvedAt, true)}</p>
                     )}
                   </div>
                 )}

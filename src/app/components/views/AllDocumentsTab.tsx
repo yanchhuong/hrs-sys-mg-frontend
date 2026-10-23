@@ -3,9 +3,7 @@ import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '../ui/select';
+import { Label } from '../ui/label';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
@@ -22,6 +20,9 @@ import { usePagination } from '../../hooks/usePagination';
 import { useAuth } from '../../context/AuthContext';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { DateInput } from '../common/DateInput';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 /**
  * "All Documents" tab on the Employees page. Tenant-wide listing of
@@ -41,7 +42,7 @@ import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
  */
 
 const TYPE_OPTIONS: ReadonlyArray<{ value: documentsApi.EmployeeDocumentType | 'all'; label: string }> = [
-  { value: 'all',         label: 'All types' },
+  { value: 'all',         label: 'All' },
   { value: 'contract',    label: 'Contract' },
   { value: 'id_card',     label: 'ID Card' },
   { value: 'passport',    label: 'Passport' },
@@ -69,11 +70,15 @@ type SortDir = 'asc' | 'desc';
 export function AllDocumentsTab() {
   const { canDelete } = useAuth();
   const canRemove = canDelete('employees');
+  const { formatDateTime } = useDateFormat();
 
   const [docs, setDocs] = useState<documentsApi.DocumentWithEmployee[]>([]);
   const [loading, setLoading] = useState(false);
   const [typeFilter, setTypeFilter] = useState<typeof TYPE_OPTIONS[number]['value']>('all');
   const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('uploadedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [deleteTarget, setDeleteTarget] = useState<documentsApi.DocumentWithEmployee | null>(null);
@@ -85,8 +90,9 @@ export function AllDocumentsTab() {
     try {
       const res = await documentsApi.listAll(type === 'all' ? undefined : type);
       setDocs(res);
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load documents');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load documents');
     } finally {
       setLoading(false);
     }
@@ -100,6 +106,13 @@ export function AllDocumentsTab() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = docs;
+    if (dateFrom || dateTo) {
+      // Compare on the LOCAL calendar day of the upload.
+      rows = rows.filter(d => {
+        const day = format(new Date(d.uploadedAt), 'yyyy-MM-dd');
+        return (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
+      });
+    }
     if (q) {
       rows = rows.filter(d =>
         d.name.toLowerCase().includes(q)
@@ -116,7 +129,15 @@ export function AllDocumentsTab() {
       return String(av).localeCompare(String(bv)) * dir;
     });
     return sorted;
-  }, [docs, search, sortKey, sortDir]);
+  }, [docs, search, dateFrom, dateTo, sortKey, sortDir]);
+
+  const hasFilters = !!(search || typeFilter !== 'all' || dateFrom || dateTo);
+  const clearFilters = () => {
+    setSearch('');
+    setTypeFilter('all');
+    setDateFrom('');
+    setDateTo('');
+  };
 
   const pagination = usePagination(filtered, 25);
 
@@ -174,25 +195,34 @@ export function AllDocumentsTab() {
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="filter-strip">
-            <div className="relative flex-1 min-w-[260px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 placeholder="Search by employee, file name, or notes…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-10"
+                className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <Select value={typeFilter} onValueChange={v => setTypeFilter(v as typeof typeFilter)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TYPE_OPTIONS.map(o => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <select
+              value={typeFilter}
+              onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by document type"
+            >
+              {TYPE_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>Type : {o.label}</option>
+              ))}
+            </select>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
+            {hasFilters && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                Clear
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => void load(typeFilter)} disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
@@ -217,20 +247,22 @@ export function AllDocumentsTab() {
               <TableBody>
                 {loading && docs.length === 0 ? (
                   <TableBodySkeletonRows rows={6} columns={6} />
+                ) : loadError && docs.length === 0 ? (
+                  <ListError colSpan={6} message={loadError} onRetry={() => void load(typeFilter)} />
                 ) : pagination.paginatedItems.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">
-                      {docs.length === 0
-                        ? 'No documents uploaded yet. Upload from an employee\'s Details sheet → Documents tab.'
-                        : 'No documents match the current filters.'}
-                    </TableCell>
-                  </TableRow>
+                  <ListEmpty colSpan={6} noun="documents" filtered={hasFilters}>
+                    {!hasFilters && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        Upload from an employee's Details sheet → Documents tab.
+                      </p>
+                    )}
+                  </ListEmpty>
                 ) : (
                   pagination.paginatedItems.map(doc => {
                     const family = familyOf(extOf(doc.name), doc.mimeType);
                     const chipLabel = chipLabelOf(doc.name);
                     return (
-                      <TableRow key={doc.id}>
+                      <TableRow key={doc.id} className="hover:bg-gray-50">
                         <TableCell>
                           <div className="min-w-0">
                             <p className="text-sm font-medium truncate">
@@ -268,31 +300,32 @@ export function AllDocumentsTab() {
                         </TableCell>
                         <TableCell className="text-sm text-gray-600">{fmtSize(doc.sizeBytes)}</TableCell>
                         <TableCell className="text-sm text-gray-600">
-                          {format(new Date(doc.uploadedAt), 'MMM dd, yyyy HH:mm')}
+                          {formatDateTime(doc.uploadedAt)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex gap-1">
                             <Button
-                              size="sm"
+                              size="icon"
                               variant="ghost"
-                              className="h-7 text-xs"
+                              className="h-7 w-7"
                               onClick={() => handleDownload(doc)}
                               disabled={downloadingId === doc.id}
                               title="Download"
+                              aria-label="Download"
                             >
-                              <Download className="h-3.5 w-3.5 mr-1" />
-                              {downloadingId === doc.id ? '…' : 'Get'}
+                              <Download className="h-4 w-4" />
                             </Button>
                             {canRemove && (
                               <Button
-                                size="sm"
+                                size="icon"
                                 variant="ghost"
-                                className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                                aria-label="Delete"
+                                className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                                 onClick={() => setDeleteTarget(doc)}
                                 disabled={deletingId === doc.id}
                                 title="Delete"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
                           </div>

@@ -9,12 +9,18 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Users, Loader2, Stethoscope, CircleDollarSign, User, Info, Plus, Trash2, X,
+  Users, Loader2, Stethoscope, CircleDollarSign, User, Info, Plus, Trash2,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { toast } from 'sonner';
 import * as employeesApi from '../../api/employees';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../ui/select';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListError } from '../common/ListStates';
+import { useConfirm } from '../../context/ConfirmContext';
 
 /**
  * Appointment / Healthcare Settings (V196 / v-healthcare-staff-roles).
@@ -54,19 +60,24 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
   onOpenChange: (o: boolean) => void;
   onChanged?: () => void;
 }) {
+  const confirm = useConfirm();
   const [section, setSection] = useState<Section>('staff');
   const [employees, setEmployees] = useState<employeesApi.Employee[]>([]);
   const [loading, setLoading]     = useState(false);
   const [busyId, setBusyId]       = useState<string | null>(null);
   const [addOpen, setAddOpen]     = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const reload = async () => {
     setLoading(true);
     try {
       const r = await employeesApi.list({ size: 500, status: 'active' });
       setEmployees(r.content ?? []);
-    } catch {
+      setLoadError(null);
+    } catch (e) {
+      // Surface the failure — swallowing it showed "No clinical staff yet".
       setEmployees([]);
+      setLoadError(e instanceof Error ? e.message : 'Could not load employees.');
     } finally {
       setLoading(false);
     }
@@ -98,7 +109,13 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
   };
 
   const remove = async (emp: employeesApi.Employee) => {
-    if (!confirm(`Remove ${emp.name} from clinical roles?`)) return;
+    const ok = await confirm({
+      title: `Remove ${emp.name} from clinical roles?`,
+      message: 'They will no longer appear in the Doctor picker.',
+      confirmLabel: 'Remove',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     await patchRole(emp, null);
   };
 
@@ -183,10 +200,10 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
                     </Button>
                   </div>
 
-                  {loading ? (
-                    <div className="py-10 text-center text-sm text-gray-500">
-                      <Loader2 className="h-4 w-4 inline mr-1 animate-spin" /> Loading employees…
-                    </div>
+                  {loading && employees.length === 0 ? (
+                    <TableRowsSkeleton rows={4} columns={5} />
+                  ) : loadError ? (
+                    <ListError message={loadError} onRetry={() => void reload()} />
                   ) : tagged.length === 0 ? (
                     <div className="py-10 text-center text-sm text-gray-500">
                       No clinical staff yet — click <b>Add Staff</b> to tag your first doctor.
@@ -212,28 +229,33 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
                               <TableCell className="text-sm text-gray-600">{e.position || '—'}</TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-1.5">
-                                  <select
-                                    className="h-8 border rounded-md px-2 text-sm bg-background w-full"
+                                  <Select
                                     value={e.clinicalRole ?? ''}
-                                    onChange={ev => patchRole(e, ev.target.value as employeesApi.ClinicalRole)}
+                                    onValueChange={v => patchRole(e, v as employeesApi.ClinicalRole)}
                                     disabled={busy}
                                   >
-                                    {ROLE_CHOICES.map(c => (
-                                      <option key={c.value} value={c.value}>{c.label}</option>
-                                    ))}
-                                  </select>
+                                    <SelectTrigger className="h-8 w-full" aria-label={`Role for ${e.name}`}>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {ROLE_CHOICES.map(c => (
+                                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                   {busy && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
                                 </div>
                               </TableCell>
                               <TableCell className="text-right">
                                 <Button
-                                  size="sm" variant="ghost"
-                                  className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  variant="ghost" size="icon"
+                                  className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                                   onClick={() => remove(e)}
                                   disabled={busy}
                                   title="Remove from clinical roles"
+                                  aria-label="Remove from clinical roles"
                                 >
-                                  <Trash2 className="h-3 w-3" />
+                                  <Trash2 className="h-4 w-4" />
                                 </Button>
                               </TableCell>
                             </TableRow>
@@ -319,7 +341,7 @@ function AddStaffDialog({ open, onOpenChange, candidates, onAdded }: {
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label className="text-xs">Employee *</Label>
+            <Label className="text-xs">Employee <span className="text-red-500">*</span></Label>
             <SearchablePicker
               options={options}
               value={empId}
@@ -331,7 +353,7 @@ function AddStaffDialog({ open, onOpenChange, candidates, onAdded }: {
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Role *</Label>
+            <Label className="text-xs">Role <span className="text-red-500">*</span></Label>
             <div className="grid grid-cols-3 gap-2">
               {ROLE_CHOICES.map(c => {
                 const active = role === c.value;
@@ -359,8 +381,8 @@ function AddStaffDialog({ open, onOpenChange, candidates, onAdded }: {
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
-            <X className="h-4 w-4 mr-1.5" /> Cancel
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
           </Button>
           <Button onClick={save} disabled={saving || !empId}>
             <Plus className="h-4 w-4 mr-1.5" /> {saving ? 'Adding…' : 'Add'}

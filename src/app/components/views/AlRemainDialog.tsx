@@ -13,8 +13,11 @@ import {
 } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
-import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../ui/select';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import {
   Table,
   TableBody,
@@ -74,6 +77,9 @@ function defaultPeriod(): Period {
  */
 export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
   const currentYear = new Date().getFullYear();
+  // Year picker instead of a free type=number box: the last 6 years
+  // plus next year cover year-end, half-year and back-dated payouts.
+  const yearOptions = Array.from({ length: 8 }, (_, i) => currentYear + 1 - i);
   const [year, setYear] = useState<number>(currentYear);
   const [period, setPeriod] = useState<Period>(defaultPeriod());
   const [preview, setPreview] = useState<alApi.AlRemainPreview | null>(null);
@@ -185,16 +191,16 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
           <div className="grid grid-cols-1 md:grid-cols-[120px_1fr_auto] gap-3 items-end">
             <div className="space-y-1">
               <Label className="text-xs">Year</Label>
-              <Input
-                type="number"
-                min={2000}
-                max={2100}
-                value={year}
-                onChange={e => {
-                  const n = Number(e.target.value);
-                  if (Number.isFinite(n)) setYear(n);
-                }}
-              />
+              <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
+                <SelectTrigger className="w-full" aria-label="Year">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {yearOptions.map(y => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Period</Label>
@@ -250,6 +256,11 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
 
         {/* Table — only this scrolls. */}
         <div className="flex-1 min-h-0 overflow-auto">
+          {loading && !preview && (
+            <div className="px-6 py-2">
+              <TableRowsSkeleton rows={6} columns={10} />
+            </div>
+          )}
           {preview && (
                   <Table>
                     <TableHeader className="sticky top-0 bg-white z-10">
@@ -284,7 +295,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                         </TableRow>
                       )}
                       {preview.items.map(row => (
-                        <TableRow key={row.employeeId} className={row.eligible ? '' : 'opacity-60'}>
+                        <TableRow key={row.employeeId} className={`hover:bg-gray-50 ${row.eligible ? '' : 'opacity-60'}`}>
                           <TableCell>
                             <Checkbox
                               checked={included.has(row.employeeId)}
