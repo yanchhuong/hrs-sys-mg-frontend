@@ -1,12 +1,14 @@
-import { apiJson } from './client';
+import { apiJson, apiVoid } from './client';
 
 /**
- * Company-wide Telegram group the HR bot posts team activity into
- * (invoices, expenses, approvals, cash advance, activities). Linked by
- * minting a short code here and sending `/link <code>` in the group.
- * Employees' private chats with the HR bot are unaffected.
+ * Telegram groups the HR bot posts team activity into (invoices,
+ * expenses, approvals, cash advance, activities). A company may connect
+ * several groups, each with its own event switches. A group is added as
+ * a PENDING row with a short code; sending `/link <code>` in the group
+ * links it. Employees' private chats with the HR bot are unaffected.
  */
 export interface HrTelegramGroup {
+  id: string;
   linked: boolean;
   title: string | null;
   linkedAt: string | null;
@@ -22,20 +24,28 @@ export interface HrTelegramGroup {
 export type HrTelegramGroupEvents = Partial<Pick<HrTelegramGroup,
   'postInvoices' | 'postExpenses' | 'postApprovals' | 'postCashAdvance' | 'postActivity'>>;
 
-export async function getGroup(): Promise<HrTelegramGroup> {
-  return apiJson('/api/v1/hr-telegram/group');
+const BASE = '/api/v1/hr-telegram/groups';
+
+/** Connected groups plus pending ones with a live code, oldest first. */
+export async function listGroups(): Promise<HrTelegramGroup[]> {
+  return apiJson(BASE);
 }
 
-/** Mints a fresh `/link` code (valid 24h). */
-export async function createLinkCode(): Promise<HrTelegramGroup> {
-  return apiJson('/api/v1/hr-telegram/group/link-code', { method: 'POST' });
+/** Adds a new PENDING group with a `/link` code (valid 24h). */
+export async function addGroup(): Promise<HrTelegramGroup> {
+  return apiJson(BASE, { method: 'POST' });
 }
 
-export async function updateEvents(events: HrTelegramGroupEvents): Promise<HrTelegramGroup> {
-  return apiJson('/api/v1/hr-telegram/group/events', { method: 'PUT', json: events });
+/** Mints a fresh `/link` code for a pending group. */
+export async function createLinkCode(id: string): Promise<HrTelegramGroup> {
+  return apiJson(`${BASE}/${encodeURIComponent(id)}/link-code`, { method: 'POST' });
 }
 
-/** Disconnects the group; event switches are kept server-side. */
-export async function disconnectGroup(): Promise<HrTelegramGroup> {
-  return apiJson('/api/v1/hr-telegram/group', { method: 'DELETE' });
+export async function updateEvents(id: string, events: HrTelegramGroupEvents): Promise<HrTelegramGroup> {
+  return apiJson(`${BASE}/${encodeURIComponent(id)}/events`, { method: 'PUT', json: events });
+}
+
+/** Disconnects a linked group or cancels a pending one. */
+export async function deleteGroup(id: string): Promise<void> {
+  return apiVoid(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
