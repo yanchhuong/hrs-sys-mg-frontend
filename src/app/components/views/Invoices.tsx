@@ -53,6 +53,7 @@ import { useLogoTint } from '../../utils/useLogoTint';
 import { hexToRgb, toBandTint } from '../../utils/logoColor';
 import type { InvoiceTemplate, TemplateConfig } from '../../api/invoiceTemplates';
 import { formatMoneyForCurrency } from '../../utils/format';
+import { DOC_KIND_CLASS, statusBadgeClass } from '../../utils/statusTones';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark, Share2,
@@ -61,6 +62,7 @@ import {
 import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
 import { LinkifiedText } from '../common/LinkifiedText';
 import { DocAuditLine } from '../common/DocAuditLine';
 import { useCustomerQuickAdd } from '../common/CustomerQuickAddDialog';
@@ -90,30 +92,12 @@ const KIND_LABEL: Record<invoicesApi.InvoiceKind, string> = {
   medical:     'Encounter',
   tuition:     'Tuition',
 };
-const KIND_BADGE_CLASS: Record<invoicesApi.InvoiceKind, string> = {
-  commercial:  'border-blue-300 text-blue-700 bg-blue-50',
-  tax:         'border-violet-300 text-violet-700 bg-violet-50',
-  credit_note: 'border-emerald-300 text-emerald-700 bg-emerald-50',
-  debit_note:  'border-amber-300 text-amber-700 bg-amber-50',
-  medical:     'border-teal-300 text-teal-700 bg-teal-50',
-  tuition:     'border-indigo-300 text-indigo-700 bg-indigo-50',
-};
-const STATUS_BADGE_CLASS: Record<invoicesApi.InvoiceStatus, string> = {
-  draft:     'border-slate-300 text-slate-700 bg-slate-50',
-  // Spec palette, shared with the mobile app: Progress blue (issued,
-  // nothing received), Partial Paid orange (money in, not all of it),
-  // Paid red (settled — same ink as the PAID stamp).
-  progress:  'border-blue-300 text-blue-700 bg-blue-50',
-  partially: 'border-orange-300 text-orange-700 bg-orange-50',
-  paid:      'border-red-300 text-red-700 bg-red-50',
-  // Refunded = settled Credit Note (we refunded the customer). Rose
-  // hue distinguishes the cash-out direction from a regular Paid
-  // collection (emerald) while still reading as a positive terminal
-  // state (border / fill rather than red alarm).
-  refunded:  'border-rose-300 text-rose-700 bg-rose-50',
-  overdue:   'border-orange-400 text-orange-800 bg-orange-50',
-  void:      'border-red-300 text-red-700 bg-red-50',
-};
+// Badge colours come from the app-wide palette (utils/statusTones), so
+// Invoices reads the same as every other screen: Draft / Void slate,
+// Progress blue, Partially orange, Paid green, Overdue red. The printed
+// PAID stamp on the document stays red — it is not a badge.
+const KIND_BADGE_CLASS = DOC_KIND_CLASS as Record<invoicesApi.InvoiceKind, string>;
+const STATUS_BADGE_CLASS = (status: invoicesApi.InvoiceStatus): string => statusBadgeClass(status);
 
 const KIND_FILTERS: ReadonlyArray<{ value: invoicesApi.InvoiceKind | 'all'; label: string }> = [
   { value: 'all',         label: 'All' },
@@ -273,6 +257,9 @@ export function Invoices({
 
   const [rows, setRows] = useState<invoicesApi.Invoice[]>([]);
   const [loading, setLoading] = useState(false);
+  // Inline load failure (with Retry) — a toast alone left the list
+  // reading "No invoices yet." as if nothing existed.
+  const [loadError, setLoadError] = useState<string | null>(null);
   // When a fixedKind is provided (Encounter lens) the state is pinned
   // to that value + the tabs hidden. Otherwise the operator flips
   // between commercial/tax/CN/DN via the tabs.
@@ -343,8 +330,17 @@ export function Invoices({
   // legacy "paidAmount" into USD + KHR columns.
   const [receivedByCurrency, setReceivedByCurrency] = useState<Record<string, Partial<Record<paymentsApi.PaymentCurrency, number>>>>({});
 
+  const filtersActive = !!(dateFrom || dateTo || search.trim() || (!fixedKind && kindFilter !== 'all'));
+  const clearFilters = () => {
+    setDateFrom('');
+    setDateTo('');
+    setSearch('');
+    if (!fixedKind) setKindFilter('all');
+  };
+
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [invRes, custRes] = await Promise.all([
         // v-perf-list-slim — slim=true drops items[] / adjustments[]
@@ -371,7 +367,7 @@ export function Invoices({
         setReceivedByCurrency({});
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load invoices');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load invoices');
     } finally {
       setLoading(false);
     }
@@ -759,33 +755,32 @@ export function Invoices({
                   onChange={v => setDateTo(v ?? '')}
                   min={dateFrom || undefined}
                 />
-                {(dateFrom || dateTo) && (
-                  <Button
-                    size="sm" variant="ghost" className="h-8 text-xs"
-                    onClick={() => { setDateFrom(''); setDateTo(''); }}
-                  >
-                    Clear
-                  </Button>
-                )}
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
                   <Input
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     placeholder="Search invoice no, customer, notes…"
-                    className="h-8 pl-7 w-64 text-sm"
+                    className="h-9 pl-7 w-64 text-sm"
                   />
                 </div>
+                {/* One Clear that resets every filter (kind, dates,
+                    search) — shown only when something is set. */}
+                {filtersActive && (
+                  <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                    Clear
+                  </Button>
+                )}
               </div>
             </div>
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
             <TableRowsSkeleton rows={8} columns={8} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => { void load(); }} />
           ) : groupedRows.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">
-              {rows.length === 0 ? 'No invoices yet.' : 'No invoices match your filters.'}
-            </p>
+            <ListEmpty noun="invoices" filtered={filtersActive} />
           ) : (
             <>
               {/* Scrollable table container — keeps both vertical
@@ -954,7 +949,7 @@ export function Invoices({
                         {isAdjustment ? '—' : fmtMoney(arByRowId[inv.id] ?? inv.netBalance ?? (inv.total - inv.paidAmount), inv.currency)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[inv.status]}`}>
+                        <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS(inv.status)}`}>
                           {inv.status}
                         </Badge>
                       </TableCell>
@@ -1859,11 +1854,11 @@ function InvoiceFormDialog({
           <div className="grid grid-cols-4 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Issue date <span className="text-red-600">*</span></Label>
-              <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+              <DateInput value={issueDate || null} onChange={v => setIssueDate(v ?? '')} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Due date</Label>
-              <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              <DateInput value={dueDate || null} onChange={v => setDueDate(v ?? '')} min={issueDate || undefined} clearable />
             </div>
             {/* Gated on `currencySettings` being loaded to avoid a
                 brief USD/KHR flash from the enabledCurrencies fallback
@@ -2901,7 +2896,7 @@ function InvoiceDetailDialog({
                         {KIND_LABEL[invoice.kind]}
                       </Badge>
                     )}
-                    <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[invoice.status]}`}>
+                    <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS(invoice.status)}`}>
                       {invoice.status}
                     </Badge>
                     <span className="text-xs text-gray-500">{formatDate(invoice.issueDate)}</span>
@@ -3033,8 +3028,16 @@ function InvoiceDetailDialog({
                 {canEdit && invoice.status !== 'void' && invoice.status !== 'draft' && (
                   <Button size="sm" variant="outline" disabled={busy}
                     className="text-red-600 border-red-200 hover:bg-red-50"
-                    onClick={() => doAction('Invoice voided',
-                      () => invoicesApi.voidInvoice(invoice.id).then(setInvoice))}
+                    onClick={async () => {
+                      if (!(await confirm({
+                        title: 'Void this invoice?',
+                        message: `${invoice.invoiceNo} stays on file but no longer counts toward receivables or reports. This can't be undone.`,
+                        confirmLabel: 'Void',
+                        variant: 'destructive',
+                      }))) return;
+                      void doAction('Invoice voided',
+                        () => invoicesApi.voidInvoice(invoice.id).then(setInvoice));
+                    }}
                   >
                     <Ban className="h-3.5 w-3.5 mr-1" /> Void
                   </Button>
@@ -3067,7 +3070,7 @@ function InvoiceDetailDialog({
         </DialogHeader>
 
         {loading || !invoice ? (
-          <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+          <TableRowsSkeleton rows={6} columns={4} />
         ) : (
           <>
             {/* Two-column header row: meta info on the left, big AR
@@ -3079,9 +3082,13 @@ function InvoiceDetailDialog({
             <div className="flex items-start justify-between gap-6">
               <div className="grid grid-cols-[140px_1fr] gap-x-4 gap-y-1 text-sm flex-1 min-w-0">
               <div className="text-gray-500">Customer</div>
-              <div>{customer?.name ?? <span className="text-gray-400">(unknown)</span>}</div>
+              <div>
+                {invoice.customerId
+                  ? (customer?.name ?? <span className="text-gray-400">(unknown)</span>)
+                  : <span className="text-gray-400">Walk-in</span>}
+              </div>
               <div className="text-gray-500">Due date</div>
-              <div>{invoice.dueDate ?? '—'}</div>
+              <div>{invoice.dueDate ? formatDate(invoice.dueDate) : '—'}</div>
               <div className="text-gray-500">Currency</div>
               <div>{invoice.currency}</div>
               {settings.showTax && (
@@ -3320,7 +3327,7 @@ function InvoiceDetailDialog({
                           </TableCell>
                           <TableCell className="text-sm text-gray-600">{formatDate(a.issueDate)}</TableCell>
                           <TableCell>
-                            <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS[a.status]}`}>
+                            <Badge variant="outline" className={`capitalize ${STATUS_BADGE_CLASS(a.status)}`}>
                               {a.status}
                             </Badge>
                           </TableCell>
@@ -3445,7 +3452,7 @@ function InvoiceDetailDialog({
                                   // Removing a payment changes the balance — never on one click.
                                   if (!(await confirm({
                                     title: 'Delete this payment?',
-                                    message: `${fmtMoney(p.amount, p.currency)}${p.paymentDate ? ` on ${p.paymentDate}` : ''} is taken off this invoice and the balance goes back up by that amount. This can't be undone.`,
+                                    message: `${fmtMoney(p.amount, p.currency)}${p.paymentDate ? ` on ${formatDate(p.paymentDate)}` : ''} is taken off this invoice and the balance goes back up by that amount. This can't be undone.`,
                                     confirmLabel: 'Delete',
                                     variant: 'destructive',
                                   }))) return;
@@ -3596,10 +3603,10 @@ function InvoiceDetailDialog({
               </DialogHeader>
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="terms-due">Due date</Label>
-                  <Input id="terms-due" type="date" value={termsDue}
+                  <Label>Due date</Label>
+                  <DateInput value={termsDue || null}
                     min={invoice.issueDate ?? undefined}
-                    onChange={e => setTermsDue(e.target.value)} />
+                    onChange={v => setTermsDue(v ?? '')} clearable />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="terms-note">Note</Label>
@@ -4516,16 +4523,13 @@ function PaymentReceiptDialog({
 }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
 
-  // Friendly date formatter — "08 Feb 2025" style matches the
-  // mockup. Falls back to the raw string when the date can't parse.
-  const fmtDate = (raw: string | null | undefined) => {
-    if (!raw) return '';
-    const d = new Date(raw);
-    if (Number.isNaN(d.getTime())) return raw;
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
+  // Tenant date format, same as the rest of the invoice screens.
+  const { formatDate } = useDateFormat();
+  const fmtDate = (raw: string | null | undefined) => (raw ? formatDate(raw) : '');
 
-  const money = (v: number, c: paymentsApi.PaymentCurrency = 'USD') =>
+  // Invoice figures are in the invoice's own currency — a KHR invoice
+  // used to print its lines and totals with a "$".
+  const money = (v: number, c: string = invoice.currency || 'USD') =>
     c === 'KHR'
       ? `៛ ${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
       : `$${v.toFixed(2)}`;
@@ -4622,8 +4626,10 @@ function MailInvoiceDialog({
   paymentLinkUrl?: string | null;
   onClose: () => void;
 }) {
-  const fmtUsd = (n: number) =>
-    `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Amount in the invoice's own currency (a KHR invoice was mailed as "$"),
+  // dates in the tenant format instead of raw ISO.
+  const { formatDate } = useDateFormat();
+  const fmtAmount = (n: number) => fmtMoney(n, invoice.currency || 'USD');
   const defaultSubject =
     `Invoice ${invoice.invoiceNo}${company?.name ? ` from ${company.name}` : ''}`;
   const payLine = paymentLinkUrl
@@ -4632,8 +4638,8 @@ function MailInvoiceDialog({
   const defaultBody = [
     `Dear ${customer?.representative || customer?.name || 'Customer'},`,
     '',
-    `Please find your invoice ${invoice.invoiceNo} dated ${invoice.issueDate}.`,
-    `Amount due: ${fmtUsd(invoice.total)}${invoice.dueDate ? ` — due by ${invoice.dueDate}` : ''}.`,
+    `Please find your invoice ${invoice.invoiceNo} dated ${formatDate(invoice.issueDate)}.`,
+    `Amount due: ${fmtAmount(invoice.total)}${invoice.dueDate ? ` — due by ${formatDate(invoice.dueDate)}` : ''}.`,
     '',
     ...payLine,
     'A printed copy is attached. Let us know if you have any questions.',
@@ -4712,8 +4718,8 @@ function MailInvoiceDialog({
           </DialogTitle>
           <DialogDescription>
             Sends the customer a PDF of this invoice (rendered from the print
-            template) plus a link to view it in the browser. Leave "To" blank to
-            use the customer's on-file email ({customer?.email ?? 'none'}).
+            template) plus a link to view it in the browser. "To" starts with the
+            customer's on-file email ({customer?.email ?? 'none'}); change it if needed.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -4841,7 +4847,7 @@ function RecordPaymentDialog({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Record payment</DialogTitle>
           <DialogDescription>
@@ -4920,7 +4926,7 @@ function RecordPaymentDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Date</Label>
-              <Input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+              <DateInput value={paymentDate || null} onChange={v => setPaymentDate(v ?? '')} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Method</Label>

@@ -7,7 +7,7 @@ import { Slider } from '../ui/slider';
 import { Badge } from '../ui/badge';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '../ui/switch';
-import { Skeleton } from '../ui/skeleton';
+import { Checkbox } from '../ui/checkbox';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
@@ -24,6 +24,11 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { StatCard } from '../common/StatCard';
+import { InlineTextCell } from '../common/InlineTextCell';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TONE_CLASS } from '../../utils/statusTones';
 import { DocAuditLine } from '../common/DocAuditLine';
 import * as itemsApi from '../../api/items';
 import { resolveAssetUrl } from '../../api/client';
@@ -723,6 +728,8 @@ export function Items() {
   } | null>(null);
   const CATALOG_MAX = 1000;
   const [loading, setLoading] = useState(false);
+  /** Inline load failure with Retry — a toast alone read as "No items yet." */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   /** v-items-suggestion-pick-by-id — id of the row the operator just
    *  picked from the search-suggestion dropdown. When set, the
@@ -791,6 +798,7 @@ export function Items() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     const params = {
       q: search.trim() || undefined,
       warehouseId: warehouseFilter || undefined,
@@ -826,7 +834,7 @@ export function Items() {
           .catch(() => { /* keep the first-page slice on failure */ });
       }, 0);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load items');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load items');
       setLoading(false);
     }
   };
@@ -984,6 +992,11 @@ export function Items() {
     }
     return { cost, price, qty, active, outOfStock };
   }, [filtered]);
+  // Total Cost has no server-side figure, so it is only trustworthy
+  // once every row is loaded (or when the tiles already follow the
+  // client-side filter, like every other tile does).
+  const costTileComplete = tilesUseFiltered || serverTotals == null
+    || rows.length >= serverTotals.totalElements;
   // v-items-pagesize-15 — 15 per page keeps the row height above the
   // fold on a 1080p screen and shrinks the initial image payload (the
   // <img loading="lazy"> tag below only helps for rows below the fold).
@@ -1434,73 +1447,25 @@ export function Items() {
           via the filter strip, so a second click surface added noise
           without a real workflow benefit. */}
       {!loading && rows.length > 0 && (
-        <div className="mb-3 flex gap-3 overflow-x-auto hover-scroll-x [&>*]:shrink-0">
-          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
-            <div className="h-9 w-9 rounded-md bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-              <Boxes className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Items</div>
-              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {(tilesUseFiltered ? filtered.length : (serverTotals?.totalElements ?? filtered.length)).toLocaleString('en-US')}
-              </div>
-            </div>
-          </div>
-          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
-            <div className="h-9 w-9 rounded-md bg-green-50 text-green-600 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Active</div>
-              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {(tilesUseFiltered ? totals.active : (serverTotals?.totalActive ?? totals.active)).toLocaleString('en-US')}
-              </div>
-            </div>
-          </div>
-          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
-            <div className="h-9 w-9 rounded-md bg-red-50 text-red-600 flex items-center justify-center shrink-0">
-              <PackageX className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Out of Stock</div>
-              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {(tilesUseFiltered ? totals.outOfStock : (serverTotals?.totalOutOfStock ?? totals.outOfStock)).toLocaleString('en-US')}
-              </div>
-            </div>
-          </div>
-          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
-            <div className="h-9 w-9 rounded-md bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <Coins className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Cost</div>
-              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                ${totals.cost.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-              </div>
-            </div>
-          </div>
-          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
-            <div className="h-9 w-9 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-              <Tag className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Price</div>
-              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                ${(tilesUseFiltered ? totals.price : (serverTotals?.totalPrice ?? totals.price)).toLocaleString('en-US', { maximumFractionDigits: 2 })}
-              </div>
-            </div>
-          </div>
-          <div className="flex-1 min-w-[150px] rounded-lg border bg-white p-3 flex items-center gap-3">
-            <div className="h-9 w-9 rounded-md bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-              <Package className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase text-gray-500 tracking-wide">Total Stock (QTY)</div>
-              <div className="text-lg font-semibold tabular-nums text-gray-900 truncate">
-                {(tilesUseFiltered ? totals.qty : (serverTotals?.totalStock ?? totals.qty)).toLocaleString('en-US', { maximumFractionDigits: 2 })}
-              </div>
-            </div>
-          </div>
+        <div className="stat-strip stat-cols-6 mb-3">
+          <StatCard label="Total Items" icon={Boxes} tone="purple"
+            value={(tilesUseFiltered ? filtered.length : (serverTotals?.totalElements ?? filtered.length)).toLocaleString('en-US')} />
+          <StatCard label="Active" icon={CheckCircle2} tone="green"
+            value={(tilesUseFiltered ? totals.active : (serverTotals?.totalActive ?? totals.active)).toLocaleString('en-US')} />
+          <StatCard label="Out of Stock" icon={PackageX} tone="red"
+            value={(tilesUseFiltered ? totals.outOfStock : (serverTotals?.totalOutOfStock ?? totals.outOfStock)).toLocaleString('en-US')} />
+          {/* The server summary carries no cost total, so Total Cost is
+              summed on the client. Until the whole catalogue has loaded
+              that sum covers only the first page while the other tiles
+              already show catalogue-wide figures — show "—" instead of
+              a number that disagrees with its neighbours. */}
+          <StatCard label="Total Cost" icon={Coins} tone="green"
+            hint={costTileComplete ? undefined : 'Shown once the full item list has loaded.'}
+            value={costTileComplete ? `$${totals.cost.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '—'} />
+          <StatCard label="Total Price" icon={Tag} tone="blue"
+            value={`$${(tilesUseFiltered ? totals.price : (serverTotals?.totalPrice ?? totals.price)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`} />
+          <StatCard label="Total Stock (QTY)" icon={Package} tone="amber"
+            value={(tilesUseFiltered ? totals.qty : (serverTotals?.totalStock ?? totals.qty)).toLocaleString('en-US', { maximumFractionDigits: 2 })} />
         </div>
       )}
 
@@ -1762,26 +1727,7 @@ export function Items() {
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
-            // v-skeleton-loading — placeholder rows whose column layout
-            // mirrors the real table (code, thumbnail square, name,
-            // category, price, stock, status). 8 rows fill the first
-            // viewport without shifting when data arrives.
-            <div className="divide-y">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-4 py-3">
-                  <Skeleton className="h-4 w-20 shrink-0" />
-                  <Skeleton className="h-10 w-10 rounded-md shrink-0" />
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <Skeleton className="h-3.5 w-2/5" />
-                    <Skeleton className="h-3 w-1/4" />
-                  </div>
-                  <Skeleton className="h-4 w-20 shrink-0" />
-                  <Skeleton className="h-4 w-16 shrink-0" />
-                  <Skeleton className="h-4 w-14 shrink-0" />
-                  <Skeleton className="h-6 w-16 rounded-full shrink-0" />
-                </div>
-              ))}
-            </div>
+            <TableRowsSkeleton rows={8} columns={7} hasThumbnail />
           ) : (
             <>
               {/* v-list-table-invoice-shape — border+scroll wrapper +
@@ -1814,16 +1760,23 @@ export function Items() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.length === 0 && (
-                    <TableRow>
-                      <TableCell
-                        colSpan={13 + (barcodeFeatureOn ? 1 : 0) + (warehouseFeatureOn ? 1 : 0)}
-                        className="text-center text-sm text-gray-500 py-8"
-                      >
-                        No items yet.{canAdd && <> Click <strong>Add Item</strong> to create the first one.</>}
-                      </TableCell>
-                    </TableRow>
-                  )}
+                  {rows.length === 0 && loadError ? (
+                    <ListError
+                      colSpan={13 + (barcodeFeatureOn ? 1 : 0) + (warehouseFeatureOn ? 1 : 0)}
+                      message={loadError}
+                      onRetry={() => { void load(); }}
+                    />
+                  ) : filtered.length === 0 ? (
+                    <ListEmpty
+                      noun="items"
+                      filtered={filtersActive || !!search.trim()}
+                      colSpan={13 + (barcodeFeatureOn ? 1 : 0) + (warehouseFeatureOn ? 1 : 0)}
+                    >
+                      {canAdd && !filtersActive && !search.trim() && (
+                        <p className="text-sm text-gray-500">Click <strong>Add Item</strong> to create the first one.</p>
+                      )}
+                    </ListEmpty>
+                  ) : null}
                   {pagination.paginatedItems.map(it => {
                     const onHand = Number(it.stockQty ?? 0);
                     const minStock = Number(it.minStock ?? 0);
@@ -1831,10 +1784,10 @@ export function Items() {
                     // triggers when min_stock is set (> 0); without a
                     // threshold every row reads as Normal.
                     const status = onHand <= 0
-                      ? { label: 'Out',    cls: 'bg-rose-100 text-rose-700 border-rose-200' }
+                      ? { label: 'Out',    cls: TONE_CLASS.danger }
                       : (minStock > 0 && onHand < minStock)
-                        ? { label: 'Low',    cls: 'bg-amber-100 text-amber-700 border-amber-200' }
-                        : { label: 'Normal', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+                        ? { label: 'Low',    cls: TONE_CLASS.attention }
+                        : { label: 'Normal', cls: TONE_CLASS.success };
                     return (
                       <TableRow key={it.id} className="group">
                         <TableCell className="tabular-nums text-xs text-gray-600">
@@ -1946,10 +1899,13 @@ export function Items() {
                               type, blur to save. Enter commits + blur;
                               Escape reverts. Empty save clears the
                               unit on the server. */}
-                          <InlineUnitCell
+                          <InlineTextCell
                             value={it.unit ?? ''}
                             disabled={!canEdit}
                             onSave={(next) => { void toggleItemFlag(it, { unit: next }); }}
+                            align="center"
+                            placeholder={canEdit ? "—" : ""}
+                            ariaLabel="Unit"
                           />
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-gray-600">
@@ -2038,7 +1994,7 @@ export function Items() {
                                    + chevron only show on hover / focus
                                    / open. Same "cell looks static until
                                    you interact" affordance the
-                                   InlineUnitCell uses. */
+                                   InlineTextCell uses. */
                                 className={
                                   'h-8 border-transparent bg-transparent shadow-none px-2 transition '
                                   + 'hover:border-input hover:bg-white '
@@ -2494,13 +2450,13 @@ export function Items() {
                   );
                 })}
               </div>
-              <input
+              <Input
                 value={form.category}
                 onChange={e => setForm({ ...form, category: e.target.value })}
                 disabled={saving}
                 maxLength={LEN.category}
                 placeholder="Or type your own label — leave blank for none"
-                className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="h-9"
               />
             </div>
 
@@ -2640,8 +2596,8 @@ function ModifiersEditor({
                 maxLength={32}
               />
               <label className="inline-flex items-center gap-1 text-xs text-gray-600">
-                <input type="checkbox" checked={g.required}
-                  onChange={e => setGroup(gi, { required: e.target.checked })}
+                <Checkbox checked={g.required}
+                  onCheckedChange={v => setGroup(gi, { required: v === true })}
                   disabled={disabled} />
                 Required
               </label>
@@ -2691,57 +2647,3 @@ function ModifiersEditor({
     </div>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-/* Inline-editable Unit cell for the Items row.                               */
-/*   • Click / focus → the transparent input reads as regular text.           */
-/*   • Type → local state buffers the value.                                  */
-/*   • Blur → if changed, fire onSave (which drives toggleItemFlag PUT).      */
-/*   • Enter commits (blurs); Escape reverts to the last saved value.         */
-/* Same optimistic-then-reconcile pattern the flag toggles use, so the row    */
-/* updates instantly and the server reconciles on the next render.            */
-/* -------------------------------------------------------------------------- */
-
-function InlineUnitCell({
-  value,
-  disabled,
-  onSave,
-}: {
-  value: string;
-  disabled: boolean;
-  onSave: (next: string) => void;
-}) {
-  const [text, setText] = useState<string>(value);
-  const [focused, setFocused] = useState<boolean>(false);
-  // Keep the local buffer in sync when the parent's optimistic /
-  // reconciled row swap lands a fresh value while we're NOT editing.
-  // Skipping the sync during focus preserves in-progress typing.
-  useEffect(() => {
-    if (!focused) setText(value);
-  }, [value, focused]);
-  return (
-    <input
-      type="text"
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => {
-        setFocused(false);
-        const trimmed = text.trim();
-        if (trimmed !== (value ?? '')) onSave(trimmed);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') { e.currentTarget.blur(); }
-        else if (e.key === 'Escape') { setText(value); e.currentTarget.blur(); }
-      }}
-      disabled={disabled}
-      placeholder={disabled ? '' : '—'}
-      className={`w-full text-center text-xs bg-transparent px-1.5 py-1 rounded border transition ${
-        focused
-          ? 'border-blue-400 bg-white outline-none'
-          : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
-      } disabled:opacity-60 disabled:cursor-not-allowed`}
-    />
-  );
-}
-

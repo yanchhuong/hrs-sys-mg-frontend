@@ -17,6 +17,9 @@ import { loyalty } from '../../api/loyalty';
 import type { LoyaltyProgram, LoyaltyType, UpsertLoyaltyProgram } from '../../api/loyalty';
 import * as itemsApi from '../../api/items';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListError } from '../common/ListStates';
+import { NumericInput } from '../common/NumericInput';
+import { useConfirm } from '../../context/ConfirmContext';
 import type { Item } from '../../api/items';
 
 const TYPE_META: Record<LoyaltyType, { label: string; icon: React.ReactNode; hint: string; cls: string }> = {
@@ -38,9 +41,12 @@ export function Loyalty() {
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<LoyaltyProgram | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [list, itemList] = await Promise.all([
         loyalty.list(),
@@ -52,7 +58,7 @@ export function Loyalty() {
       // below with "items is not iterable".
       setItems(Array.isArray(itemList?.content) ? itemList.content : []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load programs');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load programs');
     } finally {
       setLoading(false);
     }
@@ -69,7 +75,12 @@ export function Loyalty() {
   const openNew  = () => { setEditing(null); setDialogOpen(true); };
   const openEdit = (r: LoyaltyProgram) => { setEditing(r); setDialogOpen(true); };
   const doDelete = async (r: LoyaltyProgram) => {
-    if (!confirm(`Delete "${r.name}"? Customer balances tied to this program will keep their history but new earns stop.`)) return;
+    if (!(await confirm({
+      title: 'Delete this loyalty program?',
+      message: `"${r.name}" is removed. Customer balances tied to this program keep their history but new earns stop.`,
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    }))) return;
     try {
       await loyalty.remove(r.id);
       toast.success('Program deleted');
@@ -96,13 +107,13 @@ export function Loyalty() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <Gift className="h-5 w-5 text-blue-600" />
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold flex items-center gap-2">
+          <Gift className="h-6 w-6 text-blue-600" />
           Loyalty &amp; Rewards
         </h1>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -111,7 +122,7 @@ export function Loyalty() {
               exists so the operator edits it instead of trying
               to create a second (BE would reject with 409). */}
           {rows.length === 0 && (
-            <Button size="sm" onClick={openNew}>
+            <Button onClick={openNew}>
               <Plus className="h-4 w-4 mr-1.5" />
               New program
             </Button>
@@ -135,6 +146,8 @@ export function Loyalty() {
         <CardContent className="p-0">
           {loading && rows.length === 0 ? (
             <div className="px-4 py-4"><TableRowsSkeleton rows={6} columns={5} /></div>
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => { void load(); }} />
           ) : rows.length === 0 ? (
             <p className="text-sm text-gray-500 px-6 py-6">
               No loyalty programs yet. Click <b>New program</b> to create your first Point or Stamp card.
@@ -167,10 +180,10 @@ export function Loyalty() {
                       </div>
                     </div>
                     <Switch checked={r.active} onCheckedChange={() => void doToggle(r)} />
-                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(r)} title="Edit">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(r)} title="Edit">
                       <Edit3 className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-rose-600 hover:text-rose-800"
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                             onClick={() => void doDelete(r)} title="Delete">
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -276,7 +289,7 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
 
         <div className="space-y-3 text-sm">
           <div>
-            <Label className="text-xs">Name</Label>
+            <Label className="text-xs">Name <span className="text-red-500">*</span></Label>
             <Input value={name} onChange={e => setName(e.target.value)} className="h-9 mt-1"
                    placeholder="e.g. Coffee Stamp, Customer Point" maxLength={120} autoFocus={!isEdit} />
           </div>
@@ -298,18 +311,18 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <Label className="text-xs">Earn 1 pt every $</Label>
-                <Input value={earnPointPerAmount} onChange={e => setEarnPointPerAmount(e.target.value)}
-                       inputMode="decimal" className="h-9 mt-1" placeholder="5" />
+                <NumericInput value={earnPointPerAmount} onChange={setEarnPointPerAmount} decimals={2}
+                       className="h-9 mt-1" placeholder="5" />
               </div>
               <div>
                 <Label className="text-xs">Redeem cost</Label>
-                <Input value={redeemPointCost} onChange={e => setRedeemPointCost(e.target.value)}
-                       inputMode="numeric" className="h-9 mt-1" placeholder="100" />
+                <NumericInput value={redeemPointCost} onChange={setRedeemPointCost} decimals={0}
+                       className="h-9 mt-1" placeholder="100" />
               </div>
               <div>
                 <Label className="text-xs">Discount $</Label>
-                <Input value={redeemDiscountAmount} onChange={e => setRedeemDiscountAmount(e.target.value)}
-                       inputMode="decimal" className="h-9 mt-1" placeholder="5" />
+                <NumericInput value={redeemDiscountAmount} onChange={setRedeemDiscountAmount} decimals={2}
+                       className="h-9 mt-1" placeholder="5" />
               </div>
             </div>
             {/* Live preview so cashiers understand what the numbers
@@ -347,13 +360,13 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <Label className="text-xs">Buy quantity</Label>
-                  <Input value={buyQuantity} onChange={e => setBuyQuantity(e.target.value)}
-                         inputMode="numeric" className="h-9 mt-1" placeholder="5" />
+                  <NumericInput value={buyQuantity} onChange={setBuyQuantity} decimals={0}
+                         className="h-9 mt-1" placeholder="5" />
                 </div>
                 <div>
                   <Label className="text-xs">Reward quantity</Label>
-                  <Input value={rewardQuantity} onChange={e => setRewardQuantity(e.target.value)}
-                         inputMode="numeric" className="h-9 mt-1" placeholder="1" />
+                  <NumericInput value={rewardQuantity} onChange={setRewardQuantity} decimals={0}
+                         className="h-9 mt-1" placeholder="1" />
                 </div>
               </div>
               <div>
@@ -376,8 +389,8 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
           {(type === 'POINT') && (
             <div>
               <Label className="text-xs">Minimum invoice amount (optional)</Label>
-              <Input value={minimumAmount} onChange={e => setMinimumAmount(e.target.value)}
-                     inputMode="decimal" className="h-9 mt-1" placeholder="0" />
+              <NumericInput value={minimumAmount} onChange={setMinimumAmount} decimals={2}
+                     className="h-9 mt-1" placeholder="0" />
             </div>
           )}
 

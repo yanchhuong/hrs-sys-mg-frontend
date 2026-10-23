@@ -20,6 +20,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { StatCard } from '../common/StatCard';
 import { StatCardsSkeleton, TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListError } from '../common/ListStates';
 
 /** Render an amount with the currency in front (matches the Bills /
  *  Invoices list pages). USD collapses to "$" with 2dp, KHR uses ISO
@@ -38,6 +39,23 @@ const formatMoney = fmtMoney;
  *  the Invoice / Bill / Receipt views. */
 const signedMoney = (n: number, currency: string): string =>
   (n < 0 ? '− ' : '') + fmtMoney(n, currency);
+
+/** Amounts keyed by currency — totals across parties / entries are
+ *  kept per currency so USD and KHR are never added into one number. */
+type ByCurrency = Record<string, number>;
+const addTo = (acc: ByCurrency, currency: string | null | undefined, n: number) => {
+  const c = currency || 'USD';
+  acc[c] = (acc[c] ?? 0) + (n ?? 0);
+};
+/** "$1,200.00 · ៛ 40,000" — one figure per currency, USD first; an
+ *  empty map reads as the fallback currency's zero. `prefix` is
+ *  applied to each non-zero figure (e.g. the refund sign). */
+const fmtByCurrency = (acc: ByCurrency, opts: { signed?: boolean; prefix?: string; fallback?: string } = {}): string => {
+  const keys = Object.keys(acc).filter(c => acc[c] !== 0)
+    .sort((a, b) => (a === 'USD' ? -1 : b === 'USD' ? 1 : a.localeCompare(b)));
+  if (keys.length === 0) return fmtMoney(0, opts.fallback ?? 'USD');
+  return keys.map(c => `${opts.prefix ?? ''}${opts.signed ? signedMoney(acc[c], c) : fmtMoney(acc[c], c)}`).join(' · ');
+};
 
 interface LedgerReportProps {
   /** Drives the endpoint + labels. 'sale' shows AR (customer side);
@@ -83,8 +101,12 @@ function SettledTooltip({ kind }: { kind: 'sale' | 'purchase' }) {
 export function LedgerReport({ kind }: LedgerReportProps) {
   const { formatDate } = useDateFormat();
   const { t } = useI18n();
-  const [from, setFrom] = useState<string>(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [to, setTo]     = useState<string>(() => format(endOfMonth(new Date()),   'yyyy-MM-dd'));
+  // Default range = the current month; Clear returns to it.
+  const [defaultFrom] = useState<string>(() => format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [defaultTo]   = useState<string>(() => format(endOfMonth(new Date()),   'yyyy-MM-dd'));
+  const [from, setFrom] = useState<string>(defaultFrom);
+  const [to, setTo]     = useState<string>(defaultTo);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [report, setReport] = useState<ledgerApi.LedgerReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
   // Tenant currency setting — decides which of the USD / KHR split
@@ -146,14 +168,20 @@ export function LedgerReport({ kind }: LedgerReportProps) {
     // while the ledger page is open.
     [kind, t]);
 
-  const load = async () => {
+  const load = async (range?: { from: string; to: string }) => {
     setLoading(true);
+    setLoadError(null);
     try {
       const fn = kind === 'sale' ? ledgerApi.saleLedger : ledgerApi.purchaseLedger;
-      const r = await fn({ from, to });
+      const r = await fn(range ?? { from, to });
       setReport(r);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load ledger');
+      const msg = e instanceof Error ? e.message : 'Failed to load ledger';
+      // Keep a previously loaded report on screen and toast; with
+      // nothing loaded yet, the inline error + Retry below explains
+      // the blank page.
+      if (report) toast.error(msg);
+      else setLoadError(msg);
     } finally {
       setLoading(false);
     }
@@ -199,16 +227,16 @@ export function LedgerReport({ kind }: LedgerReportProps) {
     if (!report) return [] as Array<{
       sellerId: string; sellerName: string;
       invoiceCount: number;
-      totalAmount: number;
+      totalAmount: ByCurrency;
       receivedUsd: number; receivedKhr: number;
-      totalRefund: number;
+      totalRefund: ByCurrency;
     }>;
     const acc = new Map<string, {
       sellerId: string; sellerName: string;
       invoiceCount: number;
-      totalAmount: number;
+      totalAmount: ByCurrency;
       receivedUsd: number; receivedKhr: number;
-      totalRefund: number;
+      totalRefund: ByCurrency;
     }>();
     for (const g of report.groups) {
       for (const e of g.entries) {
@@ -222,16 +250,16 @@ export function LedgerReport({ kind }: LedgerReportProps) {
           sellerId: e.sellerId,
           sellerName: e.sellerName ?? '(unknown)',
           invoiceCount: 0,
-          totalAmount: 0,
+          totalAmount: {} as ByCurrency,
           receivedUsd: 0,
           receivedKhr: 0,
-          totalRefund: 0,
+          totalRefund: {} as ByCurrency,
         };
         cur.invoiceCount += isRoot ? 1 : 0;
-        cur.totalAmount  += e.amount ?? 0;
+        addTo(cur.totalAmount, e.currency || g.currency, e.amount ?? 0);
         cur.receivedUsd  += e.receivedUsd ?? 0;
         cur.receivedKhr  += e.receivedKhr ?? 0;
-        cur.totalRefund  += e.refund ?? 0;
+        addTo(cur.totalRefund, e.currency || g.currency, e.refund ?? 0);
         acc.set(key, cur);
       }
     }
@@ -240,6 +268,18 @@ export function LedgerReport({ kind }: LedgerReportProps) {
 
   /** Grand-strip Received split: sum of every group's per-currency
    *  Received. Drives the two cards in the totals strip. */
+  /** Grand Total / Refund / Closing per currency — the server's
+   *  grandTotal* fields add USD and KHR parties into one number. */
+  const grandByCurrency = useMemo(() => {
+    const amount: ByCurrency = {}, refund: ByCurrency = {}, closing: ByCurrency = {};
+    for (const g of report?.groups ?? []) {
+      addTo(amount, g.currency, g.totalAmount);
+      addTo(refund, g.currency, g.totalRefund);
+      addTo(closing, g.currency, g.closingBalance);
+    }
+    return { amount, refund, closing };
+  }, [report]);
+
   const grandReceivedByCurrency = useMemo(() => {
     const slot = { usd: 0, khr: 0 };
     for (const partyId in receivedByCurrencyPerGroup) {
@@ -261,7 +301,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
    *  no calendar icon or arrow. Apply stays here (Reports load
    *  on click, not on change, for backend cost reasons). */
   const inlineFilter = (
-    <div className="flex flex-wrap items-center gap-2 print:hidden">
+    <div className="filter-strip print:hidden">
       <Label className="text-xs text-gray-500">From</Label>
       <DateInput
         value={from}
@@ -276,9 +316,18 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         className="h-9 w-36 text-sm"
         title="To date"
       />
-      <Button size="sm" onClick={load} disabled={loading} className="h-9">
+      <Button size="sm" onClick={() => { void load(); }} disabled={loading} className="h-9 shrink-0">
         {loading ? 'Loading…' : 'Apply'}
       </Button>
+      {(from !== defaultFrom || to !== defaultTo) && (
+        <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={() => {
+          setFrom(defaultFrom);
+          setTo(defaultTo);
+          void load({ from: defaultFrom, to: defaultTo });
+        }}>
+          Clear
+        </Button>
+      )}
     </div>
   );
 
@@ -353,16 +402,31 @@ export function LedgerReport({ kind }: LedgerReportProps) {
   );
 
   return (
-    <div className="p-6 space-y-6 print:p-0 print:space-y-3">
-      <div className="filter-strip print:hidden">
+    <div className="space-y-6 print:space-y-3">
+      <div className="page-header-strip print:hidden">
         <div className="flex items-center gap-2">
-          <BookOpen className="h-5 w-5 text-gray-500" />
-          <h1 className="text-2xl font-semibold">{labels.title}</h1>
+          <BookOpen className="h-6 w-6 text-gray-500" />
+          <h1 className="text-3xl font-bold">{labels.title}</h1>
         </div>
-        <Button variant="outline" size="sm" onClick={() => window.print()}>
-          <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => window.print()}>
+            <Printer className="h-4 w-4 mr-1.5" /> Print
+          </Button>
+        </div>
       </div>
+
+      {/* Date range is always on screen (it used to render only next
+          to a non-empty party list, so an empty month left no way to
+          pick another range). Hidden on the per-party detail view. */}
+      {selectedPartyId === null && inlineFilter}
+
+      {loadError && !report && !loading && (
+        <Card>
+          <CardContent className="pt-4">
+            <ListError message={loadError} onRetry={() => { void load(); }} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* v-skeleton-loading — first-load placeholder for the stat
           strip + the group table. Matches the shape of the real
@@ -412,7 +476,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
             icon={FileText}
             tone="blue"
             label="Total"
-            value={formatMoney(report.grandTotalAmount, 'USD')}
+            value={fmtByCurrency(grandByCurrency.amount)}
           />
           {showUsd && (
             <StatCard
@@ -440,15 +504,13 @@ export function LedgerReport({ kind }: LedgerReportProps) {
             icon={RotateCcw}
             tone={kind === 'sale' ? 'red' : 'green'}
             label={labels.refundHeader}
-            value={report.grandTotalRefund === 0
-              ? formatMoney(0, 'USD')
-              : `${labels.refundSign}${formatMoney(report.grandTotalRefund, 'USD')}`}
+            value={fmtByCurrency(grandByCurrency.refund, { prefix: labels.refundSign })}
           />
           <StatCard
             icon={DollarSign}
             tone="purple"
             label={`Closing Balance (${labels.balanceLabel})`}
-            value={formatMoney(report.grandTotalBalance, 'USD')}
+            value={fmtByCurrency(grandByCurrency.closing)}
           />
         </div>
       )}
@@ -470,7 +532,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
           {/* Tabs on the LEFT, date filter on the RIGHT — same
               row. Wraps on narrow screens without collapsing the
               underline of the tab strip. */}
-          <div className="flex items-center gap-3 flex-wrap justify-between">
+          <div className="flex items-center gap-3">
             <TabsList>
               <TabsTrigger value="customers">
                 <Users className="h-3.5 w-3.5" />
@@ -481,7 +543,6 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                 Sellers
               </TabsTrigger>
             </TabsList>
-            {inlineFilter}
           </div>
 
           <TabsContent value="sellers" className="mt-0">
@@ -519,7 +580,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                             {s.invoiceCount}
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-sm">
-                            {formatMoney(s.totalAmount, 'USD')}
+                            {fmtByCurrency(s.totalAmount)}
                           </TableCell>
                           {showUsd && (
                             <TableCell className="text-right tabular-nums text-sm">
@@ -532,9 +593,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                             </TableCell>
                           )}
                           <TableCell className={`text-right tabular-nums text-sm ${kind === 'sale' ? 'text-rose-600' : 'text-emerald-700'}`}>
-                            {s.totalRefund === 0
-                              ? formatMoney(0, 'USD')
-                              : `${labels.refundSign}${formatMoney(s.totalRefund, 'USD')}`}
+                            {fmtByCurrency(s.totalRefund, { prefix: labels.refundSign })}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -565,10 +624,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
       {report && report.groups.length > 0 && selectedPartyId === null && kind === 'purchase' && (
         <Card className="print:shadow-none print:border-0">
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-3 flex-wrap justify-between">
-              <CardTitle className="text-base">{labels.party}s</CardTitle>
-              {inlineFilter}
-            </div>
+            <CardTitle className="text-base">{labels.party}s</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             {renderCustomerTable()}

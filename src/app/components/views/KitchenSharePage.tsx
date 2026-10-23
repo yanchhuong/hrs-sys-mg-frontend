@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, Loader2, WifiOff, RefreshCw } from 'lucide-react';
+import { ClipboardList, WifiOff, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import * as kitchenApi from '../../api/kitchen';
 import type { PosOrder, PosFulfillmentStatus } from '../../api/pos';
 import { KdsOrderCard } from '../common/KdsOrderCard';
+import { Skeleton } from '../ui/skeleton';
 
 /**
  * V306 — public kitchen KDS board. Anonymous surface reached via
@@ -111,9 +112,14 @@ export function KitchenSharePage(): JSX.Element {
 
   if (loading && orders.length === 0) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
-        <div className="text-gray-500 inline-flex items-center gap-2 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading kitchen board…
+      // Order-card placeholders instead of a spinner — same shape as
+      // the board, so nothing jumps when the first poll lands.
+      <div className="min-h-screen bg-slate-100 p-4" aria-busy="true" aria-label="Loading kitchen board">
+        <Skeleton className="h-8 w-56 mb-4" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="h-40 rounded-lg" />
+          ))}
         </div>
       </div>
     );

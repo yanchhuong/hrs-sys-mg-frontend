@@ -316,35 +316,60 @@ export function OrgChartTab({
     <DndProvider backend={HTML5Backend}>
       <Card>
         <CardContent className="pt-4 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[220px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          {/* One filter strip (Transactions shape): search, position,
+              status, Clear — then the view controls on the right. */}
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="Search name, ID, position…"
-                className="pl-9"
+                className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <Button variant="outline" size="sm" onClick={() => setCollapsed(new Set())}>
+            <select
+              value={position}
+              onChange={e => setPosition(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              title="Show only people holding this position, with their managers above them"
+              aria-label="Filter by position"
+            >
+              <option value="">Position : All</option>
+              {positionOptions.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <select
+              value={activeOnly ? 'active' : 'all'}
+              onChange={e => setActiveOnly(e.target.value === 'active')}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              title="Inactive staff leave their teams looking unmanaged"
+              aria-label="Filter by status"
+            >
+              <option value="active">Status : Active</option>
+              <option value="all">Status : All</option>
+            </select>
+            {(query.trim() || position || !activeOnly) && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={() => {
+                setQuery('');
+                setPosition('');
+                setActiveOnly(true);
+              }}>
+                Clear
+              </Button>
+            )}
+            <Button variant="outline" size="sm" className="h-9 shrink-0" onClick={() => setCollapsed(new Set())}>
               Expand all
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setCollapsed(new Set(allParentKeys))}>
+            <Button variant="outline" size="sm" className="h-9 shrink-0" onClick={() => setCollapsed(new Set(allParentKeys))}>
               Collapse all
-            </Button>
-            <Button
-              variant={activeOnly ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setActiveOnly(v => !v)}
-              title="Inactive staff leave their teams looking unmanaged"
-            >
-              Active only
             </Button>
 
             {/* Same tree, two shapes. List scales and prints; Profile is
                 the recognisable photo chart. Search / position / active
                 filters drive both. */}
-            <div className="ml-auto inline-flex rounded-md border p-0.5">
+            <div className="ml-auto inline-flex rounded-md border p-0.5 shrink-0">
               {SHAPES.map(s => (
                 <button
                   key={s.key}
@@ -365,20 +390,8 @@ export function OrgChartTab({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <select
-              value={position}
-              onChange={e => setPosition(e.target.value)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-              title="Show only people holding this position, with their managers above them"
-            >
-              <option value="">All positions</option>
-              {positionOptions.map(p => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-
-            <div className="flex flex-wrap justify-end gap-x-4 gap-y-1 text-xs text-gray-600">
+          <div className="flex items-center">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
               <span><b className="text-gray-900">{roots.length}</b> Top (Level&nbsp;0)</span>
               <span><b className="text-gray-900">{pool.length}</b> in chart</span>
               <span><b className="text-gray-900">{totals.managers}</b> with reports</span>

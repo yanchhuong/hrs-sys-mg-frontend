@@ -4,6 +4,7 @@ import { Calculator, Loader2, ShieldCheck } from 'lucide-react';
 
 import * as nssfApi from '../../api/nssf';
 import { formatMoney } from '../../utils/format';
+import { TONE_CLASS } from '../../utils/statusTones';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +15,7 @@ import {
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
@@ -259,6 +261,8 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
 
         {/* Table — only this scrolls. */}
         <div className="flex-1 min-h-0 overflow-auto">
+          {/* First preview still loading — skeleton instead of a blank pane. */}
+          {loading && !preview && <TableRowsSkeleton rows={6} columns={6} />}
           {preview && (
                   <Table>
                     <TableHeader className="sticky top-0 bg-white z-10">
@@ -329,9 +333,9 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
                             </TableCell>
                             <TableCell>
                               {row.eligible ? (
-                                <Badge className="bg-emerald-100 text-emerald-800 border-0">Eligible</Badge>
+                                <Badge variant="outline" className={TONE_CLASS.success}>Eligible</Badge>
                               ) : (
-                                <Badge variant="outline" className="bg-gray-50 text-gray-600 border-gray-200 text-[11px]" title={row.reason ?? ''}>
+                                <Badge variant="outline" className={`${TONE_CLASS.neutral} text-[11px]`} title={row.reason ?? ''}>
                                   {row.reason ?? 'Not eligible'}
                                 </Badge>
                               )}

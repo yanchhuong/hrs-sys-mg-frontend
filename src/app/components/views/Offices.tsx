@@ -26,6 +26,9 @@ const MapPicker = lazy(() =>
   import('../common/MapPicker').then(m => ({ default: m.MapPicker })),
 );
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { NumericInput } from '../common/NumericInput';
+import { statusBadgeClass } from '../../utils/statusTones';
 
 interface FormState {
   id?: string;
@@ -70,13 +73,15 @@ export function Offices({ embedded = false }: Props = {}) {
   // dialog clears the id, so a second-open for the same office still
   // re-fetches the token (cheap idempotent API call).
   const [qrOfficeId, setQrOfficeId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setRows(await officesApi.list());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load offices');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load offices');
     } finally {
       setLoading(false);
     }
@@ -182,8 +187,14 @@ export function Offices({ embedded = false }: Props = {}) {
        *  Dialog already renders the title; the Add Office button now
        *  lives inside the Card header (matches the Devices tab UI). */}
       {!embedded && (
-        <div className="flex items-center justify-between">
+        <div className="page-header-strip">
           <h1 className="text-3xl font-bold">Offices</h1>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Add Office
+            </Button>
+          </div>
         </div>
       )}
 
@@ -193,13 +204,17 @@ export function Offices({ embedded = false }: Props = {}) {
             <MapPin className="h-4 w-4 text-blue-600" />
             Locations
           </CardTitle>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Add Office
-          </Button>
+          {/* Standalone page: Add lives in the page header. Embedded
+              (inside a dialog) there is no page header, so it stays here. */}
+          {embedded && (
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Add Office
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && rows.length === 0 ? (
             <TableRowsSkeleton rows={6} columns={5} />
           ) : (
             // v-list-table-invoice-shape — border+scroll wrapper + sticky
@@ -218,13 +233,13 @@ export function Offices({ embedded = false }: Props = {}) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-sm text-gray-500 py-8">
-                      No offices yet. Click <strong>Add Office</strong> to create the first one.
-                    </TableCell>
-                  </TableRow>
-                )}
+                {rows.length === 0 && (loadError ? (
+                  <ListError colSpan={6} message={loadError} onRetry={() => { void load(); }} />
+                ) : (
+                  <ListEmpty colSpan={6} noun="offices">
+                    <p className="text-sm text-gray-500">Click <strong>Add Office</strong> to create the first one.</p>
+                  </ListEmpty>
+                ))}
                 {rows.map(o => (
                   <TableRow key={o.id}>
                     <TableCell className="font-medium">{o.name}</TableCell>
@@ -233,7 +248,7 @@ export function Offices({ embedded = false }: Props = {}) {
                     </TableCell>
                     <TableCell className="text-center text-sm">{o.radiusMeters}m</TableCell>
                     <TableCell className="text-center">
-                      <Badge variant={o.enabled ? 'default' : 'outline'}>
+                      <Badge variant="outline" className={statusBadgeClass(o.enabled ? 'active' : 'inactive')}>
                         {o.enabled ? 'Active' : 'Disabled'}
                       </Badge>
                     </TableCell>
@@ -255,15 +270,15 @@ export function Offices({ embedded = false }: Props = {}) {
                     <TableCell className="text-right">
                       <div className="inline-flex gap-1">
                         <Button
-                          size="sm" variant="ghost" className="h-7"
+                          size="icon" variant="ghost" className="h-7 w-7"
                           onClick={() => openEdit(o)}
                           title="Edit"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
                         <Button
-                          size="sm" variant="ghost"
-                          className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          size="icon" variant="ghost"
+                          className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                           onClick={() => setDeleteTarget(o)}
                           title="Remove"
                         >
@@ -352,12 +367,11 @@ export function Offices({ embedded = false }: Props = {}) {
 
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Radius (meters)</Label>
-              <Input
-                type="number"
-                min={5}
-                max={5000}
+              <NumericInput
+                decimals={0}
+                maxInt={4}
                 value={form.radiusMeters}
-                onChange={e => setForm({ ...form, radiusMeters: e.target.value })}
+                onChange={v => setForm({ ...form, radiusMeters: v })}
               />
               <p className="text-[11px] text-gray-400">
                 Scan must land within this many meters. 50–200m typical for a single building.
