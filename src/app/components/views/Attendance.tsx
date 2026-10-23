@@ -17,13 +17,14 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateInput } from '../common/DateInput';
+import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '../ui/dialog';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -36,13 +37,16 @@ import {
   CalendarIcon, Upload, FileSpreadsheet, Fingerprint,
   LogIn, LogOut, 
   ChevronLeft, ChevronRight, Pencil, Download, BarChart3,
-  Search, X, UserMinus, Settings as SettingsIcon,
+  Search, UserMinus, Settings as SettingsIcon, Users, CheckCircle2, Clock,
 } from 'lucide-react';
 import { OfficesDialog } from '../common/OfficesDialog';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths } from 'date-fns';
 import { toast } from 'sonner';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { StatCard } from '../common/StatCard';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AnnualLeaveSetup } from '../common/AnnualLeaveSetup';
 import { useI18n } from '../../i18n/I18nContext';
@@ -478,6 +482,11 @@ export function Attendance({ onNavigate }: Props = {}) {
 
   // Live data — falls back to mock arrays when VITE_USE_MOCKS is on.
   const [attendance, setAttendance] = useState<AttendanceType[]>(USE_MOCKS ? mockAttendance : []);
+  // The roster fills synthetic "absent" rows for every employee, so the
+  // table is never empty while loading — track the fetch explicitly so
+  // the first paint shows a skeleton instead of everyone absent.
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
   // Leaves for the selected range — merged into dailyRows so a pending or
@@ -498,6 +507,8 @@ export function Attendance({ onNavigate }: Props = {}) {
       setAttendance([...mockAttendance]);
       return;
     }
+    setAttendanceLoading(true);
+    setAttendanceError(null);
     try {
       // Backend serves attendance one day at a time; listRange fans the range
       // out into per-day calls and stitches the results together.
@@ -515,7 +526,11 @@ export function Attendance({ onNavigate }: Props = {}) {
       } catch { /* keep the default cutoff */ }
       setAttendance(rows.map(r => adaptApiAttendance(r, cutoff)));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load attendance');
+      const msg = err instanceof Error ? err.message : 'Failed to load attendance';
+      setAttendanceError(msg);
+      toast.error(msg);
+    } finally {
+      setAttendanceLoading(false);
     }
   };
 
@@ -1365,8 +1380,11 @@ export function Attendance({ onNavigate }: Props = {}) {
 
       days.forEach(day => {
         const dateStr = format(day, 'yyyy-MM-dd');
-        const dayOfWeek = getDay(day);
-        if (dayOfWeek === 0 || dayOfWeek === 6) return;
+        // Non-working days come from the tenant's General settings and the
+        // holiday calendar (same rule as the daily roster), not a
+        // hard-coded Sat/Sun weekend.
+        const kind = dayKindOf(dateStr);
+        if (kind === 'weekend' || kind === 'holiday') return;
 
         const record = attendanceByDateEmp.get(`${dateStr}|${emp.id}`)
           ?? (apiId ? attendanceByDateEmp.get(`${dateStr}|${apiId}`) : undefined);
@@ -1401,7 +1419,7 @@ export function Attendance({ onNavigate }: Props = {}) {
     });
     // alVersion invalidates when AL values/rule change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthDate, alVersion, attendance, employees, leaves, monthlyLeaves, isTenantWide, matchesScope, scopeMode]);
+  }, [monthDate, alVersion, attendance, employees, leaves, monthlyLeaves, isTenantWide, matchesScope, scopeMode, generalSettings, holidayDates]);
 
   // Top absent employees
   const topAbsent = useMemo(() => {
@@ -1416,6 +1434,68 @@ export function Attendance({ onNavigate }: Props = {}) {
   const departments = USE_MOCKS
     ? [...new Set(employees.map(e => e.department))]
     : deptList.map(d => d.name);
+
+  // Monthly Summary rows after the department / search / status filters —
+  // shared by the table and the monthly Export so the file matches the screen.
+  const monthlyFilteredRows = useMemo(() => {
+    const tokens = monthlySearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return monthlyData.filter(d => {
+      if (departmentFilter !== 'all' && deptName(d.employee.department) !== departmentFilter) return false;
+      if (tokens.length > 0) {
+        const e = d.employee;
+        const hay = [
+          e.name, e.khmerName, e.id, (e as any).empNo,
+          e.contactNumber, deptName(e.department),
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (!tokens.every(tok => hay.includes(tok))) return false;
+      }
+      if (monthlyStatusFilter === 'late' && d.lateCount === 0) return false;
+      if (monthlyStatusFilter === 'absent' && d.absentCount === 0) return false;
+      if (monthlyStatusFilter === 'late_or_absent' && d.lateCount === 0 && d.absentCount === 0) return false;
+      return true;
+    });
+    // deptName is rebuilt each render from deptList.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthlyData, departmentFilter, monthlySearch, monthlyStatusFilter, deptList]);
+
+  /** Monthly Summary → .xlsx, one row per employee as shown in the table. */
+  const handleMonthlyExport = () => {
+    if (monthlyFilteredRows.length === 0) {
+      toast.error('No employees to export under the current filters');
+      return;
+    }
+    const header = [
+      'Emp No', 'Name', 'Khmer Name', 'Department', 'Position',
+      'Total AL', 'Leave', 'Remain AL', 'Present', 'Absent', 'Late / Early Out',
+    ];
+    const rows = monthlyFilteredRows.map(d => [
+      d.employee.id,
+      d.employee.name ?? '',
+      d.employee.khmerName ?? '',
+      deptName(d.employee.department) || '',
+      d.employee.position ?? '',
+      d.totalAL,
+      d.leaveCount,
+      d.remainAL,
+      d.presentCount,
+      d.absentCount,
+      d.lateCount,
+    ]);
+    const monthSlug = format(monthDate, 'yyyy-MM');
+    void loadXlsx().then(XLSX => {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+      ws['!cols'] = [
+        { wch: 8 }, { wch: 22 }, { wch: 18 }, { wch: 22 }, { wch: 22 },
+        { wch: 9 }, { wch: 7 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 16 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'Monthly Summary');
+      XLSX.writeFile(wb, `attendance_monthly_${monthSlug}.xlsx`);
+      toast.success(`Exported ${rows.length} employee${rows.length === 1 ? '' : 's'}`);
+    }).catch(err => {
+      toast.error(err instanceof Error ? err.message : 'Export failed');
+    });
+  };
 
   const getStatusBadge = (status: string) => {
     const config = STATUS_CONFIG[status];
@@ -1731,17 +1811,42 @@ export function Attendance({ onNavigate }: Props = {}) {
           ...leaveTypePatch,
         });
       } else {
-        await attendanceApi.update(editRecord.id, {
-          // The backend PATCH schema accepts the four named punch fields
-          // directly — these are the columns the fingerprint sync fills in.
-          ...(editMorningIn  ? { morningIn:  editMorningIn  } : {}),
-          ...(editMorningOut ? { morningOut: editMorningOut } : {}),
-          ...(editNoonIn     ? { noonIn:     editNoonIn     } : {}),
-          ...(editNoonOut    ? { noonOut:    editNoonOut    } : {}),
-          status: statusToSave,
-          notes: editRemark || undefined,
-          ...leaveTypePatch,
-        } as any);
+        // A punch the admin cleared must reach the server as null. The
+        // PATCH endpoint skips null fields (it can't clear a column), so
+        // when a punch was cleared we save through the (employeeId, date)
+        // upsert instead, which writes all four punches as sent.
+        const punchCleared =
+          (!!editRecord.morningIn  && !editMorningIn)
+          || (!!editRecord.morningOut && !editMorningOut)
+          || (!!editRecord.noonIn     && !editNoonIn)
+          || (!!editRecord.noonOut    && !editNoonOut);
+        const upsertEmpId = (emp as any)?.apiId as string | undefined;
+        if (punchCleared && upsertEmpId) {
+          await attendanceApi.upsert({
+            employeeId: upsertEmpId,
+            date: editRecord.date,
+            morningIn: editMorningIn || null,
+            morningOut: editMorningOut || null,
+            noonIn: editNoonIn || null,
+            noonOut: editNoonOut || null,
+            status: statusToSave,
+            notes: editRemark || null,
+            ...leaveTypePatch,
+          });
+        } else {
+          await attendanceApi.update(editRecord.id, {
+            // The backend PATCH schema accepts the four named punch fields
+            // directly — these are the columns the fingerprint sync fills in.
+            // Cleared punches go as null rather than being dropped.
+            morningIn:  editMorningIn  || null,
+            morningOut: editMorningOut || null,
+            noonIn:     editNoonIn     || null,
+            noonOut:    editNoonOut    || null,
+            status: statusToSave,
+            notes: editRemark || undefined,
+            ...leaveTypePatch,
+          } as any);
+        }
       }
       // Optional OT request — admin can opt in via the dialog. Filed
       // after the attendance update succeeds so a server-side reject
@@ -1939,6 +2044,15 @@ export function Attendance({ onNavigate }: Props = {}) {
                       </label>
                       {selectedFile && <p className="mt-2 text-sm text-gray-600">{selectedFile.name}</p>}
                     </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => { setUploadDialogOpen(false); setSelectedFile(null); }}
+                      disabled={uploadProcessing}
+                    >
+                      Cancel
+                    </Button>
                     <Button
                       onClick={async () => {
                         if (!selectedFile) {
@@ -1984,6 +2098,12 @@ export function Attendance({ onNavigate }: Props = {}) {
                           }
                           setUploadDialogOpen(false);
                           setSelectedFile(null);
+                          // Reload so the uploaded rows (and any leaves the
+                          // server auto-created for status=leave rows) show
+                          // up without a manual refresh.
+                          if (result.saved > 0) {
+                            await Promise.all([loadAttendance(), loadLeaves(), loadMonthlyLeaves(monthDate)]);
+                          }
                         } catch (e) {
                           toast.error(e instanceof Error ? e.message : 'Upload failed');
                         } finally {
@@ -1991,12 +2111,11 @@ export function Attendance({ onNavigate }: Props = {}) {
                         }
                       }}
                       disabled={!selectedFile || uploadProcessing}
-                      className="w-full"
                     >
                       <Upload className="mr-2 h-4 w-4" />
                       {uploadProcessing ? 'Processing…' : 'Upload & Process'}
                     </Button>
-                  </div>
+                  </DialogFooter>
                 </DialogContent>
               </Dialog>
             </>
@@ -2063,6 +2182,12 @@ export function Attendance({ onNavigate }: Props = {}) {
                     {summary.leave}
                   </Badge>
                 </TabsTrigger>
+                <TabsTrigger value="exception">
+                  Exception
+                  <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-violet-100 text-violet-800 hover:bg-violet-100">
+                    {summary.exception}
+                  </Badge>
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -2072,12 +2197,42 @@ export function Attendance({ onNavigate }: Props = {}) {
             <CardHeader className="pb-3 min-w-0">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between min-w-0">
                 <div className="filter-strip flex-1 min-w-0">
-                  {/* Match the Invoices / Bills / Receipts date filter
-                      shape: shared DateInput (hover-clearable ×),
-                      short 'From' / 'To' labels inline with the input,
-                      Clear button that only appears when a range is
-                      set. Consistent visual language across every
-                      list page. */}
+                  {/* Same strip as Transactions: icon search, native
+                      selects with "Label : All" options, From/To
+                      DateInputs and ONE ghost Clear that resets every
+                      filter (shown only when something is set). */}
+                  <div className="relative w-64 shrink-0">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      value={dailySearch}
+                      onChange={(e) => setDailySearch(e.target.value)}
+                      placeholder="Search name, Khmer name, ID, phone, department, device…"
+                      className="h-9 pl-7"
+                    />
+                  </div>
+                  <select
+                    value={departmentFilter}
+                    onChange={e => setDepartmentFilter(e.target.value)}
+                    aria-label="Filter by department"
+                    className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                  >
+                    <option value="all">Department : All</option>
+                    {departments.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                  {/* v-attendance-filter-single-row — Hours fulfilment
+                      filter sits on the same row as the other filters. */}
+                  <select
+                    value={hoursFilter}
+                    onChange={e => setHoursFilter(e.target.value as typeof hoursFilter)}
+                    aria-label="Filter by hours"
+                    className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                  >
+                    <option value="all">Hours : All</option>
+                    <option value="fulfilled">Fulfilled (≥ 8h)</option>
+                    <option value="short">Short (&lt; 8h)</option>
+                  </select>
                   <Label className="text-xs text-gray-500 shrink-0">From</Label>
                   <div className="shrink-0">
                     <DateInput
@@ -2094,61 +2249,21 @@ export function Attendance({ onNavigate }: Props = {}) {
                       min={dateFrom || undefined}
                     />
                   </div>
-                  {(dateFrom || dateTo) && (
+                  {(dateFrom || dateTo || dailySearch || departmentFilter !== 'all' || hoursFilter !== 'all') && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-8 text-xs shrink-0"
-                      onClick={() => { setDateFrom(''); setDateTo(''); }}
+                      className="h-9 shrink-0"
+                      onClick={() => {
+                        setDateFrom(''); setDateTo('');
+                        setDailySearch('');
+                        setDepartmentFilter('all');
+                        setHoursFilter('all');
+                      }}
                     >
                       Clear
                     </Button>
                   )}
-                  <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                    <SelectTrigger className="w-40 h-8 shrink-0" aria-label="Filter by department">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Departments</SelectItem>
-                      {departments.map(d => (
-                        <SelectItem key={d} value={d}>{d}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="relative w-60 shrink-0">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                    <Input
-                      value={dailySearch}
-                      onChange={(e) => setDailySearch(e.target.value)}
-                      placeholder="Search name, Khmer name, ID, phone, department, device…"
-                      className="h-8 pl-8 pr-8 text-sm"
-                    />
-                    {dailySearch && (
-                      <button
-                        type="button"
-                        onClick={() => setDailySearch('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        title="Clear search"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  {/* v-attendance-filter-single-row — Hours fulfilment
-                      filter + Roster/History toggle now sit on the same
-                      row as From/To/Clear/Dept/Search so operators don't
-                      have to scan two rows. All slide together as a
-                      single .filter-strip line on narrow screens. */}
-                  <Select value={hoursFilter} onValueChange={v => setHoursFilter(v as typeof hoursFilter)}>
-                    <SelectTrigger className="h-8 w-40 text-xs shrink-0">
-                      <SelectValue placeholder="Hours" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">None</SelectItem>
-                      <SelectItem value="fulfilled">Fulfilled (≥ 8h)</SelectItem>
-                      <SelectItem value="short">Short (&lt; 8h)</SelectItem>
-                    </SelectContent>
-                  </Select>
                   {/* v-attendance-history-hidden — Roster / History
                       view-mode toggle is parked. The History view
                       shipped but the operator flow doesn't need it
@@ -2195,12 +2310,20 @@ export function Attendance({ onNavigate }: Props = {}) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dailyPagination.paginatedItems.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={(isAdmin ? 12 : 11) + (dateFrom !== dateTo ? 1 : 0)} className="text-center py-12 text-gray-400">
-                        No records found for the selected filters
-                      </TableCell>
-                    </TableRow>
+                  {attendanceLoading && attendance.length === 0 ? (
+                    <TableBodySkeletonRows columns={(isAdmin ? 12 : 11) + (dateFrom !== dateTo ? 1 : 0)} />
+                  ) : attendanceError && attendance.length === 0 ? (
+                    <ListError
+                      message={attendanceError}
+                      onRetry={() => { void loadAttendance(); }}
+                      colSpan={(isAdmin ? 12 : 11) + (dateFrom !== dateTo ? 1 : 0)}
+                    />
+                  ) : dailyPagination.paginatedItems.length === 0 ? (
+                    <ListEmpty
+                      noun="attendance records"
+                      filtered={activeFilter !== 'all' || !!dailySearch || departmentFilter !== 'all' || hoursFilter !== 'all'}
+                      colSpan={(isAdmin ? 12 : 11) + (dateFrom !== dateTo ? 1 : 0)}
+                    />
                   ) : (
                     dailyPagination.paginatedItems.map(record => {
                       const emp = employees.find(
@@ -2334,7 +2457,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                           </TableCell>
                           {dateFrom !== dateTo && (
                             <TableCell className="text-sm whitespace-nowrap">
-                              {format(parseISO(record.date), 'MMM dd')}
+                              {formatDate(record.date)}
                             </TableCell>
                           )}
                           <TableCell className="text-center">{timeCell(worked.morningIn, 'in', morningOnLeave)}</TableCell>
@@ -2528,22 +2651,11 @@ export function Attendance({ onNavigate }: Props = {}) {
               <ChevronRight className="h-4 w-4" />
             </Button>
             <div className="ml-auto flex items-center gap-2">
-              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                <SelectTrigger className="w-40 h-8" aria-label="Filter by department">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {departments.map(d => (
-                    <SelectItem key={d} value={d}>{d}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <Button variant="outline" size="sm" onClick={() => setAlDialogOpen(true)}>
                 <CalendarIcon className="mr-1.5 h-4 w-4" />
                 Annual Leave
               </Button>
-              <Button variant="outline" size="sm" onClick={() => toast.success('Exported monthly data')}>
+              <Button variant="outline" size="sm" onClick={handleMonthlyExport}>
                 <Download className="mr-1.5 h-4 w-4" />
                 Export
               </Button>
@@ -2556,64 +2668,57 @@ export function Attendance({ onNavigate }: Props = {}) {
               <CardHeader className="pb-3 space-y-3">
                 <CardTitle className="text-base">Monthly Summary</CardTitle>
                 {/* Filters row */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative flex-1 min-w-[180px] max-w-sm">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <div className="filter-strip">
+                  <div className="relative w-64 shrink-0">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
                       value={monthlySearch}
                       onChange={(e) => setMonthlySearch(e.target.value)}
                       placeholder="Search name, Khmer name, ID, phone, department, device…"
-                      className="h-8 pl-8 pr-8 text-sm"
+                      className="h-9 pl-7"
                     />
-                    {monthlySearch && (
-                      <button
-                        type="button"
-                        onClick={() => setMonthlySearch('')}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        title="Clear"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
                   </div>
-                  <div className="flex items-center gap-1 flex-wrap">
-                    {([
-                      { key: 'all', label: 'All' },
-                      { key: 'late', label: 'Late / Early Out' },
-                      { key: 'absent', label: 'Absent' },
-                      { key: 'late_or_absent', label: 'Late or Absent' },
-                    ] as const).map(chip => (
-                      <Button
-                        key={chip.key}
-                        variant={monthlyStatusFilter === chip.key ? 'default' : 'outline'}
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => setMonthlyStatusFilter(chip.key)}
-                      >
-                        {chip.label}
-                      </Button>
+                  <select
+                    value={departmentFilter}
+                    onChange={e => setDepartmentFilter(e.target.value)}
+                    aria-label="Filter by department"
+                    className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                  >
+                    <option value="all">Department : All</option>
+                    {departments.map(d => (
+                      <option key={d} value={d}>{d}</option>
                     ))}
-                  </div>
+                  </select>
+                  <select
+                    value={monthlyStatusFilter}
+                    onChange={e => setMonthlyStatusFilter(e.target.value as typeof monthlyStatusFilter)}
+                    aria-label="Filter by status"
+                    className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+                  >
+                    <option value="all">Status : All</option>
+                    <option value="late">Late / Early Out</option>
+                    <option value="absent">Absent</option>
+                    <option value="late_or_absent">Late or Absent</option>
+                  </select>
+                  {(monthlySearch || departmentFilter !== 'all' || monthlyStatusFilter !== 'all') && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-9 shrink-0"
+                      onClick={() => {
+                        setMonthlySearch('');
+                        setDepartmentFilter('all');
+                        setMonthlyStatusFilter('all');
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
                 {(() => {
-                  const tokens = monthlySearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
-                  const filteredRows = monthlyData.filter(d => {
-                    if (departmentFilter !== 'all' && deptName(d.employee.department) !== departmentFilter) return false;
-                    if (tokens.length > 0) {
-                      const e = d.employee;
-                      const hay = [
-                        e.name, e.khmerName, e.id, (e as any).empNo,
-                        e.contactNumber, deptName(e.department),
-                      ].filter(Boolean).join(' ').toLowerCase();
-                      if (!tokens.every(tok => hay.includes(tok))) return false;
-                    }
-                    if (monthlyStatusFilter === 'late' && d.lateCount === 0) return false;
-                    if (monthlyStatusFilter === 'absent' && d.absentCount === 0) return false;
-                    if (monthlyStatusFilter === 'late_or_absent' && d.lateCount === 0 && d.absentCount === 0) return false;
-                    return true;
-                  });
+                  const filteredRows = monthlyFilteredRows;
                   return (
                 <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
                 <Table>
@@ -2810,36 +2915,35 @@ export function Attendance({ onNavigate }: Props = {}) {
                 </Card>
               )}
 
-              {/* Quick stats */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Month Overview</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Total Employees</span>
-                    <span className="font-medium">
-                      {employees
-                        .filter(e => e.status === 'active' && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees)))
-                        .length}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Avg. Attendance Rate</span>
-                    <span className="font-medium text-green-600">
-                      {monthlyData.length > 0 ? Math.round((monthlyData.reduce((s, d) => s + d.presentCount, 0) / Math.max(monthlyData.reduce((s, d) => s + d.presentCount + d.absentCount, 0), 1)) * 100) : 0}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Total Absences</span>
-                    <span className="font-medium text-red-600">{monthlyData.reduce((s, d) => s + d.absentCount, 0)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-500">Total Late / Early Out</span>
-                    <span className="font-medium text-yellow-600">{monthlyData.reduce((s, d) => s + d.lateCount, 0)}</span>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* Month overview — shared StatCard tiles */}
+              <div className="grid grid-cols-2 gap-3">
+                <StatCard
+                  label="Total Employees"
+                  icon={Users}
+                  tone="blue"
+                  value={employees
+                    .filter(e => e.status === 'active' && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees)))
+                    .length}
+                />
+                <StatCard
+                  label="Avg. Attendance Rate"
+                  icon={CheckCircle2}
+                  tone="green"
+                  value={`${monthlyData.length > 0 ? Math.round((monthlyData.reduce((s, d) => s + d.presentCount, 0) / Math.max(monthlyData.reduce((s, d) => s + d.presentCount + d.absentCount, 0), 1)) * 100) : 0}%`}
+                />
+                <StatCard
+                  label="Total Absences"
+                  icon={UserMinus}
+                  tone="red"
+                  value={monthlyData.reduce((s, d) => s + d.absentCount, 0)}
+                />
+                <StatCard
+                  label="Total Late / Early Out"
+                  icon={Clock}
+                  tone="amber"
+                  value={monthlyData.reduce((s, d) => s + d.lateCount, 0)}
+                />
+              </div>
             </div>
           </div>
         </>
@@ -3114,14 +3218,13 @@ export function Attendance({ onNavigate }: Props = {}) {
                     For half-day rows we lock it to the attendance row's
                     date (single-day leave). */}
                 <div className="space-y-1">
-                  <Label className="text-sm" htmlFor="edit-leave-end">End Date</Label>
-                  <Input
-                    id="edit-leave-end"
-                    type="date"
-                    value={editLeaveEndDate}
+                  <Label className="text-sm">End Date</Label>
+                  <DateInput
+                    value={editLeaveEndDate || null}
                     min={editRecord?.date}
                     disabled={editLeaveType !== 'full'}
-                    onChange={e => setEditLeaveEndDate(e.target.value)}
+                    onChange={v => setEditLeaveEndDate(v ?? '')}
+                    className="w-full"
                   />
                   <p className="text-[11px] text-gray-500">
                     {editLeaveType !== 'full'
@@ -3142,10 +3245,9 @@ export function Attendance({ onNavigate }: Props = {}) {
             {editRecord && editStatus !== 'leave' && (
               <div className="rounded-md border border-blue-200 bg-blue-50/40 p-3 space-y-2">
                 <label className="flex items-start gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={editApplyOt}
-                    onChange={e => setEditApplyOt(e.target.checked)}
+                    onCheckedChange={v => setEditApplyOt(v === true)}
                     disabled={editOtAlreadyFiled}
                     className="mt-0.5"
                   />
@@ -3169,11 +3271,12 @@ export function Attendance({ onNavigate }: Props = {}) {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">Start Date</Label>
-                        <Input
-                          type="date"
-                          value={editRecord?.date ?? ''}
-                          readOnly
-                          className="h-8 bg-gray-50"
+                        <DateInput
+                          value={editRecord?.date || null}
+                          onChange={() => { /* locked to the row's date */ }}
+                          disabled
+                          clearable={false}
+                          className="h-8 w-full bg-gray-50"
                         />
                       </div>
                       <div className="space-y-1">
@@ -3185,11 +3288,12 @@ export function Attendance({ onNavigate }: Props = {}) {
                             </Badge>
                           )}
                         </Label>
-                        <Input
-                          type="date"
-                          value={editOtEndDate}
-                          readOnly
-                          className="h-8 bg-gray-50"
+                        <DateInput
+                          value={editOtEndDate || null}
+                          onChange={() => { /* auto-derived from the hour range */ }}
+                          disabled
+                          clearable={false}
+                          className="h-8 w-full bg-gray-50"
                         />
                       </div>
                     </div>
@@ -3381,19 +3485,19 @@ export function Attendance({ onNavigate }: Props = {}) {
             <div className="bg-amber-50 p-3 rounded-lg">
               <p className="text-xs text-amber-800">Changes will be logged in the audit trail with your user ID and timestamp.</p>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setEditDialogOpen(false)}
-                disabled={editSaving}
-              >
-                Cancel
-              </Button>
-              <Button onClick={handleSaveEdit} disabled={editSaving}>
-                {editSaving ? 'Saving…' : 'Save Changes'}
-              </Button>
-            </div>
           </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditDialogOpen(false)}
+              disabled={editSaving}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={editSaving}>
+              {editSaving ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -3440,11 +3544,10 @@ export function Attendance({ onNavigate }: Props = {}) {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="me-cat" className="text-xs">Leave Type</Label>
-                <select
-                  id="me-cat"
+                <Select
                   value={markCategory}
-                  onChange={(e) => {
-                    const next = e.target.value as typeof markCategory;
+                  onValueChange={(v) => {
+                    const next = v as typeof markCategory;
                     setMarkCategory(next);
                     // Maternity = 90 days inclusive from the row date.
                     const rowDate = markExceptionTarget?.date;
@@ -3460,45 +3563,50 @@ export function Attendance({ onNavigate }: Props = {}) {
                     }
                   }}
                   disabled={markExceptionBusy}
-                  className="w-full px-3 py-2 border rounded-md text-sm h-9"
                 >
-                  <option value="exception">Exception (mission / on-site)</option>
-                  <option value="maternity">Maternity (90 days)</option>
-                </select>
+                  <SelectTrigger id="me-cat" className="w-full h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="exception">Exception (mission / on-site)</SelectItem>
+                    <SelectItem value="maternity">Maternity (90 days)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="me-dur" className="text-xs">Duration</Label>
-                <select
-                  id="me-dur"
+                <Select
                   value={markDuration}
-                  onChange={(e) => {
-                    const next = e.target.value as typeof markDuration;
+                  onValueChange={(v) => {
+                    const next = v as typeof markDuration;
                     setMarkDuration(next);
                     if (next !== 'full' && markExceptionTarget?.date) {
                       setMarkEndDate(markExceptionTarget.date);
                     }
                   }}
                   disabled={markExceptionBusy}
-                  className="w-full px-3 py-2 border rounded-md text-sm h-9"
                 >
-                  <option value="full">Full Day</option>
-                  <option value="half_morning">Half Morning</option>
-                  <option value="half_noon">Half Noon</option>
-                </select>
+                  <SelectTrigger id="me-dur" className="w-full h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">Full Day</SelectItem>
+                    <SelectItem value="half_morning">Half Morning</SelectItem>
+                    <SelectItem value="half_noon">Half Noon</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="me-end" className="text-xs">
+              <Label className="text-xs">
                 End Date <span className="text-gray-400 font-normal">(optional)</span>
               </Label>
-              <input
-                id="me-end"
-                type="date"
-                value={markEndDate}
+              <DateInput
+                value={markEndDate || null}
                 min={markExceptionTarget?.date}
                 disabled={markExceptionBusy || markDuration !== 'full'}
-                onChange={e => setMarkEndDate(e.target.value)}
-                className="w-full px-3 py-2 border rounded-md text-sm h-9 disabled:bg-gray-100"
+                onChange={v => setMarkEndDate(v ?? '')}
+                className="w-full"
               />
               <p className="text-[11px] text-gray-500">
                 {markDuration !== 'full'

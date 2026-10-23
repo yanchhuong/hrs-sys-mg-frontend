@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -10,7 +11,7 @@ import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { usePagination } from '../../hooks/usePagination';
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '../ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -42,6 +43,25 @@ import {
   evaluate, previewScenarios, EvaluatedSession,
 } from '../../utils/scanRule';
 import { FlexibleWorkCard } from '../common/FlexibleWorkCard';
+
+/** Workday OT example derived from the live settings: a check-out 90
+ *  minutes after `otStartAfter`, rounded to the configured step. Keeps
+ *  the "Example Scenario" card honest when the admin edits the rule. */
+function workdayOtExample(otStartAfter: string, roundingMinutes: number) {
+  const RAW_MIN = 90;
+  const m = /^(\d{1,2}):(\d{2})/.exec(otStartAfter || '');
+  const start = m ? Number(m[1]) * 60 + Number(m[2]) : 17 * 60;
+  const out = (start + RAW_MIN) % (24 * 60);
+  const checkOut = `${String(Math.floor(out / 60)).padStart(2, '0')}:${String(out % 60).padStart(2, '0')}`;
+  const step = roundingMinutes > 0 ? roundingMinutes : 1;
+  const roundedHours = (Math.round(RAW_MIN / step) * step) / 60;
+  return { checkOut, rawLabel: '1h 30min', roundedHours };
+}
+
+/** "Saturday/Sunday" from the tenant's configured weekend days. */
+function weekendLabel(days: string[]): string {
+  return days.length > 0 ? days.join('/') : 'a weekend day (none configured)';
+}
 
 function adaptHoliday(h: settingsApi.Holiday): Holiday {
   // The Holiday Calendar's job is to mark non-working dates so the
@@ -82,6 +102,7 @@ export function AttendanceSettings() {
   // Roles that only have View on settings still see the page (helpful as a
   // read-only reference) but can't persist changes.
   const { canUpdate } = useAuth();
+  const confirm = useConfirm();
   const canEditSettings = canUpdate('settings');
   const [otSettings, setOtSettings] = useState<OTSettings>(USE_MOCKS ? defaultOTSettings : { ...defaultOTSettings });
   const [, setLoadingOt] = useState(false);
@@ -341,7 +362,7 @@ export function AttendanceSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="page-header-strip">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             {t('page.attendance_settings.title')}
@@ -553,24 +574,22 @@ export function AttendanceSettings() {
         {/* ═══════════════ OT RULES TAB ═══════════════ */}
         <TabsContent value="ot" className="space-y-6">
           {/* OT Rule Type Sub-tabs */}
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg w-fit">
-            {[
-              { key: 'workday', label: 'Workday OT', icon: <Briefcase className="h-4 w-4" /> },
-              { key: 'weekend', label: 'Weekend OT', icon: <Calendar className="h-4 w-4" /> },
-              { key: 'holiday-ot', label: 'Holiday OT', icon: <PartyPopper className="h-4 w-4" /> },
-              { key: 'night', label: 'Night Work', icon: <Moon className="h-4 w-4" /> },
-            ].map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setOtSubTab(tab.key)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm transition-colors ${
-                  otSubTab === tab.key ? 'bg-white shadow-sm font-medium text-gray-900' : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
+          <div className="overflow-x-auto hover-scroll-x">
+            <Tabs value={otSubTab} onValueChange={setOtSubTab}>
+              <TabsList className="w-max">
+                {[
+                  { key: 'workday', label: 'Workday OT', icon: <Briefcase className="h-4 w-4" /> },
+                  { key: 'weekend', label: 'Weekend OT', icon: <Calendar className="h-4 w-4" /> },
+                  { key: 'holiday-ot', label: 'Holiday OT', icon: <PartyPopper className="h-4 w-4" /> },
+                  { key: 'night', label: 'Night Work', icon: <Moon className="h-4 w-4" /> },
+                ].map(tab => (
+                  <TabsTrigger key={tab.key} value={tab.key} className="gap-1.5">
+                    {tab.icon}
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
           </div>
 
           {/* ── Workday OT ── */}
@@ -656,16 +675,22 @@ export function AttendanceSettings() {
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example Scenario</p>
+                    {(() => {
+                      const ex = workdayOtExample(otSettings.workdayRule.otStartAfter, otSettings.workdayRule.roundingMinutes);
+                      const hrs = Number(ex.roundedHours.toFixed(2));
+                      return (
                     <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-gray-600">Check-out time</span><span className="font-medium">18:30</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Check-out time</span><span className="font-medium">{ex.checkOut}</span></div>
                       <div className="flex justify-between"><span className="text-gray-600">OT starts at</span><span className="font-medium">{otSettings.workdayRule.otStartAfter}</span></div>
-                      <div className="border-t pt-2 flex justify-between"><span className="text-gray-600">Raw OT</span><span className="font-medium">1h 30min</span></div>
-                      <div className="flex justify-between"><span className="text-gray-600">After rounding</span><span className="font-medium">1.5h</span></div>
+                      <div className="border-t pt-2 flex justify-between"><span className="text-gray-600">Raw OT</span><span className="font-medium">{ex.rawLabel}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">After rounding</span><span className="font-medium">{hrs}h</span></div>
                       <div className="flex justify-between bg-blue-100 -mx-4 px-4 py-2 rounded">
                         <span className="font-medium text-blue-800">OT Pay</span>
-                        <span className="font-semibold text-blue-800">1.5h × {otSettings.workdayRule.rate}x = {(1.5 * otSettings.workdayRule.rate).toFixed(2)}h equivalent</span>
+                        <span className="font-semibold text-blue-800">{hrs}h × {otSettings.workdayRule.rate}x = {(ex.roundedHours * otSettings.workdayRule.rate).toFixed(2)}h equivalent</span>
                       </div>
                     </div>
+                      );
+                    })()}
                   </div>
                 </CardContent>
               </Card>
@@ -733,7 +758,7 @@ export function AttendanceSettings() {
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                     <p className="text-xs font-medium text-orange-800 uppercase tracking-wide mb-2">How It Works</p>
                     <div className="tabular-nums text-xs space-y-1.5 text-orange-900">
-                      <p>if working on Saturday/Sunday</p>
+                      <p>if working on {weekendLabel(generalSettings.weekendDays)}</p>
                       <p className="pl-4">→ All hours = OT × {otSettings.weekendRule.rate}</p>
                       <p className="pl-4 text-orange-600">min work: {otSettings.weekendRule.minimumWorkMinutes}min required</p>
                     </div>
@@ -741,7 +766,7 @@ export function AttendanceSettings() {
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example Scenario</p>
                     <div className="space-y-2 text-sm">
-                      <div className="flex justify-between"><span className="text-gray-600">Day</span><Badge className="bg-orange-100 text-orange-700 border-0">Saturday</Badge></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Day</span><Badge className="bg-orange-100 text-orange-700 border-0">{generalSettings.weekendDays[0] ?? 'Weekend'}</Badge></div>
                       <div className="flex justify-between"><span className="text-gray-600">Work time</span><span className="font-medium">08:00 - 14:00</span></div>
                       <div className="flex justify-between"><span className="text-gray-600">Total hours</span><span className="font-medium">6h</span></div>
                       <div className="border-t pt-2 flex justify-between bg-orange-100 -mx-4 px-4 py-2 rounded">
@@ -876,7 +901,7 @@ export function AttendanceSettings() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-5">
-                  <div className="page-header-strip rounded-lg border bg-indigo-50/40 border-indigo-100 p-3">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border bg-indigo-50/40 border-indigo-100 p-3">
                     <div>
                       <p className="text-sm font-medium text-indigo-900">Enable Night-Work Multiplier</p>
                       <p className="text-xs text-indigo-700/80">When off, OT during night hours uses only the day-type rate.</p>
@@ -1036,9 +1061,9 @@ export function AttendanceSettings() {
                         </div>
 
                         <div className="bg-gray-50 rounded-lg p-4">
-                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: Saturday 23:00 → Sunday 01:00 (cross-date, 2h)</p>
+                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Example: {generalSettings.weekendDays[0] ?? 'Weekend day'} 23:00 → next day 01:00 (cross-date, 2h)</p>
                           <div className="space-y-2 text-sm">
-                            <div className="flex justify-between"><span className="text-gray-600">Day type (Saturday start)</span><Badge className="bg-orange-100 text-orange-700 border-0">Weekend · {weekend}x</Badge></div>
+                            <div className="flex justify-between"><span className="text-gray-600">Day type ({generalSettings.weekendDays[0] ?? 'weekend'} start)</span><Badge className="bg-orange-100 text-orange-700 border-0">Weekend · {weekend}x</Badge></div>
                             <div className="flex justify-between"><span className="text-gray-600">In night window?</span><Badge className="bg-indigo-100 text-indigo-700 border-0">Yes · {night}x</Badge></div>
                             <div className="flex justify-between"><span className="text-gray-600">Effective rate</span><span className="font-medium">{composeOf(weekend)}x <span className="text-gray-500">({composeFormula('weekend', weekend)})</span></span></div>
                             <div className="border-t pt-2 flex justify-between bg-indigo-100 -mx-4 px-4 py-2 rounded">
@@ -1150,7 +1175,7 @@ export function AttendanceSettings() {
                     </DialogHeader>
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label>Department / Group / Team</Label>
+                        <Label>Department / Group / Team <span className="text-red-500">*</span></Label>
                         <Select value={newDeptAssign.department} onValueChange={v => setNewDeptAssign({ ...newDeptAssign, department: v })}>
                           <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
                           <SelectContent>
@@ -1183,15 +1208,24 @@ export function AttendanceSettings() {
                         <div className="space-y-2"><Label className="text-xs">Weekend Rate</Label><Input type="number" step="0.1" value={newDeptAssign.weekendRate} onChange={e => setNewDeptAssign({ ...newDeptAssign, weekendRate: parseFloat(e.target.value) || 1 })} className="h-9" /></div>
                         <div className="space-y-2"><Label className="text-xs">Holiday Rate</Label><Input type="number" step="0.1" value={newDeptAssign.holidayRate} onChange={e => setNewDeptAssign({ ...newDeptAssign, holidayRate: parseFloat(e.target.value) || 1 })} className="h-9" /></div>
                       </div>
-                      <Button className="w-full" onClick={() => {
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setDeptAssignDialogOpen(false)}>Cancel</Button>
+                      <Button onClick={() => {
                         if (!newDeptAssign.department) { toast.error('Select a department'); return; }
-                        const id = `DA${String(otSettings.departmentAssignments.length + 1).padStart(3, '0')}`;
+                        // Next free number — length+1 collided with an
+                        // existing id after a row had been removed.
+                        const maxN = otSettings.departmentAssignments.reduce((m, a) => {
+                          const n = Number(/^DA(\d+)$/.exec(a.id)?.[1] ?? 0);
+                          return Number.isFinite(n) && n > m ? n : m;
+                        }, 0);
+                        const id = `DA${String(maxN + 1).padStart(3, '0')}`;
                         setOtSettings({ ...otSettings, departmentAssignments: [...otSettings.departmentAssignments, { id, ...newDeptAssign }] });
                         setNewDeptAssign({ department: '', ruleLabel: '', weekdayRate: 1.5, weekendRate: 2.0, holidayRate: 3.0 });
                         setDeptAssignDialogOpen(false);
                         toast.success('Department OT rule assigned');
                       }}>Assign Rule</Button>
-                    </div>
+                    </DialogFooter>
                   </DialogContent>
                 </Dialog>
               </div>
@@ -1223,7 +1257,22 @@ export function AttendanceSettings() {
                         <TableCell className="text-center"><span className="text-sm font-medium text-orange-600">{assign.weekendRate}x</span></TableCell>
                         <TableCell className="text-center"><span className="text-sm font-medium text-red-600">{assign.holidayRate}x</span></TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" onClick={() => { setOtSettings({ ...otSettings, departmentAssignments: otSettings.departmentAssignments.filter(a => a.id !== assign.id) }); toast.success('Assignment removed'); }}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-red-500 hover:text-red-600"
+                            aria-label="Remove assignment"
+                            onClick={async () => {
+                              if (!(await confirm({
+                                title: `Remove the OT rule for ${assign.department}?`,
+                                message: 'The department falls back to the default OT rules.',
+                                confirmLabel: 'Remove',
+                                variant: 'destructive',
+                              }))) return;
+                              setOtSettings(prev => ({ ...prev, departmentAssignments: prev.departmentAssignments.filter(a => a.id !== assign.id) }));
+                              toast.success('Assignment removed');
+                            }}
+                          >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </TableCell>
@@ -1246,7 +1295,12 @@ export function AttendanceSettings() {
                   <div className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-blue-600" /><p className="font-medium text-sm text-blue-800">Workday</p></div>
                   <div className="text-2xl font-bold text-blue-700">{otSettings.workdayRule.rate}x</div>
                   <div className="text-xs text-blue-600 space-y-1"><p>After {otSettings.workdayRule.otStartAfter}</p><p>Min {otSettings.workdayRule.minimumOTMinutes}min / Max {otSettings.workdayRule.maxOTHours}h</p></div>
-                  <div className="tabular-nums text-xs text-blue-900 bg-white rounded p-2">18:30 out → 1.5h × {otSettings.workdayRule.rate} = {(1.5 * otSettings.workdayRule.rate).toFixed(2)}h</div>
+                  <div className="tabular-nums text-xs text-blue-900 bg-white rounded p-2">
+                    {(() => {
+                      const ex = workdayOtExample(otSettings.workdayRule.otStartAfter, otSettings.workdayRule.roundingMinutes);
+                      return `${ex.checkOut} out → ${Number(ex.roundedHours.toFixed(2))}h × ${otSettings.workdayRule.rate} = ${(ex.roundedHours * otSettings.workdayRule.rate).toFixed(2)}h`;
+                    })()}
+                  </div>
                 </div>
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-orange-600" /><p className="font-medium text-sm text-orange-800">Weekend</p></div>
@@ -1376,6 +1430,7 @@ function ScanRuleCard({
   loading?: boolean;
   onSave: (next: ScanRule) => Promise<void>;
 }) {
+  const confirm = useConfirm();
   const [draft, setDraft] = useState<ScanRule>(rule);
   // In-flight save / reset — both buttons stay disabled so a second
   // click can't send the request twice.
@@ -1416,6 +1471,12 @@ function ScanRuleCard({
 
   const handleReset = async () => {
     if (saving) return;
+    if (!(await confirm({
+      title: 'Reset the scan rule to defaults?',
+      message: 'The saved punch scan rule is overwritten with the default times and grace periods.',
+      confirmLabel: 'Reset',
+      variant: 'destructive',
+    }))) return;
     setSaving(true);
     try {
       await onSave({ ...DEFAULT_SCAN_RULE });

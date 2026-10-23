@@ -164,7 +164,7 @@ export function BenefitCalculator() {
       id: 'al_remain',
       title: 'AL Remain',
       description:
-        'Unused-annual-leave payout. Pick a month window; each employee’s annual allocation is pro-rated by months_in_window ÷ 12, minus approved usage, then multiplied by daily wage. Lists only employees with an active AL allocation.',
+        'Unused-annual-leave payout. Pick a year and H1, H2 or the full year; for every active employee the annual entitlement (allocation or tenant default, plus 1 day per 3 years of service) is pro-rated by months worked in the window, minus approved annual leave taken, then multiplied by daily wage (average gross ÷ working days).',
       kind: 'earning',
       tone: 'indigo',
       icon: CalendarDays,
@@ -230,19 +230,12 @@ export function BenefitCalculator() {
     rose:    'bg-rose-100 text-rose-700',
     indigo:  'bg-indigo-100 text-indigo-700',
   } as const;
-  const buttonStyles = {
-    emerald: 'bg-emerald-600 hover:bg-emerald-700 text-white',
-    amber:   'bg-amber-600 hover:bg-amber-700 text-white',
-    blue:    'bg-blue-600 hover:bg-blue-700 text-white',
-    rose:    'bg-rose-600 hover:bg-rose-700 text-white',
-    indigo:  'bg-indigo-600 hover:bg-indigo-700 text-white',
-  } as const;
 
   void t; // useI18n is wired for future label work; keeps the hook stable.
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="page-header-strip">
         <h1 className="text-3xl font-bold flex items-center gap-3">
           <Calculator className="h-7 w-7 text-blue-600" />
           Benefit Calculator
@@ -290,7 +283,7 @@ export function BenefitCalculator() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <p className="text-sm text-gray-700 leading-relaxed">{card.description}</p>
-                      <Button onClick={card.onClick} className={`w-full ${buttonStyles[card.tone]}`}>
+                      <Button onClick={card.onClick} className="w-full">
                         Open Calculator
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>

@@ -7,7 +7,8 @@ import { Badge } from '../ui/badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
-import { Eye, RefreshCw, Plus, Download } from 'lucide-react';
+import { Eye, RefreshCw, Plus, Download, Search } from 'lucide-react';
+import { Input } from '../ui/input';
 import { exportListToExcel } from '../../utils/excelExport';
 import * as sessionsApi from '../../api/sessions';
 import { SessionDetailDialog } from '../common/SessionDetailDialog';
@@ -17,6 +18,10 @@ import { Pagination } from '../common/Pagination';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { DateInput } from '../common/DateInput';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
+import { statusBadgeClass } from '../../utils/statusTones';
+import { format } from 'date-fns';
 
 /**
  * V215 / v-attendance-module — the teacher's daily workspace.
@@ -34,11 +39,13 @@ import { TableRowsSkeleton } from '../common/LoadingSkeletons';
  */
 type Tab = 'today' | 'upcoming' | 'history' | 'reports';
 
+// Shared status palette — upcoming reads as "scheduled" (blue), cancelled
+// is slate like every other cancelled record.
 const STATUS_CLS: Record<sessionsApi.SessionStatus, string> = {
-  upcoming:    'bg-blue-100 text-blue-700 border-blue-200',
-  in_progress: 'bg-amber-100 text-amber-700 border-amber-200',
-  completed:   'bg-emerald-100 text-emerald-700 border-emerald-200',
-  cancelled:   'bg-rose-100 text-rose-700 border-rose-200',
+  upcoming:    statusBadgeClass('scheduled'),
+  in_progress: statusBadgeClass('in_progress'),
+  completed:   statusBadgeClass('completed'),
+  cancelled:   statusBadgeClass('cancelled'),
 };
 
 const STATUS_LABEL: Record<sessionsApi.SessionStatus, string> = {
@@ -46,7 +53,9 @@ const STATUS_LABEL: Record<sessionsApi.SessionStatus, string> = {
   completed: 'Completed', cancelled: 'Cancelled',
 };
 
-const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+// Local calendar date — toISOString() is UTC and returned yesterday for
+// anyone east of UTC before their offset hour (07:00 in Cambodia).
+const isoDate = (d: Date) => format(d, 'yyyy-MM-dd');
 
 function defaultRangeFor(tab: Tab): { from: string; to: string } {
   const today = new Date();
@@ -73,6 +82,8 @@ export function Attendances() {
   const [to, setTo] = useState('');
   const [rows, setRows] = useState<sessionsApi.Session[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
@@ -88,11 +99,14 @@ export function Attendances() {
   const load = async () => {
     if (tab === 'reports') return;
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await sessionsApi.list({ from, to });
       setRows(data);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load sessions');
+      const msg = e instanceof Error ? e.message : 'Failed to load sessions';
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -104,7 +118,20 @@ export function Attendances() {
   // date headers only appear for the slice on the current page.
   // 25/page matches the Students + Enrollments cadence for
   // cross-page consistency.
-  const pagination = usePagination(rows, 25);
+  const visibleRows = useMemo(() => {
+    const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return rows;
+    return rows.filter(s => {
+      const hay = [s.courseName, s.classroomName, s.teacherName, s.topic, s.createdByName]
+        .filter(Boolean).join(' ').toLowerCase();
+      return tokens.every(tok => hay.includes(tok));
+    });
+  }, [rows, search]);
+  const pagination = usePagination(visibleRows, 25);
+  // Clear resets the search and puts the dates back to the tab's default
+  // window (an empty range would load nothing).
+  const tabDefault = tab === 'reports' ? null : defaultRangeFor(tab);
+  const filtersSet = !!search || (!!tabDefault && (from !== tabDefault.from || to !== tabDefault.to));
 
   const grouped = useMemo(() => {
     const byDate = new Map<string, sessionsApi.Session[]>();
@@ -137,8 +164,8 @@ export function Attendances() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Attendance</h1>
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold">Attendance</h1>
         {tab !== 'reports' && (
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -163,10 +190,10 @@ export function Attendances() {
                   { header: 'Roster',     value: s => Number(s.rosterSize ?? 0) },
                   { header: 'Status',     value: s => s.status },
                 ],
-                rows: rows,
+                rows: visibleRows,
               })}
-              disabled={rows.length === 0}
-              title={rows.length === 0 ? 'Nothing to export' : 'Download the visible sessions as Excel'}
+              disabled={visibleRows.length === 0}
+              title={visibleRows.length === 0 ? 'Nothing to export' : 'Download the visible sessions as Excel'}
             >
               <Download className="h-4 w-4 mr-1.5" />
               Export
@@ -179,21 +206,14 @@ export function Attendances() {
         )}
       </div>
 
-      <div className="chip-row">
-        {(['today', 'upcoming', 'history', 'reports'] as const).map(t => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors capitalize ${
-              tab === t
-                ? 'bg-blue-50 border-blue-300 text-blue-700'
-                : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
+      <div className="overflow-x-auto hover-scroll-x">
+        <Tabs value={tab} onValueChange={v => setTab(v as Tab)}>
+          <TabsList className="w-max">
+            {(['today', 'upcoming', 'history', 'reports'] as const).map(t => (
+              <TabsTrigger key={t} value={t} className="capitalize">{t}</TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
 
       {tab === 'reports' ? (
@@ -209,38 +229,72 @@ export function Attendances() {
         <Card>
           <CardHeader className="pb-3">
             <div className="filter-strip">
-              <Label className="text-xs text-gray-500">From</Label>
-              <DateInput
-                value={from || null}
-                onChange={(v) => setFrom(v ?? '')}
-                max={to || undefined}
-              />
-              <Label className="text-xs text-gray-500">To</Label>
-              <DateInput
-                value={to || null}
-                onChange={(v) => setTo(v ?? '')}
-                min={from || undefined}
-              />
-              <div className="ml-auto text-xs text-gray-500 tabular-nums">
-                {rows.length} sessions
+              <div className="relative w-64 shrink-0">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search course, classroom, teacher…"
+                  className="h-9 pl-7"
+                />
+              </div>
+              <Label className="text-xs text-gray-500 shrink-0">From</Label>
+              <div className="shrink-0">
+                <DateInput
+                  value={from || null}
+                  onChange={(v) => setFrom(v ?? '')}
+                  max={to || undefined}
+                />
+              </div>
+              <Label className="text-xs text-gray-500 shrink-0">To</Label>
+              <div className="shrink-0">
+                <DateInput
+                  value={to || null}
+                  onChange={(v) => setTo(v ?? '')}
+                  min={from || undefined}
+                />
+              </div>
+              {filtersSet && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-9 shrink-0"
+                  onClick={() => {
+                    setSearch('');
+                    if (tabDefault) { setFrom(tabDefault.from); setTo(tabDefault.to); }
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+              <div className="ml-auto text-xs text-gray-500 tabular-nums shrink-0">
+                {visibleRows.length} sessions
               </div>
             </div>
           </CardHeader>
           <CardContent>
             {loading && rows.length === 0 ? (
               <TableRowsSkeleton rows={8} columns={6} />
-            ) : rows.length === 0 ? (
+            ) : loadError && rows.length === 0 ? (
+              <Table>
+                {sessionTableHeader}
+                <TableBody>
+                  <ListError message={loadError} onRetry={() => void load()} colSpan={8} />
+                </TableBody>
+              </Table>
+            ) : visibleRows.length === 0 ? (
               /* Empty state lives inside a table so the column headers
                  stay visible, same as the other list pages. */
               <Table>
                 {sessionTableHeader}
                 <TableBody>
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center text-sm text-gray-500 py-8">
-                      No sessions in this range. Adjust the date filters or add a Course Schedule with
-                      learn times overlapping the window.
-                    </TableCell>
-                  </TableRow>
+                  <ListEmpty noun="sessions" filtered={filtersSet} colSpan={8}>
+                    {!filtersSet && (
+                      <p className="mt-1 text-xs text-gray-400">
+                        Add a Course Schedule with learn times overlapping this window.
+                      </p>
+                    )}
+                  </ListEmpty>
                 </TableBody>
               </Table>
             ) : (
@@ -254,7 +308,7 @@ export function Attendances() {
                       {sessionTableHeader}
                       <TableBody>
                         {dayRows.map(s => (
-                          <TableRow key={s.id}>
+                          <TableRow key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setOpenId(s.id)}>
                             <TableCell className="tabular-nums text-sm">
                               {s.fromTime.slice(0, 5)}–{s.toTime.slice(0, 5)}
                             </TableCell>
@@ -272,7 +326,7 @@ export function Attendances() {
                                 : '—'}
                             </TableCell>
                             <TableCell>
-                              <Badge className={`inline-flex items-center border ${STATUS_CLS[s.status]}`}>
+                              <Badge variant="outline" className={STATUS_CLS[s.status]}>
                                 {STATUS_LABEL[s.status]}
                               </Badge>
                             </TableCell>
@@ -281,7 +335,7 @@ export function Attendances() {
                             </TableCell>
                             <TableCell className="text-right">
                               <Button variant="ghost" size="icon" className="h-7 w-7"
-                                onClick={() => setOpenId(s.id)} title="View / take attendance">
+                                onClick={e => { e.stopPropagation(); setOpenId(s.id); }} title="View / take attendance">
                                 <Eye className="h-3.5 w-3.5" />
                               </Button>
                             </TableCell>
