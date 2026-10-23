@@ -14,6 +14,8 @@ import * as currencyApi from '../../api/currencySettings';
 import { useI18n } from '../../i18n/I18nContext';
 import { StatCard } from '../common/StatCard';
 import { StatCardsSkeleton, TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListError } from '../common/ListStates';
+import { useDateFormat } from '../../context/DateFormatContext';
 
 /** Render an amount with the tenant's primary currency prefix. USD
  *  collapses to "$", KHR / KRW show the local symbol without decimals;
@@ -86,6 +88,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
   const [to, setTo]     = useState<string>(() => format(endOfMonth(new Date()),   'yyyy-MM-dd'));
   const [report, setReport] = useState<plApi.ProfitLossReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showIncome, setShowIncome] = useState(false);
   const [showExpense, setShowExpense] = useState(false);
   // Tenant currency setting drives the money prefix on every cell.
@@ -102,11 +105,14 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const r = await plApi.profitLoss({ from, to });
       setReport(r);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load profit & loss');
+      const msg = e instanceof Error ? e.message : 'Failed to load profit & loss';
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -132,16 +138,47 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
   }, [report]);
 
   return (
-    <div className="p-6 space-y-6 print:p-0 print:space-y-3">
-      <div className="filter-strip print:hidden">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5 text-gray-500" />
-          <h1 className="text-2xl font-semibold">{t('nav.reports.profit_loss')}</h1>
+    <div className="space-y-6 print:p-0 print:space-y-3">
+      <div className="page-header-strip print:hidden">
+        <div>
+          <h1 className="text-3xl font-bold">{t('nav.reports.profit_loss')}</h1>
         </div>
-        <Button variant="outline" size="sm" onClick={() => window.print()}>
-          <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => window.print()}>
+            <Printer className="h-4 w-4 mr-1.5" /> Print
+          </Button>
+        </div>
       </div>
+
+      {/* Period filter — lives outside the Monthly Breakdown card so it
+          stays reachable when the period is empty or the load failed
+          (it used to vanish with the card, leaving no way to change
+          the range). */}
+      <Card className="print:hidden">
+        <CardContent className="py-3">
+          <div className="filter-strip">
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0">
+              <DateInput value={from} onChange={v => setFrom(v ?? '')} max={to || undefined} title="From date" />
+            </div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0">
+              <DateInput value={to} onChange={v => setTo(v ?? '')} min={from || undefined} title="To date" />
+            </div>
+            <Button size="sm" onClick={load} disabled={loading || !from || !to} className="h-9 shrink-0">
+              {loading ? 'Loading…' : 'Apply'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {loadError && !loading && (
+        <Card>
+          <CardContent className="p-0">
+            <ListError message={loadError} onRetry={() => void load()} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* v-skeleton-loading — first-load placeholder. Mirrors the
           real content geometry: three stat cards + a five-column
@@ -226,28 +263,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
       {report && report.monthly.length > 0 && (
         <Card className="print:shadow-none print:border-0">
           <CardHeader className="pb-3">
-            <div className="flex items-center gap-3 flex-wrap justify-between">
-              <CardTitle className="text-base">Monthly Breakdown</CardTitle>
-              <div className="flex flex-wrap items-center gap-2 print:hidden">
-                <Label className="text-xs text-gray-500">From</Label>
-                <DateInput
-                  value={from}
-                  onChange={setFrom}
-                  className="h-9 w-36 text-sm"
-                  title="From date"
-                />
-                <Label className="text-xs text-gray-500">To</Label>
-                <DateInput
-                  value={to}
-                  onChange={setTo}
-                  className="h-9 w-36 text-sm"
-                  title="To date"
-                />
-                <Button size="sm" onClick={load} disabled={loading} className="h-9">
-                  {loading ? 'Loading…' : 'Apply'}
-                </Button>
-              </div>
-            </div>
+            <CardTitle className="text-base">Monthly Breakdown</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <Table>
@@ -415,6 +431,7 @@ function ProfitLossLineTable({ lines, sideLabel, side, signedMoney, onOpenDoc }:
   onOpenDoc?: (line: plApi.ProfitLossLine) => void;
 }) {
   void side;
+  const { formatDate } = useDateFormat();
   return (
     <Table>
       <TableHeader>
@@ -441,7 +458,7 @@ function ProfitLossLineTable({ lines, sideLabel, side, signedMoney, onOpenDoc }:
             onClick={onOpenDoc ? () => onOpenDoc(l) : undefined}
             title={onOpenDoc ? `Open ${l.docNo}` : undefined}
           >
-            <TableCell className="text-sm">{l.date}</TableCell>
+            <TableCell className="text-sm">{l.date ? formatDate(l.date) : '—'}</TableCell>
             <TableCell className={`tabular-nums text-sm ${onOpenDoc ? 'text-blue-700 underline-offset-2 hover:underline' : ''}`}>
               {l.docNo}
             </TableCell>

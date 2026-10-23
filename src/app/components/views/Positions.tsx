@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -36,6 +36,9 @@ import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
 import { makeDeptName } from '../../utils/deptName';
 import { useAuth } from '../../context/AuthContext';
+import { StatCard } from '../common/StatCard';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
 
 interface Position {
   id: string;
@@ -118,6 +121,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
   const [departments, setDepartments] = useState<Department[]>(USE_MOCKS ? mockDepartments : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Position | null>(null);
@@ -130,6 +134,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
   const loadPositions = async () => {
     if (USE_MOCKS) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const list = await positionsApi.list();
       setPositions(list.map(p => ({
@@ -141,7 +146,9 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
         level: p.level ?? null,
       })));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load positions');
+      const msg = err instanceof Error ? err.message : 'Failed to load positions';
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -304,15 +311,17 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
     <div className="space-y-6">
       {/* Page header — hidden when embedded in another page's tab */}
       {!embedded && (
-        <div className="flex items-center justify-between">
+        <div className="page-header-strip">
           <div>
             <h1 className="text-3xl font-bold">Positions</h1>
           </div>
           {canCreatePos && (
-            <Button onClick={openAdd}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Position
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button onClick={openAdd}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Position
+              </Button>
+            </div>
           )}
         </div>
       )}
@@ -330,77 +339,69 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
           duplicate "Total Positions" cards visible when both layers
           rendered. The standalone Positions page keeps them. */}
       {!embedded && (
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-4">
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <Briefcase className="h-5 w-5 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-600">{positions.length}</span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Total Positions</p>
-            <p className="text-[11px] text-gray-500 truncate">Across {departments.length} departments</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <Users className="h-5 w-5 text-green-600" />
-              <span className="text-2xl font-bold text-green-600">
-                {positions.filter(p => countFor(p) > 0).length}
-              </span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Assigned</p>
-            <p className="text-[11px] text-gray-500 truncate">Positions with employees</p>
-          </CardContent>
-        </Card>
-        <Card className="border-gray-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <Briefcase className="h-5 w-5 text-gray-400" />
-              <span className="text-2xl font-bold text-gray-500">
-                {positions.filter(p => countFor(p) === 0).length}
-              </span>
-            </div>
-            <p className="text-xs font-medium text-gray-700 truncate">Vacant</p>
-            <p className="text-[11px] text-gray-500 truncate">No employees assigned</p>
-          </CardContent>
-        </Card>
+      <div className="stat-strip stat-cols-3">
+        <StatCard
+          icon={Briefcase}
+          tone="blue"
+          label="Total Positions"
+          hint={`Across ${departments.length} departments`}
+          value={positions.length}
+        />
+        <StatCard
+          icon={Users}
+          tone="green"
+          label="Assigned"
+          hint="Positions with employees"
+          value={positions.filter(p => countFor(p) > 0).length}
+        />
+        <StatCard
+          icon={Briefcase}
+          tone="amber"
+          label="Vacant"
+          hint="No employees assigned"
+          value={positions.filter(p => countFor(p) === 0).length}
+        />
       </div>
       )}
 
       {/* Filters & Table */}
       <Card>
         <CardHeader>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-base">All Positions</CardTitle>
-              <CardDescription>
-                {loading ? 'Loading…' : `${filtered.length} of ${positions.length}`}
-              </CardDescription>
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                placeholder="Search positions…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-9 pl-7 w-64 text-sm"
+              />
             </div>
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search..."
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="pl-9 h-9 w-56"
-                />
-              </div>
-              <Select value={filterDept} onValueChange={setFilterDept}>
-                <SelectTrigger className="h-9 w-48">
-                  <SelectValue placeholder="All departments" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All departments</SelectItem>
-                  <SelectItem value="__none">Unassigned</SelectItem>
-                  {departments.map(d => (
-                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <select
+              value={filterDept}
+              onChange={e => setFilterDept(e.target.value)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by department"
+            >
+              <option value="all">Department : All</option>
+              <option value="__none">Department : Unassigned</option>
+              {departments.map(d => (
+                <option key={d.id} value={d.id}>Department : {d.name}</option>
+              ))}
+            </select>
+            {(search || filterDept !== 'all') && (
+              <Button
+                size="sm" variant="ghost" className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setFilterDept('all'); }}
+              >
+                Clear
+              </Button>
+            )}
+            {!loading && (
+              <span className="text-xs text-gray-500 shrink-0">
+                {filtered.length} of {positions.length}
+              </span>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -420,18 +421,21 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12 text-gray-400">
-                    <Briefcase className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">{loading ? 'Loading…' : 'No positions found'}</p>
-                  </TableCell>
-                </TableRow>
+              {loading && positions.length === 0 ? (
+                <TableBodySkeletonRows rows={6} columns={6} />
+              ) : loadError && positions.length === 0 ? (
+                <ListError colSpan={6} message={loadError} onRetry={() => void loadPositions()} />
+              ) : filtered.length === 0 ? (
+                <ListEmpty
+                  colSpan={6}
+                  noun="positions"
+                  filtered={positions.length > 0 && (!!search.trim() || filterDept !== 'all')}
+                />
               ) : (
                 pagination.paginatedItems.map(p => {
                   const count = countFor(p);
                   return (
-                    <TableRow key={p.id}>
+                    <TableRow key={p.id} className="hover:bg-gray-50">
                       <TableCell>
                         <div>
                           <p className="font-medium text-sm">{p.name}</p>
@@ -489,6 +493,13 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
                                 >
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   Delete
+                                  {/* Disabled items swallow hover, so the
+                                      reason is spelled out inline. */}
+                                  {count > 0 && (
+                                    <span className="ml-2 text-[10px] text-gray-500">
+                                      — {count} assigned, reassign first
+                                    </span>
+                                  )}
                                 </DropdownMenuItem>
                               )}
                             </DropdownMenuContent>

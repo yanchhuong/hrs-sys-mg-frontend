@@ -15,8 +15,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Plus, RefreshCw, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, FileSpreadsheet, Lock,
+  Plus, RefreshCw, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, FileSpreadsheet, Lock, Search,
 } from 'lucide-react';
+import { format as formatDateFns } from 'date-fns';
+import { statusBadgeClass } from '../../utils/statusTones';
+import { ListEmpty, ListError } from '../common/ListStates';
 import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { LEN } from '../../utils/validation';
@@ -66,14 +69,25 @@ const fmtMoney = (n: number, currency: string): string => {
  *  the badge map collapses them to the Progress style so the UI
  *  reads consistently. */
 const STATUS_BADGE_CLASS: Record<receiptsApi.ReceiptStatus, string> = {
-  // Amber for pending — signals "waiting on chain approvers". V177.
-  pending:  'bg-amber-50 text-amber-700 border-amber-200',
-  progress: 'bg-blue-50 text-blue-700 border-blue-200',
-  paid:     'bg-emerald-50 text-emerald-700 border-emerald-200',
-  void:     'bg-red-50 text-red-700 border-red-200',
-  draft:    'bg-blue-50 text-blue-700 border-blue-200',
-  issued:   'bg-blue-50 text-blue-700 border-blue-200',
+  // App-wide palette (utils/statusTones). Legacy draft / issued read
+  // as Progress, so they take the Progress tone too.
+  pending:  statusBadgeClass('pending'),
+  progress: statusBadgeClass('progress'),
+  paid:     statusBadgeClass('paid'),
+  void:     statusBadgeClass('void'),
+  draft:    statusBadgeClass('progress'),
+  issued:   statusBadgeClass('progress'),
 };
+
+/** Same rule the detail dialog's Edit button uses: anything not yet
+ *  settled or voided is editable. The row pencil used to show only for
+ *  the legacy draft / issued values, so progress / pending rows could
+ *  never be edited from the list. */
+const isReceiptEditable = (s: receiptsApi.ReceiptStatus) => s !== 'void' && s !== 'paid';
+
+/** Local "today" as yyyy-MM-dd. toISOString() is UTC, which reads as
+ *  yesterday before 07:00 in Cambodia (UTC+7). */
+const todayLocal = () => formatDateFns(new Date(), 'yyyy-MM-dd');
 /** Friendly label — collapses legacy draft / issued to "Progress" so
  *  the visible status matches the two-state mental model. */
 const STATUS_LABEL: Record<receiptsApi.ReceiptStatus, string> = {
@@ -95,6 +109,7 @@ export function Receipts() {
   const [rows, setRows] = useState<receiptsApi.Receipt[]>([]);
   const [vendors, setVendors] = useState<vendorsApi.Vendor[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   // Date-range filter — applied client-side. Defaults to empty so the
   // landing view shows every receipt; users pick a range to narrow.
@@ -127,6 +142,7 @@ export function Receipts() {
   const load = async () => {
     if (!canView('receipt')) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const [rRes, vRes] = await Promise.all([
         receiptsApi.list({ size: 500 }),
@@ -139,7 +155,9 @@ export function Receipts() {
         .then(setPaidByCurrency)
         .catch(() => setPaidByCurrency({}));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load expenses');
+      const msg = e instanceof Error ? e.message : 'Failed to load expenses';
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -174,6 +192,7 @@ export function Receipts() {
     });
   }, [rows, search, dateFrom, dateTo, vendorById]);
 
+  const hasFilters = !!search.trim() || !!dateFrom || !!dateTo;
   const pagination = usePagination(filtered, 25);
 
   // Reset pagination to page 1 whenever a filter changes so HR
@@ -250,39 +269,46 @@ export function Receipts() {
       <Card>
         <CardHeader className="pb-2">
           <div className="filter-strip">
-            <Input
-              placeholder="Search by expense no, vendor, tax id…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="max-w-xs"
-            />
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-gray-500">From</Label>
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                placeholder="Search by expense no, vendor, tax id…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-9 pl-7 w-64 text-sm"
+              />
+            </div>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0">
               <DateInput
                 value={dateFrom || null}
                 onChange={v => setDateFrom(v ?? '')}
                 max={dateTo || undefined}
               />
-              <Label className="text-xs text-gray-500">To</Label>
+            </div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0">
               <DateInput
                 value={dateTo || null}
                 onChange={v => setDateTo(v ?? '')}
                 min={dateFrom || undefined}
               />
-              {(dateFrom || dateTo) && (
-                <Button variant="ghost" size="sm"
-                        onClick={() => { setDateFrom(''); setDateTo(''); }}>
-                  Clear
-                </Button>
-              )}
             </div>
+            {hasFilters && (
+              <Button variant="ghost" size="sm" className="h-9 shrink-0"
+                      onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); }}>
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && rows.length === 0 ? (
             <TableRowsSkeleton rows={8} columns={7} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">No receipts yet.</p>
+            <ListEmpty noun="expenses" filtered={hasFilters} />
           ) : (
             <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
@@ -358,11 +384,11 @@ export function Receipts() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex gap-1 justify-end">
-                          <Button size="sm" variant="ghost" onClick={() => setDetailId(r.id)}>
-                            <Eye className="h-3.5 w-3.5 mr-1" /> View
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDetailId(r.id)} title="View details">
+                            <Eye className="h-3.5 w-3.5" />
                           </Button>
-                          {canEdit && (r.status === 'draft' || r.status === 'issued') && (
-                            <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
+                          {canEdit && isReceiptEditable(r.status) && (
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(r)} title="Edit">
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           )}
@@ -459,7 +485,7 @@ function ReceiptFormDialog({
   const [savedReceiptId, setSavedReceiptId] = useState<string | null>(null);
   const [receiptNo, setReceiptNo] = useState('');
   const [vendorId, setVendorId] = useState('');
-  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [issueDate, setIssueDate] = useState(todayLocal);
   const [supplierType, setSupplierType] = useState<receiptsApi.SupplierType>('taxable_person');
   const [taxId, setTaxId] = useState('');
   const [currency, setCurrency] = useState('USD');
@@ -518,7 +544,7 @@ function ReceiptFormDialog({
       setSavedReceiptId(null);
       receiptsApi.nextNumber().then(r => setReceiptNo(r.receiptNo)).catch(() => setReceiptNo(''));
       setVendorId('');
-      setIssueDate(new Date().toISOString().slice(0, 10));
+      setIssueDate(todayLocal());
       setSupplierType('taxable_person');
       setTaxId('');
       setCurrency(currencySettings?.primaryCurrency ?? 'USD');
@@ -675,7 +701,7 @@ function ReceiptFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEdit ? `Edit ${editing?.receiptNo}` : 'New Receipt'}</DialogTitle>
+          <DialogTitle>{isEdit ? `Edit ${editing?.receiptNo}` : 'New Expense'}</DialogTitle>
           <DialogDescription className="sr-only">Expense form</DialogDescription>
         </DialogHeader>
 
@@ -687,8 +713,8 @@ function ReceiptFormDialog({
                      className="tabular-nums" maxLength={LEN.docNo} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Date *</Label>
-              <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+              <Label className="text-xs">Date <span className="text-red-500">*</span></Label>
+              <DateInput value={issueDate || null} onChange={v => setIssueDate(v ?? '')} />
             </div>
           </div>
 
@@ -929,20 +955,19 @@ function ReceiptFormDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          {/* All three save paths land on Draft — Receipts are
-              recorded as drafts during data entry and promoted to
-              Issued explicitly from the row's View Details popup. */}
+          {/* All three save paths create the expense in its open
+              (Progress) state; it is settled from View Details. */}
           <Button onClick={submit} disabled={saving}>
-            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Draft')}
+            {saving ? 'Saving…' : 'Save'}
           </Button>
           {!isEdit && (
             <>
               <Button variant="outline" onClick={submitAndNew} disabled={saving}
-                      title="Save as Draft and reset the form for the next entry">
+                      title="Save and reset the form for the next entry">
                 {saving ? 'Saving…' : 'Save & New'}
               </Button>
               <Button variant="outline" onClick={submitAndClose} disabled={saving}
-                      title="Save as Draft and close the dialog">
+                      title="Save and close the dialog">
                 {saving ? 'Saving…' : 'Save & Close'}
               </Button>
             </>
@@ -968,6 +993,7 @@ function ReceiptDetailDialog({
   onEdit: (r: receiptsApi.Receipt) => void;
 }) {
   const { formatDate } = useDateFormat();
+  const confirm = useConfirm();
   const [receipt, setReceipt] = useState<receiptsApi.Receipt | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1034,8 +1060,16 @@ function ReceiptDetailDialog({
                 {canEdit && receipt.status !== 'void' && (
                   <Button size="sm" variant="outline" disabled={busy}
                           className="text-red-600 border-red-200 hover:bg-red-50"
-                          onClick={() => doAction('Expense voided',
-                            () => receiptsApi.voidReceipt(receipt.id))}>
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: `Void ${receipt.receiptNo}?`,
+                              message: 'A voided expense is kept for audit but can no longer be edited or paid.',
+                              confirmLabel: 'Void',
+                              variant: 'destructive',
+                            });
+                            if (!ok) return;
+                            void doAction('Expense voided', () => receiptsApi.voidReceipt(receipt.id));
+                          }}>
                     <Ban className="h-3.5 w-3.5 mr-1" /> Void
                   </Button>
                 )}
@@ -1045,7 +1079,7 @@ function ReceiptDetailDialog({
         </DialogHeader>
 
         {loading || !receipt ? (
-          <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+          <TableRowsSkeleton rows={4} columns={4} />
         ) : (
           <div className="space-y-4">
             {/* Fixed-width label column keeps each value next to its
@@ -1085,6 +1119,7 @@ function ReceiptDetailDialog({
                 receiptId={receipt.id}
                 receiptAmount={receipt.amount}
                 receiptCurrency={receipt.currency}
+                receiptExchangeRate={receipt.exchangeRate}
                 readOnly={receipt.status === 'void' || !canEdit}
               />
             </div>
@@ -1105,11 +1140,15 @@ function ReceiptDetailDialog({
 /* -------------------------------------------------------------------- */
 
 function ReceiptPaymentsPanel({
-  receiptId, receiptAmount, receiptCurrency, readOnly,
+  receiptId, receiptAmount, receiptCurrency, receiptExchangeRate, readOnly,
 }: {
   receiptId: string;
   receiptAmount: number;
   receiptCurrency: string;
+  /** KHR per 1 USD, from the expense itself — converts payments made
+   *  in the other currency before they're summed (same rule as the
+   *  Invoice detail's Received / Remain). */
+  receiptExchangeRate?: number | null;
   readOnly: boolean;
 }) {
   const { formatDate } = useDateFormat();
@@ -1155,7 +1194,21 @@ function ReceiptPaymentsPanel({
   // a credit payment (vendor refund) reduces it. This inverts the
   // backend's sale-side sign (credit-positive) so the Remain math
   // works the way an operator expects: receiptAmount − sumPaid.
-  const paid = rows.reduce((s, r) => s + (r.direction === 'debit' ? r.amount : -r.amount), 0);
+  // Payments can be in USD or KHR; convert each into the expense's own
+  // currency before summing — adding riel to dollars made Paid/Remain
+  // nonsense (e.g. $40 + ៛164,000 = "$164,040 paid").
+  const rate = Number(receiptExchangeRate) || 0;
+  const toReceiptCurrency = (amt: number, cur: string): number => {
+    if (cur === receiptCurrency) return amt;
+    if (rate <= 0) return 0;
+    if (receiptCurrency === 'USD' && cur === 'KHR') return amt / rate;
+    if (receiptCurrency === 'KHR' && cur === 'USD') return amt * rate;
+    return 0;
+  };
+  const paid = rows.reduce((s, r) => {
+    const v = toReceiptCurrency(r.amount, r.currency);
+    return s + (r.direction === 'debit' ? v : -v);
+  }, 0);
   const remain = receiptAmount - paid;
 
   const handleDelete = async (id: string) => {
@@ -1204,8 +1257,8 @@ function ReceiptPaymentsPanel({
         </div>
       </div>
 
-      {loading ? (
-        <p className="text-xs text-gray-500">Loading…</p>
+      {loading && rows.length === 0 ? (
+        <TableRowsSkeleton rows={2} columns={5} />
       ) : rows.length === 0 ? (
         <p className="text-xs text-gray-400 italic">No payments yet.</p>
       ) : (
@@ -1301,7 +1354,7 @@ function RecordReceiptPaymentDialog({
   currency: string;
   onSaved: () => void;
 }) {
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(todayLocal);
   const [amount, setAmount] = useState(String(defaultAmount.toFixed(2)));
   // Distinct from the parent's `currency` prop (which describes the
   // receipt's display currency) — this is the rail the cashier
@@ -1343,7 +1396,7 @@ function RecordReceiptPaymentDialog({
 
   useEffect(() => {
     if (!open) return;
-    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentDate(todayLocal());
     setAmount(String(Math.max(0, defaultAmount).toFixed(2)));
     setPayCurrency(currency === 'KHR' ? 'KHR' : 'USD');
     setMethod('bank');
@@ -1412,8 +1465,8 @@ function RecordReceiptPaymentDialog({
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Date *</Label>
-              <Input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+              <Label className="text-xs">Date <span className="text-red-500">*</span></Label>
+              <DateInput value={paymentDate || null} onChange={v => setPaymentDate(v ?? '')} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Amount *</Label>

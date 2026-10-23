@@ -180,6 +180,9 @@ export function PublicShopPage() {
   const [data, setData] = useState<shopApi.PublicShopPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  /** Bumped by the "Try again" button on the unavailable screen so a
+   *  network blip doesn't strand the customer on a dead page. */
+  const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
   // v-shop-warehouse-filter — filter by warehouse name. Empty string
@@ -384,7 +387,8 @@ export function PublicShopPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [code]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, tableCode, reloadKey]);
 
   // Browse page is shopper-facing: hide anything we couldn't actually
   // sell right now. Out-of-stock items add noise without a use case —
@@ -513,7 +517,7 @@ export function PublicShopPage() {
   // "load more" starts fresh from the top on every search or category
   // change (no orphan "no items" gap because the pagination was still
   // pointing past the new result set).
-  useEffect(() => { setVisibleCount(SHOP_PAGE_SIZE); }, [search, category]);
+  useEffect(() => { setVisibleCount(SHOP_PAGE_SIZE); }, [search, category, warehouse]);
 
   // IntersectionObserver on the sentinel div at the bottom of the
   // grid. When it enters the viewport (rootMargin=200px so it fires
@@ -595,7 +599,12 @@ export function PublicShopPage() {
     setPaywayBusy(true);
     (async () => {
       try {
-        const s = await shopApi.mintShopPayWayPurchase(code, cartTotal, 'USD');
+        // data.code, not the URL `code` — the URL code is '' in
+        // table mode (/shop/table/{tableCode}), which minted against
+        // /public/shop//payway-purchase and always failed.
+        // Currency stays USD: the public menu payload carries no
+        // currency and every price on this page is rendered in $.
+        const s = await shopApi.mintShopPayWayPurchase(data?.code ?? code, cartTotal, 'USD');
         setPaywaySession(s);
       } catch (e) {
         setPaywayError(e instanceof Error ? e.message : 'PayWay session failed');
@@ -603,7 +612,7 @@ export function PublicShopPage() {
         setPaywayBusy(false);
       }
     })();
-  }, [checkoutOpen, orderMode, paymentMethod, cartTotal, code]);
+  }, [checkoutOpen, orderMode, paymentMethod, cartTotal, code, data?.code]);
 
   /** Poll the gateway every 2s while a pending session is on screen.
    *  When the customer's bank push lands, the session flips to 'paid'
@@ -614,7 +623,7 @@ export function PublicShopPage() {
     let stopped = false;
     const t = setInterval(async () => {
       try {
-        const next = await shopApi.getShopPayWayStatus(code, paywaySession.tranId);
+        const next = await shopApi.getShopPayWayStatus(data?.code ?? code, paywaySession.tranId);
         if (stopped) return;
         if (next.status !== paywaySession.status) setPaywaySession(next);
         if (next.status === 'paid') clearInterval(t);
@@ -622,7 +631,7 @@ export function PublicShopPage() {
     }, 2000);
     return () => { stopped = true; clearInterval(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paywaySession?.tranId, paywaySession?.status, code]);
+  }, [paywaySession?.tranId, paywaySession?.status, code, data?.code]);
 
   /** Reset PayWay state whenever the dialog closes or the customer
    *  switches away from Delivery+KHQR. Clears the attempt-key ref
@@ -853,6 +862,16 @@ export function PublicShopPage() {
         <p className="text-xs text-gray-400 mt-3 tabular-nums">
           {isTableMode ? `/shop/table/${tableCode}` : `/shop/${code}`}
         </p>
+        {(code || tableCode) && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => { setError(null); setLoading(true); setReloadKey(k => k + 1); }}
+          >
+            Try again
+          </Button>
+        )}
       </FullPageState>
     );
   }

@@ -40,6 +40,11 @@ export function QrScanPage() {
   const [empNo, setEmpNo] = useState('');
   const [result, setResult] = useState<qrApi.ScanResult | null>(null);
   const [errMsg, setErrMsg] = useState<string>('');
+  /** True when the last submit carried a typed Employee No. — a
+   *  failure then sends "Try again" back to that field (keeping the
+   *  location we already have) instead of reloading the whole page,
+   *  which re-asked for location and dropped the typed number. */
+  const [triedEmpNo, setTriedEmpNo] = useState(false);
 
   // Read token off the URL on mount. Any browser the camera opens
   // will already have ?token=… in the search string.
@@ -102,6 +107,7 @@ export function QrScanPage() {
     empNoOverride: string | undefined,
   ) => {
     setPhase('submitting');
+    setTriedEmpNo(!!empNoOverride);
     try {
       const res = await qrApi.scan({
         token: tok,
@@ -127,6 +133,13 @@ export function QrScanPage() {
       setErrMsg(e instanceof Error ? e.message : 'Network error — try again.');
       setPhase('error');
     }
+  };
+
+  const retry = () => {
+    if (triedEmpNo && coords) { setPhase('need_emp_no'); return; }
+    if (coords && token) { void submit(token, coords, undefined); return; }
+    if (token) { requestLocationAndSubmit(token); return; }
+    window.location.reload();
   };
 
   const resubmitWithEmpNo = () => {
@@ -246,9 +259,9 @@ export function QrScanPage() {
               <p className="text-xs text-gray-500 mt-1">{errMsg}</p>
               <Button
                 className="mt-4 w-full" variant="outline"
-                onClick={() => window.location.reload()}
+                onClick={retry}
               >
-                Try again
+                {triedEmpNo && coords ? 'Edit Employee No.' : 'Try again'}
               </Button>
             </div>
           )}

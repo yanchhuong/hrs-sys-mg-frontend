@@ -110,6 +110,15 @@ export function PublicInvoiceView() {
             {fatalErr === 'Missing invoice id in URL'
               ? fatalErr
               : 'The invoice link may have expired or been retracted. Please contact the sender for a fresh copy.'}
+            {/* A network blip lands here too, so offer one retry back
+                to the number gate instead of a dead end. */}
+            {fatalErr !== 'Missing invoice id in URL' && (
+              <div className="mt-4">
+                <Button variant="outline" size="sm" onClick={() => setFatalErr(null)}>
+                  Try again
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -295,7 +304,7 @@ export function PublicInvoiceView() {
               ))}
               {/* Totals rows */}
               <tr>
-                <Td colSpan={4} align="right" bold>សរុប (USD) / Sub Total ({currency})</Td>
+                <Td colSpan={4} align="right" bold>សរុប ({currency}) / Sub Total ({currency})</Td>
                 <Td align="right" bold>{fmtMoney(inv.subtotal)}</Td>
               </tr>
               {inv.discountAmount > 0 && (

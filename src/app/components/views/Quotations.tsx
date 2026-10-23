@@ -41,6 +41,10 @@ import { Pagination } from '../common/Pagination';
 import { DateInput } from '../common/DateInput';
 import { usePagination } from '../../hooks/usePagination';
 import { formatMoneyForCurrency } from '../../utils/format';
+import { statusBadgeClass } from '../../utils/statusTones';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { useConfirm } from '../../context/ConfirmContext';
+import { format as formatDateFns } from 'date-fns';
 import * as quotationsApi from '../../api/quotations';
 import { useI18n } from '../../i18n/I18nContext';
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
@@ -151,26 +155,23 @@ const STATUS_LABEL: Record<quotationsApi.QuotationStatus, string> = {
   close:    'Closed',
 };
 
+// App-wide status palette (utils/statusTones): pending amber,
+// progress blue, done (Accepted) green, close (Closed) slate.
 const STATUS_BADGE_CLASS: Record<quotationsApi.QuotationStatus, string> = {
-  // Amber for pending — reads as "waiting" without leaning on red
-  // (which would imply rejection). V176.
-  pending:  'border-amber-300 text-amber-700 bg-amber-50',
-  // Blue: open, editable — matches Invoices' own 'progress' color.
-  progress: 'border-blue-300 text-blue-700 bg-blue-50',
-  // Green: won — matches the invoice Paid green.
-  done:     'border-emerald-300 text-emerald-700 bg-emerald-50',
-  // Red: frozen negative — matches the invoice Void/Overdue red.
-  close:    'border-rose-300 text-rose-700 bg-rose-50',
+  pending:  statusBadgeClass('pending'),
+  progress: statusBadgeClass('progress'),
+  done:     statusBadgeClass('done'),
+  close:    statusBadgeClass('close'),
 };
 
 const STATUS_FILTERS: ReadonlyArray<{ value: quotationsApi.QuotationStatus | 'all'; label: string }> = [
-  { value: 'all',      label: 'All' },
+  { value: 'all',      label: 'Status : All' },
   // Pending sits first after All so operators spot chain-gated
   // quotes without hunting. V176.
-  { value: 'pending',  label: 'Pending' },
-  { value: 'progress', label: 'Progress' },
-  { value: 'done',     label: 'Accepted' },
-  { value: 'close',    label: 'Closed' },
+  { value: 'pending',  label: 'Status : Pending' },
+  { value: 'progress', label: 'Status : Progress' },
+  { value: 'done',     label: 'Status : Accepted' },
+  { value: 'close',    label: 'Status : Closed' },
 ];
 
 /** Taxation matrix — mirrors the Invoice page so a quote can use the
@@ -208,6 +209,7 @@ export function Quotations() {
   const [rows, setRows] = useState<quotationsApi.Quotation[]>([]);
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<quotationsApi.QuotationStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   // Empty defaults so the landing view shows every quotation; users
@@ -235,6 +237,7 @@ export function Quotations() {
   const load = async () => {
     if (!canView('quotation')) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const [qRes, cRes] = await Promise.all([
         // v-perf-list-slim — slim=true drops notes / terms / items[]
@@ -246,7 +249,9 @@ export function Quotations() {
       setRows(qRes.content ?? []);
       setCustomers(cRes.content ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load quotations');
+      const msg = e instanceof Error ? e.message : 'Failed to load quotations';
+      setLoadError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -274,6 +279,7 @@ export function Quotations() {
     });
   }, [rows, statusFilter, dateFrom, dateTo, search, customerById]);
 
+  const hasFilters = statusFilter !== 'all' || !!dateFrom || !!dateTo || !!search.trim();
   const pagination = usePagination(filtered, 25);
   useEffect(() => {
     pagination.goToPage(1);
@@ -348,44 +354,48 @@ export function Quotations() {
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
             </select>
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-gray-500">From</Label>
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0">
               <DateInput
                 value={dateFrom || null}
                 onChange={v => setDateFrom(v ?? '')}
                 max={dateTo || undefined}
               />
-              <Label className="text-xs text-gray-500">To</Label>
+            </div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0">
               <DateInput
                 value={dateTo || null}
                 onChange={v => setDateTo(v ?? '')}
                 min={dateFrom || undefined}
               />
-              {(dateFrom || dateTo) && (
-                <Button
-                  size="sm" variant="ghost" className="h-8 text-xs"
-                  onClick={() => { setDateFrom(''); setDateTo(''); }}
-                >
-                  Clear
-                </Button>
-              )}
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search quotation no, customer, recipient…"
-                  className="h-8 pl-7 w-64 text-sm"
-                />
-              </div>
             </div>
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search quotation no, customer, recipient…"
+                className="h-9 pl-7 w-64 text-sm"
+              />
+            </div>
+            {hasFilters && (
+              <Button
+                size="sm" variant="ghost" className="h-9 shrink-0"
+                onClick={() => { setDateFrom(''); setDateTo(''); setSearch(''); setStatusFilter('all'); }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && rows.length === 0 ? (
             <TableRowsSkeleton rows={8} columns={8} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-gray-500 py-6 text-center">No quotations yet.</p>
+            <ListEmpty noun="quotations" filtered={hasFilters} />
           ) : (
             <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
@@ -422,7 +432,7 @@ export function Quotations() {
                         {/* v-doc-audit-line — creator / last editor */}
                         <DocAuditLine compact createdBy={q.createdByName} updatedBy={q.updatedByName} className="max-w-[180px]" />
                       </TableCell>
-                      <TableCell className="text-sm">{q.expiryDate ?? '—'}</TableCell>
+                      <TableCell className="text-sm">{q.expiryDate ? formatDate(q.expiryDate) : '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtMoney(q.total, q.currency)}</TableCell>
                       <TableCell className="text-right tabular-nums text-sm text-gray-600">
                         {q.exchangeRate ? q.exchangeRate.toLocaleString('en-US') : '—'}
@@ -436,17 +446,17 @@ export function Quotations() {
                           own job instead of also opening the dialog. */}
                       <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end">
-                          <Button size="sm" variant="ghost" onClick={() => setDetailId(q.id)} title="View details">
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDetailId(q.id)} title="View details">
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
                           {canEdit && q.status === 'progress' && (
-                            <Button size="sm" variant="ghost" onClick={() => openEdit(q)} title="Edit">
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(q)} title="Edit">
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           )}
                           {canRemove && q.status === 'progress' && (
-                            <Button size="sm" variant="ghost"
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            <Button size="icon" variant="ghost"
+                                    className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                                     onClick={() => setDeleteTarget(q)}
                                     title="Delete">
                               <Trash2 className="h-3.5 w-3.5" />
@@ -581,7 +591,7 @@ function QuotationFormDialog({
     setCustomers,
     onSelect: id => setCustomerId(id),
   });
-  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [issueDate, setIssueDate] = useState(() => formatDateFns(new Date(), 'yyyy-MM-dd'));
   const [expiryDate, setExpiryDate] = useState('');
   const [recipientName, setRecipientName] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
@@ -673,8 +683,12 @@ function QuotationFormDialog({
       setDiscountValue(String(editing.discountValue));
       setNotes(editing.notes ?? '');
       setTerms(editing.terms ?? '');
-      setLines(editing.items.length > 0
-        ? editing.items.map(it => ({
+      // openEdit opens with the slim list row first (no items[]) and
+      // swaps in the full record when get() resolves — guard the
+      // interim render instead of crashing on undefined.length.
+      const editItems = editing.items ?? [];
+      setLines(editItems.length > 0
+        ? editItems.map(it => ({
             localId: it.id,
             stockItemId: it.stockItemId,
             name: it.name,
@@ -689,7 +703,7 @@ function QuotationFormDialog({
         .then(r => setQuotationNo(r.quotationNo))
         .catch(() => setQuotationNo(''));
       setCustomerId('');
-      setIssueDate(new Date().toISOString().slice(0, 10));
+      setIssueDate(formatDateFns(new Date(), 'yyyy-MM-dd'));
       setExpiryDate('');
       setRecipientName('');
       setRecipientEmail('');
@@ -949,11 +963,11 @@ function QuotationFormDialog({
           <div className="grid grid-cols-4 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Issue date</Label>
-              <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+              <DateInput value={issueDate || null} onChange={v => setIssueDate(v ?? '')} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Expiry date</Label>
-              <Input type="date" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} />
+              <DateInput value={expiryDate || null} onChange={v => setExpiryDate(v ?? '')} min={issueDate || undefined} />
             </div>
             {/* Gated on `currencySettings` being loaded to avoid a
                 brief USD/KHR flash from the enabledCurrencies fallback
@@ -1467,6 +1481,7 @@ function QuotationDetailDialog({
 }) {
   const [quotation, setQuotation] = useState<quotationsApi.Quotation | null>(null);
   const { formatDate } = useDateFormat();
+  const confirm = useConfirm();
   const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
   const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1573,6 +1588,12 @@ function QuotationDetailDialog({
 
   const doConvert = async () => {
     if (!quotation) return;
+    const ok = await confirm({
+      title: `Convert ${quotation.quotationNo} to an invoice?`,
+      message: 'A Commercial invoice is created from this quotation and the quotation is locked as Accepted.',
+      confirmLabel: 'Convert',
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const inv = await quotationsApi.convertToInvoice(quotation.id);
@@ -1616,6 +1637,13 @@ function QuotationDetailDialog({
 
   const doClose = async () => {
     if (!quotation) return;
+    const ok = await confirm({
+      title: `Close ${quotation.quotationNo}?`,
+      message: 'A closed quotation can no longer be edited or converted to an invoice.',
+      confirmLabel: 'Close quotation',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       const next = await quotationsApi.close(quotation.id);
@@ -1675,7 +1703,7 @@ function QuotationDetailDialog({
                     </Badge>
                     <span className="text-xs text-gray-500">{formatDate(quotation.issueDate)}</span>
                     {quotation.expiryDate && (
-                      <span className="text-xs text-gray-500">· Expires {quotation.expiryDate}</span>
+                      <span className="text-xs text-gray-500">· Expires {formatDate(quotation.expiryDate)}</span>
                     )}
                   </>
                 )}
@@ -1764,7 +1792,7 @@ function QuotationDetailDialog({
         </DialogHeader>
 
         {loading || !quotation ? (
-          <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+          <TableRowsSkeleton rows={4} columns={5} />
         ) : (
           <div className="space-y-4 print:hidden">
             {/* Converted callout */}
@@ -1944,15 +1972,14 @@ function MailQuotationDialog({
   company: settingsApi.CompanyInfo | null;
   onClose: () => void;
 }) {
-  const fmtUsd = (n: number) =>
-    `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const { formatDate } = useDateFormat();
   const defaultSubject =
     `Quotation ${quotation.quotationNo}${company?.name ? ` from ${company.name}` : ''}`;
   const defaultBody = [
     `Dear ${quotation.recipientName || customer?.representative || customer?.name || 'Customer'},`,
     '',
-    `Please find our quotation ${quotation.quotationNo} dated ${quotation.issueDate}.`,
-    `Total: ${fmtUsd(quotation.total)}${quotation.expiryDate ? ` — valid until ${quotation.expiryDate}` : ''}.`,
+    `Please find our quotation ${quotation.quotationNo} dated ${formatDate(quotation.issueDate)}.`,
+    `Total: ${fmtMoney(quotation.total, quotation.currency)}${quotation.expiryDate ? ` — valid until ${formatDate(quotation.expiryDate)}` : ''}.`,
     '',
     'A printed copy is attached. Let us know if you have any questions.',
     '',
@@ -2021,8 +2048,8 @@ function MailQuotationDialog({
           </DialogTitle>
           <DialogDescription>
             Sends the recipient a PDF of this quotation (rendered from the print
-            template) from your company's mail server. Leave "To" blank to use
-            the quotation's recipient ({initialTo || 'none'}).
+            template) from your company's mail server. "To" starts with the
+            quotation's recipient ({initialTo || 'none'}); change it to send elsewhere.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">

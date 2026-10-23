@@ -16,7 +16,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import {
-  Plus, Pencil, Trash2, Loader2, X, ImageIcon, Search,
+  Plus, Pencil, Trash2, Loader2, ImageIcon, Search,
   ChevronDown, ChevronRight, Home, Eye,
 } from 'lucide-react';
 import * as itemsApi from '../../api/paymentPlanItems';
@@ -30,6 +30,33 @@ import { CinemaSeatMapEditor } from '../common/CinemaSeatMapEditor';
 import { AccommodationLayoutEditor } from '../common/AccommodationLayoutEditor';
 import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
+import { useConfirm } from '../../context/ConfirmContext';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import * as currencyApi from '../../api/currencySettings';
+import { formatMoneyForCurrency } from '../../utils/format';
+
+/** Property prices carry no currency of their own — they're entered in
+ *  the tenant's primary currency, so render them with that code instead
+ *  of a hard-coded "$" (a KHR tenant used to see "$40000.00"). */
+function makePriceFormatter(code: string) {
+  const sym = currencyApi.currencySymbol(code);
+  return (n: number | null | undefined): string => {
+    const num = formatMoneyForCurrency(n, code);
+    return sym === code ? `${code} ${num}` : code === 'KHR' ? `${sym} ${num}` : `${sym}${num}`;
+  };
+}
+function usePrimaryPriceFormatter() {
+  const [code, setCode] = useState('USD');
+  useEffect(() => {
+    let alive = true;
+    currencyApi.get()
+      .then(s => { if (alive && s?.primaryCurrency) setCode(s.primaryCurrency); })
+      .catch(() => { /* keep USD fallback */ });
+    return () => { alive = false; };
+  }, []);
+  return useMemo(() => makePriceFormatter(code), [code]);
+}
 
 /**
  * Property catalogue (V287). Formerly the "Items" pane inside the
@@ -49,9 +76,12 @@ export function Property() {
   const canRemove = canDelete('property');
   // v-page-title-i18n — header follows the sidebar leaf label.
   const { t } = useI18n();
+  const confirm = useConfirm();
+  const fmtPrice = usePrimaryPriceFormatter();
 
   const [rows, setRows] = useState<itemsApi.PaymentPlanItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // v-property-filter-strip — search + category filter, matching the
   // filter-strip pattern used on Plans / Bookings / Collections so
   // all four Receivables leaves share one responsive header row.
@@ -106,10 +136,13 @@ export function Property() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setRows(await itemsApi.list());
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load properties');
+      const msg = e instanceof Error ? e.message : 'Failed to load properties';
+      setLoadError(msg);
+      toast.error(msg);
     } finally { setLoading(false); }
   }, []);
 
@@ -363,7 +396,13 @@ export function Property() {
   };
 
   const handleDelete = async (r: itemsApi.PaymentPlanItem) => {
-    if (!confirm(`Delete "${r.name}"? Plans already written against it stay unchanged.`)) return;
+    const ok = await confirm({
+      title: `Delete "${r.name}"?`,
+      message: 'Plans already written against it stay unchanged.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     try {
       await itemsApi.remove(r.id);
       toast.success('Property deleted');
@@ -416,24 +455,35 @@ export function Property() {
               Bookings / Collections. Children are auto-shrink-0 via the
               utility class. */}
           <div className="filter-strip">
-            <div className="relative flex-1 min-w-[220px]">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 placeholder="Search name, description"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-8 h-9"
+                className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <Select value={categoryFilter} onValueChange={v => setCategoryFilter(v as typeof categoryFilter)}>
-              <SelectTrigger className="w-44 h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All categories</SelectItem>
-                {itemsApi.PAYMENT_PLAN_ITEM_CATEGORIES.map(c => (
-                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <select
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value as typeof categoryFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by category"
+            >
+              <option value="all">Category : All</option>
+              {itemsApi.PAYMENT_PLAN_ITEM_CATEGORIES.map(c => (
+                <option key={c.value} value={c.value}>Category : {c.label}</option>
+              ))}
+            </select>
+            {(search || categoryFilter !== 'all') && (
+              <Button
+                size="sm" variant="ghost"
+                className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setCategoryFilter('all'); }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -453,20 +503,16 @@ export function Property() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-xs text-gray-500 py-6">
-                      <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Loading…
-                    </TableCell>
-                  </TableRow>
+                {loading && rows.length === 0 ? (
+                  <TableBodySkeletonRows rows={6} columns={7} />
+                ) : loadError && rows.length === 0 ? (
+                  <ListError colSpan={7} message={loadError} onRetry={() => void load()} />
                 ) : filteredRows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-xs text-gray-500 py-8">
-                      {rows.length === 0
-                        ? <>No properties yet. Click <b>+ Add property</b> above to get started.</>
-                        : 'No properties match the current filter.'}
-                    </TableCell>
-                  </TableRow>
+                  <ListEmpty
+                    colSpan={7}
+                    noun="properties"
+                    filtered={rows.length > 0 && (!!search.trim() || categoryFilter !== 'all')}
+                  />
                 ) : pagination.paginatedItems.flatMap(r => {
                   const isExpanded = expanded.has(r.id);
                   // v-property-list-options-count — count options
@@ -482,7 +528,7 @@ export function Property() {
                   const optCount = ungroupedCount + groupedCount;
                   const rowsForR: JSX.Element[] = [];
                   rowsForR.push(
-                    <TableRow key={r.id}>
+                    <TableRow key={r.id} className="hover:bg-gray-50">
                       <TableCell>
                         <div className="h-9 w-9 rounded-md border border-gray-200 overflow-hidden bg-gray-50 flex items-center justify-center">
                           {r.imageUrl ? (
@@ -565,7 +611,7 @@ export function Property() {
                         )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {r.price == null ? <span className="text-gray-400">—</span> : `$${Number(r.price).toFixed(2)}`}
+                        {r.price == null ? <span className="text-gray-400">—</span> : fmtPrice(Number(r.price))}
                       </TableCell>
                       <TableCell className="text-center">
                         {r.active
@@ -578,13 +624,13 @@ export function Property() {
                               (v-property-view-icon-in-options) — Actions
                               now only carries the write ops. */}
                           {canWrite && (
-                            <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => openEdit(r)} title="Edit">
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(r)} title="Edit">
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
                           )}
                           {canRemove && (
-                            <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => handleDelete(r)} title="Delete">
-                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(r)} title="Delete">
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           )}
                         </div>
@@ -610,7 +656,7 @@ export function Property() {
                                   <div key={o.id} className="flex items-center justify-between gap-2 text-xs px-2 py-1 bg-white rounded border">
                                     <span className={o.active ? '' : 'text-gray-400 line-through'}>{o.name}</span>
                                     <span className="tabular-nums text-gray-700">
-                                      {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
+                                      {o.price == null ? '—' : fmtPrice(Number(o.price))}
                                     </span>
                                   </div>
                                 ))}
@@ -630,7 +676,7 @@ export function Property() {
                                       <div key={o.id} className="flex items-center justify-between gap-2 text-xs px-2 py-1 bg-white rounded border">
                                         <span className={o.active ? '' : 'text-gray-400 line-through'}>{o.name}</span>
                                         <span className="tabular-nums text-gray-700">
-                                          {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
+                                          {o.price == null ? '—' : fmtPrice(Number(o.price))}
                                         </span>
                                       </div>
                                     ))}
@@ -807,7 +853,7 @@ export function Property() {
                   Layout when they want to arrange seats visually. */}
               {category === 'entertainment' && (
                 <div className="text-[11px] text-gray-500 border-t border-gray-200 pt-2">
-                  Screen layout (seat positions on the cinema canvas) is edited in the <b>Manage Layout</b> popup — click the <span className="text-blue-600">👁</span> icon on this row after saving.
+                  Screen layout (seat positions on the cinema canvas) is edited in the <b>Manage Layout</b> popup — after saving, click the <span className="text-blue-600">👁</span> icon in the row's Options column.
                 </div>
               )}
             </div>
@@ -818,11 +864,11 @@ export function Property() {
           </div>
           <DialogFooter className="mt-3">
             <Button variant="outline" onClick={() => { setFormOpen(false); resetForm(); }} disabled={saving}>
-              <X className="h-3.5 w-3.5 mr-1" /> Cancel
+              Cancel
             </Button>
             <Button onClick={handleSave} disabled={saving || !name.trim()}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Plus className="h-4 w-4 mr-1.5" />}
-              {editing ? 'Update' : 'Add'}
+              {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -872,6 +918,7 @@ function ViewPropertyDialog({
    *  copy (picks up server-assigned option ids on new rows). */
   onSaved: (updated: itemsApi.PaymentPlanItem) => void;
 }) {
+  const fmtPrice = usePrimaryPriceFormatter();
   const catLabel = itemsApi.PAYMENT_PLAN_ITEM_CATEGORIES.find(c => c.value === row.category)?.label
     ?? row.category ?? 'Others';
   const isCinema = row.category === 'entertainment';
@@ -894,7 +941,8 @@ function ViewPropertyDialog({
   // the parent form so both surfaces feel identical. Save wipes
   // the ungrouped list (sending options: []) once the operator
   // confirms.
-  const [editGroups, setEditGroups] = useState<itemsApi.UpsertPaymentPlanItemOptionGroup[]>(() => {
+  const buildGroups = (src: itemsApi.PaymentPlanItem): itemsApi.UpsertPaymentPlanItemOptionGroup[] => {
+    const row = src;
     const mapOpt = (o: itemsApi.PaymentPlanItemOption): itemsApi.UpsertPaymentPlanItemOption => ({
       id: o.id,
       name: o.name,
@@ -927,14 +975,23 @@ function ViewPropertyDialog({
       });
     }
     return out;
-  });
+  };
+  const [editGroups, setEditGroups] = useState<itemsApi.UpsertPaymentPlanItemOptionGroup[]>(() => buildGroups(row));
+  /** Snapshot of the groups as loaded (or as last saved). The dirty
+   *  check compares against THIS — it used to compare the mapped
+   *  editor shape against the raw server shape, which never matched,
+   *  so Save was always enabled. */
+  const [baselineJson, setBaselineJson] = useState(() => JSON.stringify(editGroups));
   const [saving, setSaving] = useState(false);
 
   // Dirty check — Save button disables when nothing has changed to
   // avoid a spurious PATCH. Cheap deep-equality via JSON stringify;
   // the payload is small (a handful of groups × a few dozen seats
   // each at most).
-  const dirty = useMemo(() => JSON.stringify(editGroups) !== JSON.stringify(row.optionGroups ?? []) || (row.options ?? []).length > 0, [editGroups, row]);
+  const dirty = useMemo(
+    () => JSON.stringify(editGroups) !== baselineJson || (row.options ?? []).length > 0,
+    [editGroups, baselineJson, row],
+  );
 
   const handleSave = async () => {
     setSaving(true);
@@ -997,6 +1054,12 @@ function ViewPropertyDialog({
         optionGroups: cleaned,
       });
       toast.success('Layout saved');
+      // Re-hydrate from the server copy so new groups/options pick up
+      // their ids (a second Save would otherwise insert them again)
+      // and the dirty baseline resets.
+      const fresh = buildGroups(updated);
+      setEditGroups(fresh);
+      setBaselineJson(JSON.stringify(fresh));
       onSaved(updated);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
@@ -1031,7 +1094,7 @@ function ViewPropertyDialog({
                   ? <Badge className="text-[10px] bg-emerald-100 text-emerald-700">Active</Badge>
                   : <Badge variant="outline" className="text-[10px] text-gray-500">Inactive</Badge>}
                 {row.price != null && (
-                  <span className="text-[11px] text-gray-500 tabular-nums">Price ${Number(row.price).toFixed(2)}</span>
+                  <span className="text-[11px] text-gray-500 tabular-nums">Price {fmtPrice(Number(row.price))}</span>
                 )}
               </div>
             </div>
@@ -1178,6 +1241,38 @@ function GroupEditor({
   onChange: (next: itemsApi.UpsertPaymentPlanItemOptionGroup) => void;
   onRemove: () => void;
 }) {
+  const confirm = useConfirm();
+  /** Removing a group that already holds options (or was saved) drops
+   *  them all on the next Save — ask first. An empty new group just goes. */
+  const handleRemoveGroup = async () => {
+    const n = (group.options ?? []).length;
+    if (n > 0 || group.id) {
+      const ok = await confirm({
+        title: `Remove group "${(group.name ?? '').trim() || 'Untitled'}"?`,
+        message: n > 0
+          ? `Its ${n} option${n === 1 ? '' : 's'} will be removed when you save.`
+          : 'It will be removed when you save.',
+        confirmLabel: 'Remove',
+        variant: 'destructive',
+      });
+      if (!ok) return;
+    }
+    onRemove();
+  };
+  /** Same rule for a saved option row; a blank new row just goes. */
+  const handleRemoveOption = async (idx: number) => {
+    const o = (group.options ?? [])[idx];
+    if (o?.id) {
+      const ok = await confirm({
+        title: `Remove option "${(o.name ?? '').trim() || 'Untitled'}"?`,
+        message: 'It will be removed when you save.',
+        confirmLabel: 'Remove',
+        variant: 'destructive',
+      });
+      if (!ok) return;
+    }
+    setOptions(list => list.filter((_, i) => i !== idx));
+  };
   const isCinema = category === 'entertainment';
   // v-transport-driver-cell — transport also auto-places on the
   // canvas, but must skip (0, 0) which is reserved as the DRIVER
@@ -1292,7 +1387,7 @@ function GroupEditor({
           size="sm"
           variant="outline"
           className="h-8 w-8 p-0 shrink-0"
-          onClick={onRemove}
+          onClick={() => void handleRemoveGroup()}
           disabled={disabled}
           title="Remove group"
         >
@@ -1400,7 +1495,7 @@ function GroupEditor({
                   size="sm"
                   variant="outline"
                   className="h-8 w-8 p-0 shrink-0"
-                  onClick={() => setOptions(list => list.filter((_, i) => i !== idx))}
+                  onClick={() => void handleRemoveOption(idx)}
                   disabled={disabled}
                   title="Remove option"
                 >
