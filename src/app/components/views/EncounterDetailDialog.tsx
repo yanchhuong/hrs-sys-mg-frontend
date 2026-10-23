@@ -8,13 +8,20 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Card, CardContent } from '../ui/card';
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../ui/select';
+import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
-  Pill, Stethoscope, FlaskConical, Scan, Pencil, Printer, Plus, Loader2, Ban,
+  Pill, Stethoscope, FlaskConical, Scan, Pencil, Printer, Plus, Ban,
 } from 'lucide-react';
+import { format as fnsFormat } from 'date-fns';
 import { toast } from 'sonner';
 import { AttachmentsPanel } from '../common/AttachmentsPanel';
+import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import * as invoicesApi from '../../api/invoices';
 import * as paymentsApi from '../../api/payments';
 import * as customersApi from '../../api/customers';
@@ -23,6 +30,9 @@ import * as attachmentsApi from '../../api/attachments';
 import * as branchesApi from '../../api/branches';
 import { API_BASE, getToken } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { statusBadgeClass } from '../../utils/statusTones';
 
 /**
  * Read-only encounter detail (v-encounters-first-class). Bundles the
@@ -70,6 +80,8 @@ export function EncounterDetailDialog({
   // Silent fallback when nothing is configured — the print block
   // just stays blank.
   const { currentUser } = useAuth();
+  const confirm = useConfirm();
+  const { formatDate } = useDateFormat();
   const [printHeader, setPrintHeader]   = useState<{name?: string | null; phone?: string | null; address?: string | null}>({});
   const [logoBlobUrl, setLogoBlobUrl]   = useState<string | null>(null);
 
@@ -158,10 +170,22 @@ export function EncounterDetailDialog({
     return bucket;
   }, [enc]);
 
-  const totalPaid = useMemo(
-    () => payments.reduce((s, p) => s + (p.direction === 'debit' ? -p.amount : p.amount), 0),
-    [payments],
-  );
+  // Paid, in the encounter's own currency. Receipts can be taken in
+  // USD or KHR, so each one is converted with the rate captured on the
+  // encounter (USD -> KHR) instead of adding riel and dollars into one
+  // number. Without a rate an other-currency receipt can't be
+  // converted, so it is left out rather than counted at face value.
+  const totalPaid = useMemo(() => {
+    const cur  = enc?.currency ?? 'USD';
+    const rate = enc?.exchangeRate || 0;
+    return payments.reduce((s, p) => {
+      const signed = p.direction === 'debit' ? -p.amount : p.amount;
+      if ((p.currency ?? 'USD') === cur) return s + signed;
+      if (rate <= 0) return s;
+      // KHR receipt on a USD encounter -> divide; USD on a KHR one -> multiply.
+      return s + (p.currency === 'KHR' ? signed / rate : signed * rate);
+    }, 0);
+  }, [payments, enc?.currency, enc?.exchangeRate]);
   const remain = enc ? Math.max(0, enc.total - totalPaid) : 0;
 
   const fmtMoney = (n: number, currency = enc?.currency ?? 'USD') =>
@@ -169,6 +193,13 @@ export function EncounterDetailDialog({
 
   const doVoid = async () => {
     if (!enc) return;
+    const ok = await confirm({
+      title: 'Void this encounter?',
+      message: `${enc.invoiceNo} will be voided. This cannot be undone.`,
+      confirmLabel: 'Void',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     setVoiding(true);
     try {
       await invoicesApi.voidInvoice(enc.id);
@@ -209,10 +240,10 @@ export function EncounterDetailDialog({
                       <Badge variant="outline" className="border-teal-300 text-teal-700 bg-teal-50">
                         Encounter
                       </Badge>
-                      <Badge variant="outline" className={`capitalize ${statusBadge(enc.status)}`}>
+                      <Badge variant="outline" className={`capitalize ${statusBadgeClass(enc.status)}`}>
                         {enc.status}
                       </Badge>
-                      <span className="text-xs text-gray-500 tabular-nums">{enc.issueDate}</span>
+                      <span className="text-xs text-gray-500 tabular-nums">{formatDate(enc.issueDate)}</span>
                     </>
                   )}
                 </div>
@@ -247,9 +278,7 @@ export function EncounterDetailDialog({
         </DialogHeader>
 
         {loading || !enc ? (
-          <div className="py-10 text-center text-sm text-gray-500">
-            <Loader2 className="h-4 w-4 mr-1 inline animate-spin" /> Loading…
-          </div>
+          <TableRowsSkeleton rows={5} columns={4} />
         ) : (
           <div className="space-y-4">
             {/* Print-only Encounter No. line — visible on the printed
@@ -305,7 +334,7 @@ export function EncounterDetailDialog({
                 ) : <span className="text-gray-400">Unassigned</span>}
               </FactField>
               <FactField label="Start date">
-                <div className="font-medium tabular-nums">{enc.issueDate}</div>
+                <div className="font-medium tabular-nums">{formatDate(enc.issueDate)}</div>
               </FactField>
               <FactField label="Total">
                 <div className="font-medium tabular-nums">{fmtMoney(enc.total)}</div>
@@ -393,6 +422,7 @@ export function EncounterDetailDialog({
                   onChanged();
                 }}
                 fmtMoney={fmtMoney}
+                formatDate={formatDate}
                 remain={remain}
               />
             </div>
@@ -447,27 +477,16 @@ function FactField({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
-function statusBadge(s: invoicesApi.InvoiceStatus): string {
-  switch (s) {
-    case 'draft':     return 'border-slate-300 text-slate-700 bg-slate-50';
-    case 'progress':  return 'border-teal-300 text-teal-700 bg-teal-50';
-    case 'partially': return 'border-amber-300 text-amber-700 bg-amber-50';
-    case 'paid':      return 'border-emerald-300 text-emerald-700 bg-emerald-50';
-    case 'overdue':   return 'border-orange-400 text-orange-800 bg-orange-50';
-    case 'void':      return 'border-red-300 text-red-700 bg-red-50';
-    default:          return 'border-gray-200 text-gray-700 bg-gray-50';
-  }
-}
-
 /** Payment history + a compact Record Payment form. Refunds and
  *  Credit/Debit-Note debits are omitted here — an encounter never
  *  spawns a CN/DN in this UI. If the receptionist needs to reverse a
  *  charge, they void the encounter and re-create. */
-function PaymentsBlock({ encounter, payments, onChanged, fmtMoney, remain }: {
+function PaymentsBlock({ encounter, payments, onChanged, fmtMoney, formatDate, remain }: {
   encounter: invoicesApi.Invoice;
   payments: paymentsApi.Payment[];
   onChanged: () => void | Promise<void>;
   fmtMoney: (n: number, currency?: string) => string;
+  formatDate: (d: string | null | undefined) => string;
   remain: number;
 }) {
   const [showForm, setShowForm]   = useState(false);
@@ -475,7 +494,7 @@ function PaymentsBlock({ encounter, payments, onChanged, fmtMoney, remain }: {
   const [currency, setCurrency]   = useState<paymentsApi.PaymentCurrency>('USD');
   const [method, setMethod]       = useState<paymentsApi.PaymentMethod>('cash');
   const [referenceNo, setReferenceNo] = useState('');
-  const [payDate, setPayDate]     = useState(() => new Date().toISOString().slice(0, 10));
+  const [payDate, setPayDate]     = useState(() => fnsFormat(new Date(), 'yyyy-MM-dd'));
   const [saving, setSaving]       = useState(false);
 
   useEffect(() => {
@@ -529,43 +548,40 @@ function PaymentsBlock({ encounter, payments, onChanged, fmtMoney, remain }: {
           <CardContent className="pt-4 space-y-3">
             <div className="grid grid-cols-5 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs">Amount</Label>
-                <Input
-                  type="number" step="0.01" min="0"
-                  className="tabular-nums"
+                <Label className="text-xs">Amount <span className="text-red-500">*</span></Label>
+                <NumericInput
                   value={amount}
-                  onChange={e => setAmount(e.target.value)}
+                  onChange={setAmount}
+                  decimals={currency === 'KHR' ? 0 : 2}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Currency</Label>
-                <select
-                  className="h-9 w-full border rounded-md px-2 text-sm bg-background"
-                  value={currency}
-                  onChange={e => setCurrency(e.target.value as paymentsApi.PaymentCurrency)}
-                >
-                  <option value="USD">USD</option>
-                  <option value="KHR">KHR</option>
-                </select>
+                <Select value={currency} onValueChange={v => setCurrency(v as paymentsApi.PaymentCurrency)}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="KHR">KHR</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Method</Label>
-                <select
-                  className="h-9 w-full border rounded-md px-2 text-sm bg-background"
-                  value={method}
-                  onChange={e => setMethod(e.target.value as paymentsApi.PaymentMethod)}
-                >
-                  <option value="cash">Cash</option>
-                  <option value="bank">Bank</option>
-                  <option value="card">Card</option>
-                  <option value="cheque">Cheque</option>
-                  <option value="khqr">KHQR</option>
-                  <option value="other">Other</option>
-                </select>
+                <Select value={method} onValueChange={v => setMethod(v as paymentsApi.PaymentMethod)}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="bank">Bank</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="cheque">Cheque</SelectItem>
+                    <SelectItem value="khqr">KHQR</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Date</Label>
-                <Input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} />
+                <Label className="text-xs">Date <span className="text-red-500">*</span></Label>
+                <DateInput value={payDate} onChange={v => setPayDate(v ?? fnsFormat(new Date(), 'yyyy-MM-dd'))} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Reference</Label>
@@ -573,7 +589,7 @@ function PaymentsBlock({ encounter, payments, onChanged, fmtMoney, remain }: {
               </div>
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setShowForm(false)} disabled={saving}>Cancel</Button>
+              <Button variant="outline" size="sm" onClick={() => setShowForm(false)} disabled={saving}>Cancel</Button>
               <Button size="sm" onClick={submit} disabled={saving}>
                 {saving ? 'Saving…' : 'Save Payment'}
               </Button>
@@ -597,7 +613,7 @@ function PaymentsBlock({ encounter, payments, onChanged, fmtMoney, remain }: {
           <TableBody>
             {payments.map(p => (
               <TableRow key={p.id}>
-                <TableCell className="text-sm tabular-nums">{p.paymentDate}</TableCell>
+                <TableCell className="text-sm tabular-nums">{formatDate(p.paymentDate)}</TableCell>
                 <TableCell className="text-sm capitalize">{p.method}</TableCell>
                 <TableCell className="text-sm text-gray-600">{p.referenceNo || '—'}</TableCell>
                 <TableCell className="text-right tabular-nums text-sm">

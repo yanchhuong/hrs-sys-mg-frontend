@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Pill, Stethoscope, FlaskConical, Scan } from 'lucide-react';
 import { toast } from 'sonner';
+import { format as fnsFormat } from 'date-fns';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '../ui/dialog';
@@ -10,6 +11,11 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { SearchablePicker } from '../common/SearchablePicker';
+import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../ui/select';
 import * as invoicesApi from '../../api/invoices';
 import * as customersApi from '../../api/customers';
 import * as currencyApi from '../../api/currencySettings';
@@ -103,7 +109,7 @@ export function EncounterFormDialog({
   // Core fields — mirrors the Invoice form 1:1 so save() maps cleanly.
   const [customerId, setCustomerId]     = useState('');
   const [invoiceNo, setInvoiceNo]       = useState('');
-  const [issueDate, setIssueDate]       = useState(() => new Date().toISOString().slice(0, 10));
+  const [issueDate, setIssueDate]       = useState(() => fnsFormat(new Date(), 'yyyy-MM-dd'));
   const [dueDate, setDueDate]           = useState('');
   const [currency, setCurrency]         = useState('USD');
   const [exchangeRate, setExchangeRate] = useState('4100');
@@ -187,7 +193,7 @@ export function EncounterFormDialog({
     } else {
       setCustomerId('');
       setInvoiceNo('');
-      setIssueDate(new Date().toISOString().slice(0, 10));
+      setIssueDate(fnsFormat(new Date(), 'yyyy-MM-dd'));
       setDueDate('');
       // Tenant currency default lands via the follow-up effect below —
       // start with 'USD' + 4100 so the field isn't blank on first open.
@@ -446,7 +452,7 @@ export function EncounterFormDialog({
           {/* Header row: Patient + Doctor + Encounter # */}
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Patient *</Label>
+              <Label className="text-xs">Patient <span className="text-red-500">*</span></Label>
               <SearchablePicker
                 options={customerOptions}
                 value={customerId}
@@ -547,23 +553,32 @@ export function EncounterFormDialog({
           <div className="grid grid-cols-4 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Start date</Label>
-              <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+              <DateInput value={issueDate} onChange={v => setIssueDate(v ?? fnsFormat(new Date(), 'yyyy-MM-dd'))} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">End date</Label>
-              <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              <DateInput value={dueDate || null} onChange={v => setDueDate(v ?? '')} min={issueDate} clearable />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Currency</Label>
-              <Input value={currency} onChange={e => setCurrency(e.target.value.toUpperCase())} maxLength={8} />
+              <Select value={currency} onValueChange={setCurrency}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {/* An older encounter may carry a currency outside the
+                      USD / KHR pair; keep it selectable so editing
+                      doesn't silently change it. */}
+                  {Array.from(new Set(['USD', 'KHR', currency].filter(Boolean))).map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Exchange rate</Label>
-              <Input
-                type="number" step="0.0001"
+              <NumericInput
                 value={exchangeRate}
-                onChange={e => setExchangeRate(e.target.value)}
-                className="tabular-nums"
+                onChange={setExchangeRate}
+                decimals={4}
               />
             </div>
           </div>
@@ -616,7 +631,7 @@ export function EncounterFormDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={!canSave}>
             {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Encounter'}
           </Button>

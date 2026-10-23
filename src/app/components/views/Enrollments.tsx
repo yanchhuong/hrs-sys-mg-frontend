@@ -10,11 +10,7 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '../ui/alert-dialog';
-import { Plus, Pencil, Trash2, Search, CheckCircle2, XCircle, Clock, Settings, Info, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Settings, Info, Download } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as enrollmentsApi from '../../api/enrollments';
 import * as customersApi from '../../api/customers';
@@ -24,7 +20,13 @@ import * as classroomsApi from '../../api/classrooms';
 import * as employeesApi from '../../api/employees';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TONE_CLASS, statusBadgeClass } from '../../utils/statusTones';
+import { formatMoneyForCurrency } from '../../utils/format';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DocAuditLine } from '../common/DocAuditLine';
@@ -53,12 +55,18 @@ const emptyForm: enrollmentsApi.EnrollmentRequest = {
   notes: '',
 };
 
-const STATUS_BADGES: Record<enrollmentsApi.EnrollmentStatus, { label: string; cls: string; icon: JSX.Element }> = {
-  enrolled:  { label: 'Enrolled',  cls: 'bg-blue-100 text-blue-700 border-blue-200',       icon: <Clock className="h-3 w-3 mr-1" /> },
-  active:    { label: 'Active',    cls: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: <CheckCircle2 className="h-3 w-3 mr-1" /> },
-  completed: { label: 'Completed', cls: 'bg-slate-100 text-slate-700 border-slate-200',    icon: <CheckCircle2 className="h-3 w-3 mr-1" /> },
-  withdrawn: { label: 'Withdrawn', cls: 'bg-rose-100 text-rose-700 border-rose-200',       icon: <XCircle className="h-3 w-3 mr-1" /> },
+/** Labels per status; colours come from the shared statusTones palette
+ *  (Enrolled = open/in progress → blue, Active / Completed → green,
+ *  Withdrawn → slate). */
+const STATUS_BADGES: Record<enrollmentsApi.EnrollmentStatus, { label: string; cls: string }> = {
+  enrolled:  { label: 'Enrolled',  cls: TONE_CLASS.info },
+  active:    { label: 'Active',    cls: statusBadgeClass('active') },
+  completed: { label: 'Completed', cls: statusBadgeClass('completed') },
+  withdrawn: { label: 'Withdrawn', cls: statusBadgeClass('withdrawn') },
 };
+
+const FILTER_SELECT_CLS =
+  'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
 
 /** Mirrors the state lattice enforced in EnrollmentService.transition.
  *  Current status is always included so the picker's own value is
@@ -82,6 +90,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => void } = {}) {
   const { canCreate, canUpdate, canDelete, canView } = useAuth();
   const { formatDate } = useDateFormat();
+  const confirm = useConfirm();
   const canAdd = canCreate('enrollment');
   const canEdit = canUpdate('enrollment');
   const canRemove = canDelete('enrollment');
@@ -92,6 +101,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
   const [courses, setCourses] = useState<coursesApi.Course[]>([]);
   const [classrooms, setClassrooms] = useState<classroomsApi.Classroom[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | enrollmentsApi.EnrollmentStatus>('all');
   // Client-side filters — enrollments API doesn't take course /
@@ -112,7 +122,6 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
   const [editing, setEditing] = useState<enrollmentsApi.Enrollment | null>(null);
   const [form, setForm] = useState<enrollmentsApi.EnrollmentRequest>(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<enrollmentsApi.Enrollment | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // v-invoice-no-and-auto-payment (round 2) — Invoice No. clicks
   // open a read-only preview modal instead of navigating away.
@@ -120,6 +129,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const page = await enrollmentsApi.list({
         status: statusFilter === 'all' ? undefined : statusFilter,
@@ -127,7 +137,8 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
       });
       setRows(page.content ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load enrollments');
+      // Inline error + Retry instead of a toast that reads as an empty list.
+      setLoadError(e instanceof Error ? e.message : 'Failed to load enrollments');
     } finally {
       setLoading(false);
     }
@@ -220,6 +231,15 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
 
   const pagination = usePagination(filtered, 25);
 
+  const filtersActive = !!(q.trim() || courseFilter || classroomFilter || teacherFilter
+    || fromDate || toDate || statusFilter !== 'all');
+  const clearFilters = () => {
+    setQ('');
+    setCourseFilter(''); setClassroomFilter('');
+    setTeacherFilter(''); setFromDate(''); setToDate('');
+    setStatusFilter('all');
+  };
+
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
@@ -279,6 +299,24 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
   };
 
   const doTransition = async (r: enrollmentsApi.Enrollment, next: enrollmentsApi.EnrollmentStatus) => {
+    // Completed and Withdrawn are terminal — the status can't be moved
+    // back afterwards, so ask first.
+    if (next === 'withdrawn' || next === 'completed') {
+      const ok = await confirm(next === 'withdrawn'
+        ? {
+            title: 'Withdraw this enrollment?',
+            message: `${r.enrollmentNo} will be marked Withdrawn. This can't be changed back.`,
+            confirmLabel: 'Withdraw',
+            variant: 'destructive',
+          }
+        : {
+            title: 'Mark this enrollment completed?',
+            message: `${r.enrollmentNo} will be marked Completed. This can't be changed back.`,
+            confirmLabel: 'Complete',
+            variant: 'destructive',
+          });
+      if (!ok) return;
+    }
     try {
       await enrollmentsApi.transition(r.id, next);
       toast.success(`Moved to ${next}`);
@@ -288,12 +326,17 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
     }
   };
 
-  const doDelete = async () => {
-    if (!deleteConfirm) return;
+  const doDelete = async (target: enrollmentsApi.Enrollment) => {
+    const ok = await confirm({
+      title: 'Delete this enrollment?',
+      message: `${target.enrollmentNo} will be removed permanently. This is only possible for enrollments that haven't been billed.`,
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    });
+    if (!ok) return;
     try {
-      await enrollmentsApi.remove(deleteConfirm.id);
+      await enrollmentsApi.remove(target.id);
       toast.success('Enrollment deleted');
-      setDeleteConfirm(null);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to delete enrollment');
@@ -301,10 +344,10 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Enrollments</h1>
-        <div className="flex items-center gap-2">
+    <div className="space-y-6">
+      <div className="page-header-strip">
+        <h1 className="text-3xl font-bold">Enrollments</h1>
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             variant="outline"
             onClick={() => exportListToExcel({
@@ -375,82 +418,67 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               with muted labels, ghost Clear that only surfaces when
               a filter is active. */}
           <div className="filter-strip">
-            <div className="relative flex-1 min-w-[240px] max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={q}
                 onChange={e => setQ(e.target.value)}
                 placeholder="Search by number, student, or schedule…"
-                className="pl-8 h-9"
+                className="h-9 pl-7 w-64 text-sm"
               />
             </div>
             <select
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className={FILTER_SELECT_CLS}
               aria-label="Filter by status"
             >
-              <option value="all">All statuses</option>
-              <option value="enrolled">Enrolled</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="withdrawn">Withdrawn</option>
+              <option value="all">Status : All</option>
+              <option value="enrolled">Status : Enrolled</option>
+              <option value="active">Status : Active</option>
+              <option value="completed">Status : Completed</option>
+              <option value="withdrawn">Status : Withdrawn</option>
             </select>
             <select
               value={courseFilter}
               onChange={e => setCourseFilter(e.target.value)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-w-[180px]"
+              className={`${FILTER_SELECT_CLS} max-w-[180px]`}
               aria-label="Filter by course"
             >
-              <option value="">All courses</option>
+              <option value="">Course : All</option>
               {courses.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>Course : {c.name}</option>
               ))}
             </select>
             <select
               value={classroomFilter}
               onChange={e => setClassroomFilter(e.target.value)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-w-[160px]"
+              className={`${FILTER_SELECT_CLS} max-w-[180px]`}
               aria-label="Filter by classroom"
             >
-              <option value="">All classrooms</option>
+              <option value="">Classroom : All</option>
               {classrooms.map(r => (
-                <option key={r.id} value={r.id}>{r.name}</option>
+                <option key={r.id} value={r.id}>Classroom : {r.name}</option>
               ))}
             </select>
             <select
               value={teacherFilter}
               onChange={e => setTeacherFilter(e.target.value)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-w-[160px]"
+              className={`${FILTER_SELECT_CLS} max-w-[180px]`}
               aria-label="Filter by teacher"
             >
-              <option value="">All teachers</option>
+              <option value="">Teacher : All</option>
               {teachers.map(t => (
-                <option key={t.apiId ?? t.id} value={t.apiId ?? t.id}>{t.name}</option>
+                <option key={t.apiId ?? t.id} value={t.apiId ?? t.id}>Teacher : {t.name}</option>
               ))}
             </select>
-            <Label className="text-xs text-gray-500">From</Label>
-            <DateInput
-              value={fromDate || null}
-              onChange={(v) => setFromDate(v ?? '')}
-              max={toDate || undefined}
-            />
-            <Label className="text-xs text-gray-500">To</Label>
-            <DateInput
-              value={toDate || null}
-              onChange={(v) => setToDate(v ?? '')}
-              min={fromDate || undefined}
-            />
-            {(courseFilter || classroomFilter || teacherFilter || fromDate || toDate || statusFilter !== 'all') && (
-              <Button
-                size="sm" variant="ghost"
-                className="h-9"
-                onClick={() => {
-                  setCourseFilter(''); setClassroomFilter('');
-                  setTeacherFilter(''); setFromDate(''); setToDate('');
-                  setStatusFilter('all');
-                }}
-              >
+            <Label className="text-xs text-gray-500 shrink-0">From</Label>
+            <div className="shrink-0"><DateInput value={fromDate || null} onChange={v => setFromDate(v ?? '')} max={toDate || undefined} /></div>
+            <Label className="text-xs text-gray-500 shrink-0">To</Label>
+            <div className="shrink-0"><DateInput value={toDate || null} onChange={v => setToDate(v ?? '')} min={fromDate || undefined} /></div>
+            {/* One Clear that resets every filter, search included. */}
+            {filtersActive && (
+              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
                 Clear
               </Button>
             )}
@@ -479,13 +507,13 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={12} className="text-center text-sm text-gray-500 py-8">
-                        {loading ? 'Loading…' : 'No enrollments yet.'}
-                      </TableCell>
-                    </TableRow>
-                  )}
+                  {loading && rows.length === 0 ? (
+                    <TableBodySkeletonRows rows={6} columns={12} />
+                  ) : loadError && rows.length === 0 ? (
+                    <ListError colSpan={12} message={loadError} onRetry={() => { void load(); }} />
+                  ) : filtered.length === 0 ? (
+                    <ListEmpty colSpan={12} noun="enrollments" filtered={filtersActive} />
+                  ) : null}
                   {pagination.paginatedItems.map(r => {
                     const badge = STATUS_BADGES[r.status];
                     const sched = scheduleById(r.courseScheduleId);
@@ -494,10 +522,12 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                         <TableCell className="font-medium tabular-nums">{r.enrollmentNo}</TableCell>
                         <TableCell className="text-sm">{studentName(r.studentId)}</TableCell>
                         <TableCell className="text-sm text-gray-600">{sched ? scheduleLabel(sched) : '—'}</TableCell>
-                        <TableCell className="text-sm text-gray-600 tabular-nums">{r.enrollmentDate}</TableCell>
+                        <TableCell className="text-sm text-gray-600 tabular-nums">{r.enrollmentDate ? formatDate(r.enrollmentDate) : '—'}</TableCell>
                         <TableCell className="text-sm text-gray-600 tabular-nums">{sched?.startDate ? formatDate(sched.startDate) : '—'}</TableCell>
                         <TableCell className="text-sm text-gray-600 tabular-nums">{sched?.endDate ? formatDate(sched.endDate) : '—'}</TableCell>
-                        <TableCell className="text-sm text-right tabular-nums">{r.total?.toFixed(2)}</TableCell>
+                        <TableCell className="text-sm text-right tabular-nums">
+                          {r.total != null ? `${r.currency} ${formatMoneyForCurrency(r.total, r.currency)}` : '—'}
+                        </TableCell>
                         <TableCell
                           className="text-sm text-right tabular-nums text-gray-600"
                           title="Present / total sessions to date (only rows marked Present count; future sessions excluded)"
@@ -563,7 +593,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                             )}
                             {canRemove && !r.convertedInvoiceId && (
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => setDeleteConfirm(r)} title="Delete">
+                                onClick={() => void doDelete(r)} title="Delete">
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             )}
@@ -624,17 +654,19 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                 <Label htmlFor="enr-student" className="text-xs">
                   Student<span className="text-red-500"> *</span>
                 </Label>
-                <select
-                  id="enr-student"
-                  className="w-full h-9 px-3 border rounded-md text-sm bg-white"
+                <SearchablePicker
+                  options={students.map(s => ({
+                    value: s.id,
+                    label: s.name,
+                    secondary: s.phone ?? undefined,
+                    searchKey: `${s.name} ${s.phone ?? ''}`,
+                  }))}
                   value={form.studentId}
-                  onChange={e => setForm(f => ({ ...f, studentId: e.target.value }))}
-                >
-                  <option value="">— pick a student —</option>
-                  {students.map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                  onChange={v => setForm(f => ({ ...f, studentId: v }))}
+                  placeholder="— pick a student —"
+                  searchPlaceholder="Search student by name or phone…"
+                  allowClear={false}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="enr-sched" className="text-xs">
@@ -690,20 +722,20 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="enr-fee" className="text-xs">Tuition fee</Label>
-                <Input
+                <NumericInput
                   id="enr-fee"
-                  type="number" min="0" step="0.01" className="tabular-nums"
+                  decimals={form.currency === 'KHR' ? 0 : 2}
                   value={form.unitPrice == null ? '' : String(form.unitPrice)}
-                  onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value === '' ? null : Number(e.target.value) }))}
+                  onChange={v => setForm(f => ({ ...f, unitPrice: v === '' ? null : Number(v) }))}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="enr-qty" className="text-xs">Quantity</Label>
-                <Input
+                <NumericInput
                   id="enr-qty"
-                  type="number" min="1" step="1" className="tabular-nums"
+                  decimals={0}
                   value={form.quantity == null ? '' : String(form.quantity)}
-                  onChange={e => setForm(f => ({ ...f, quantity: e.target.value === '' ? null : Number(e.target.value) }))}
+                  onChange={v => setForm(f => ({ ...f, quantity: v === '' ? null : Number(v) }))}
                 />
               </div>
             </div>
@@ -723,22 +755,6 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={!!deleteConfirm} onOpenChange={o => !o && setDeleteConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete enrollment?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteConfirm?.enrollmentNo} will be removed permanently.
-              This is only possible for enrollments that haven't been billed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={doDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

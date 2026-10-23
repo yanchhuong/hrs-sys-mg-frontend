@@ -40,8 +40,12 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import { Label } from '../ui/label';
-import { DateRangeFilter } from '../common/DateRangeFilter';
-import { Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network } from 'lucide-react';
+import { DateInput } from '../common/DateInput';
+import { TableBodySkeletonRows, TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { Textarea } from '../ui/textarea';
+import { TONE_CLASS, statusBadgeClass } from '../../utils/statusTones';
+import { Eye, Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -407,13 +411,13 @@ function EmployeeDocuments({
       )}
 
       {/* List */}
-      {visible.length === 0 ? (
+      {visible.length === 0 && loading ? (
+        <TableRowsSkeleton rows={3} columns={4} />
+      ) : visible.length === 0 ? (
         <div className="text-center py-10 border border-dashed rounded-md">
           <FileText className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500">{loading ? 'Loading…' : 'No documents yet.'}</p>
-          {!loading && (
-            <p className="text-xs text-gray-400 mt-1">Upload contracts, ID scans, certificates, etc.</p>
-          )}
+          <p className="text-sm text-gray-500">No documents yet.</p>
+          <p className="text-xs text-gray-400 mt-1">Upload contracts, ID scans, certificates, etc.</p>
         </div>
       ) : (
         <ul className="divide-y border rounded-md">
@@ -552,7 +556,7 @@ function adaptApiContract(c: contractsApi.Contract): Contract {
 export function Employees() {
   const confirm = useConfirm();
   const { t } = useI18n();
-  const { formatDate } = useDateFormat();
+  const { formatDate, formatDateTime } = useDateFormat();
   const { isAdmin, isManager, isTenantWide, canViewEmployee } = useTeamScope();
   const { currentUser } = useAuth();
   // Underlined-button page-level tab state — mirrors the pattern
@@ -653,11 +657,15 @@ export function Employees() {
   const [, setRosterVersion] = useState(0);
   const bumpRoster = () => setRosterVersion(v => v + 1);
 
+  const [employeesLoading, setEmployeesLoading] = useState(!USE_MOCKS);
+  const [employeesError, setEmployeesError]     = useState<string | null>(null);
   const loadEmployees = async () => {
     if (USE_MOCKS) {
       setEmployees([...mockEmployees]);
       return;
     }
+    setEmployeesLoading(true);
+    setEmployeesError(null);
     try {
       // Page through results so a tenant with > 1 page of employees never
       // silently truncates. Concrete bug we hit: an admin couldn't find
@@ -676,7 +684,13 @@ export function Employees() {
       setRawEmployees(acc);
       setEmployees(acc.map(adaptApiEmployee));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load employees');
+      // Shown inline with Retry so a failed load doesn't read as an
+      // empty roster; the toast stays for the refresh-after-save paths.
+      const msg = err instanceof Error ? err.message : 'Failed to load employees';
+      setEmployeesError(msg);
+      toast.error(msg);
+    } finally {
+      setEmployeesLoading(false);
     }
   };
 
@@ -828,9 +842,6 @@ export function Employees() {
     end: null,
   });
 
-  const handleDateFilterChange = (startDate: string | null, endDate: string | null) => {
-    setDateFilter({ start: startDate, end: endDate });
-  };
 
   const calculateExperience = (joinDate: string) => {
     const start = parseISO(joinDate);
@@ -1331,12 +1342,10 @@ export function Employees() {
   };
 
   const getContractStatusBadge = (status: Contract['status']) => {
-    const colors = {
-      active: 'bg-green-100 text-green-800',
-      expiring: 'bg-orange-100 text-orange-800',
-      expired: 'bg-gray-100 text-gray-800',
-    };
-    return <Badge className={colors[status]}>{status}</Badge>;
+    // Shared palette: Active green, Expiring orange (running out),
+    // Expired slate.
+    const cls = status === 'expiring' ? TONE_CLASS.warning : statusBadgeClass(status);
+    return <Badge variant="outline" className={`capitalize ${cls}`}>{status}</Badge>;
   };
 
   // Multi-field wildcard search: split the input on whitespace and require
@@ -1418,6 +1427,87 @@ export function Employees() {
   // Pagination
   const employeePagination = usePagination(filteredEmployees, 10);
 
+  // Clear resets every roster filter back to its default (Status
+  // defaults to Active — see the useState above).
+  const filtersActive = !!(searchTerm.trim() || statusFilter !== 'active'
+    || departmentFilter !== 'all' || dateFilter.start || dateFilter.end);
+  const clearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('active');
+    setDepartmentFilter('all');
+    setDateFilter({ start: null, end: null });
+  };
+
+  // ONE filter strip shared by the Employees and Cards tabs. The Cards
+  // grid pages through the same filtered list, so its filters must be
+  // visible there too — otherwise status / department / join-date
+  // narrow the cards with nothing on screen saying so.
+  const filterSelectCls =
+    'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
+  const rosterFilterStrip = (
+    <div className="filter-strip">
+      <div className="relative shrink-0">
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+        <Input
+          placeholder="Search by name, Khmer name, ID, or phone…"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="h-9 pl-7 w-64 text-sm"
+        />
+      </div>
+      <select
+        value={statusFilter}
+        onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+        className={filterSelectCls}
+        aria-label="Filter by status"
+      >
+        <option value="all">Status : All ({statusCounts.all})</option>
+        <option value="active">Status : Active ({statusCounts.active})</option>
+        <option value="inactive">Status : Inactive ({statusCounts.inactive})</option>
+      </select>
+      <select
+        value={departmentFilter}
+        onChange={(e) => setDepartmentFilter(e.target.value)}
+        className={`${filterSelectCls} max-w-[240px]`}
+        aria-label="Filter by department"
+      >
+        <option value="all">Department : All ({visibleEmployees.length})</option>
+        {departments.map(d => {
+          // v-perf-memo-employees — precomputed count map
+          // beats the previous O(N × M) filter-per-option.
+          const n = employeeCountByDept.get(d.id) ?? 0;
+          return (
+            <option key={d.id} value={d.id}>Department : {d.name} ({n})</option>
+          );
+        })}
+      </select>
+      {/* Join-date range (was a DateRangeFilter in the page header). */}
+      <Label className="text-xs text-gray-500 shrink-0">From</Label>
+      <div className="shrink-0">
+        <DateInput
+          value={dateFilter.start}
+          onChange={v => setDateFilter(f => ({ ...f, start: v }))}
+          max={dateFilter.end || undefined}
+          title="Joined from"
+        />
+      </div>
+      <Label className="text-xs text-gray-500 shrink-0">To</Label>
+      <div className="shrink-0">
+        <DateInput
+          value={dateFilter.end}
+          onChange={v => setDateFilter(f => ({ ...f, end: v }))}
+          min={dateFilter.start || undefined}
+          title="Joined to"
+        />
+      </div>
+      {filtersActive && (
+        <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+          Clear
+        </Button>
+      )}
+    </div>
+  );
+
   // Reset pagination when search, filter, or data changes.
   useEffect(() => {
     employeePagination.resetPage();
@@ -1478,8 +1568,7 @@ export function Employees() {
         <div>
           <h1 className="text-3xl font-bold">{t('page.employees.title')}</h1>
         </div>
-        <div className="flex gap-2">
-          <DateRangeFilter onFilterChange={handleDateFilterChange} />
+        <div className="flex gap-2 shrink-0">
           {/* HR Telegram bot config gear — gated by hr_telegram.update so
               the bot-token surface stays admin-only even when other
               roster permissions are granted to a manager. */}
@@ -1610,86 +1699,8 @@ export function Employees() {
         <TabsContent value="roster" className="mt-0">
 
       <Card>
-        <CardHeader className="space-y-3">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search by name, Khmer name, ID, or phone…"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </div>
-          {/* Status filter chips — counts derived from the permission-scoped
-              roster, so they always agree with what the user can see in the
-              table below. `.filter-strip` (styles/index.css) keeps the row
-              on a single horizontally-scrolling line on tablet/phone, and
-              reverts to the wrapping toolbar behaviour on ≥sm desktop. */}
-          <div className="filter-strip">
-            {([
-              { key: 'all',      label: 'All' },
-              { key: 'active',   label: 'Active' },
-              { key: 'inactive', label: 'Inactive' },
-            ] as const).map(chip => {
-              const isActive = statusFilter === chip.key;
-              const count = statusCounts[chip.key];
-              return (
-                <Button
-                  key={chip.key}
-                  variant={isActive ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setStatusFilter(chip.key)}
-                  className={
-                    isActive
-                      ? chip.key === 'active'
-                        ? 'bg-green-600 hover:bg-green-700 text-white border-0'
-                        : chip.key === 'inactive'
-                          ? 'bg-gray-700 hover:bg-gray-800 text-white border-0'
-                          : 'bg-blue-600 hover:bg-blue-700 text-white border-0'
-                      : ''
-                  }
-                >
-                  {chip.label}
-                  <Badge
-                    variant="secondary"
-                    className={`ml-2 ${isActive ? 'bg-white/20 text-white' : ''}`}
-                  >
-                    {count}
-                  </Badge>
-                </Button>
-              );
-            })}
-            <div className="flex items-center gap-2 ml-auto">
-              <Building2 className="h-4 w-4 text-gray-400" />
-              <select
-                value={departmentFilter}
-                onChange={(e) => setDepartmentFilter(e.target.value)}
-                className="h-8 px-2 pr-8 text-sm border rounded-md bg-white max-w-[220px]"
-              >
-                <option value="all">All Departments ({visibleEmployees.length})</option>
-                {departments.map(d => {
-                  // v-perf-memo-employees — precomputed count map
-                  // beats the previous O(N × M) filter-per-option.
-                  const n = employeeCountByDept.get(d.id) ?? 0;
-                  return (
-                    <option key={d.id} value={d.id}>{d.name} ({n})</option>
-                  );
-                })}
-              </select>
-              {departmentFilter !== 'all' && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => setDepartmentFilter('all')}
-                >
-                  Clear
-                </Button>
-              )}
-            </div>
-          </div>
+        <CardHeader>
+          {rosterFilterStrip}
         </CardHeader>
         <CardContent>
           {/* v-list-table-invoice-shape — border+scroll wrapper + sticky
@@ -1721,11 +1732,17 @@ export function Employees() {
             </TableHeader>
             <TableBody>
               {employeePagination.paginatedItems.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={canViewHrTelegram ? 17 : 16} className="text-center text-sm text-gray-500 py-8">
-                    No employees match these filters.
-                  </TableCell>
-                </TableRow>
+                employeesLoading && employees.length === 0 ? (
+                  <TableBodySkeletonRows rows={6} columns={canViewHrTelegram ? 17 : 16} />
+                ) : employeesError && employees.length === 0 ? (
+                  <ListError
+                    colSpan={canViewHrTelegram ? 17 : 16}
+                    message={employeesError}
+                    onRetry={() => { void loadEmployees(); }}
+                  />
+                ) : (
+                  <ListEmpty colSpan={canViewHrTelegram ? 17 : 16} noun="employees" filtered={filtersActive} />
+                )
               )}
               {employeePagination.paginatedItems.map((employee) => (
                 <TableRow key={employee.id}>
@@ -1940,13 +1957,7 @@ export function Employees() {
                     })()}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      className={
-                        employee.status === 'active'
-                          ? 'bg-green-100 text-green-800 hover:bg-green-100 border-0 capitalize'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-100 border-0 capitalize'
-                      }
-                    >
+                    <Badge variant="outline" className={`capitalize ${statusBadgeClass(employee.status)}`}>
                       {employee.status}
                     </Badge>
                   </TableCell>
@@ -1959,13 +1970,15 @@ export function Employees() {
                   <TableCell>
                     <Button
                       size="sm"
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      variant="ghost"
+                      className="h-7"
                       onClick={() => {
                         setSelectedEmployee(employee);
                         setSheetOpen(true);
                       }}
+                      title="View details"
                     >
-                      View Details
+                      <Eye className="h-3 w-3 mr-1" /> View
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -2004,15 +2017,16 @@ export function Employees() {
               the "one page-size across every list surface" rule. */}
           <Card>
             <CardContent className="pt-4 space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Search by name, Khmer name, ID, or phone…"
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+              {rosterFilterStrip}
+              {employeePagination.paginatedItems.length === 0 && (
+                employeesLoading && employees.length === 0 ? (
+                  <TableRowsSkeleton rows={4} columns={4} hasThumbnail />
+                ) : employeesError && employees.length === 0 ? (
+                  <ListError message={employeesError} onRetry={() => { void loadEmployees(); }} />
+                ) : (
+                  <ListEmpty noun="employees" filtered={filtersActive} />
+                )
+              )}
               <EmployeeCardsGrid
                 employees={employeePagination.paginatedItems}
                 onOpenIdCard={setIdCardEmployee}
@@ -2359,11 +2373,11 @@ export function Employees() {
                       )}
                       <FieldRow label="Date of Birth" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <Input
-                            type="date"
-                            value={editedEmployee.dateOfBirth || ''}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, dateOfBirth: e.target.value })}
+                          <DateInput
+                            value={editedEmployee.dateOfBirth || null}
+                            onChange={v => setEditedEmployee({ ...editedEmployee, dateOfBirth: v ?? '' })}
                             className="h-9"
+                            clearable
                           />
                         ) : (
                           <p>{selectedEmployee.dateOfBirth ? formatDate(selectedEmployee.dateOfBirth) : '—'}</p>
@@ -2461,11 +2475,11 @@ export function Employees() {
                       {((isEditing ? editedEmployee?.nationalityType : selectedEmployee.nationalityType) === 'passport') && (
                         <FieldRow label="Visa Expire" isEditing={isEditing}>
                           {isEditing && editedEmployee ? (
-                            <Input
-                              type="date"
-                              value={editedEmployee.visaExpireDate || ''}
-                              onChange={(e) => setEditedEmployee({ ...editedEmployee, visaExpireDate: e.target.value })}
+                            <DateInput
+                              value={editedEmployee.visaExpireDate || null}
+                              onChange={v => setEditedEmployee({ ...editedEmployee, visaExpireDate: v ?? '' })}
                               className="h-9"
+                              clearable
                             />
                           ) : (
                             <p>
@@ -2718,10 +2732,9 @@ export function Employees() {
                     <div className="grid grid-cols-2 gap-4">
                       <FieldRow label="Join Date" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <Input
-                            type="date"
-                            value={editedEmployee.joinDate}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, joinDate: e.target.value })}
+                          <DateInput
+                            value={editedEmployee.joinDate || null}
+                            onChange={v => setEditedEmployee({ ...editedEmployee, joinDate: v ?? '' })}
                             className="h-9"
                           />
                         ) : (
@@ -2799,11 +2812,11 @@ export function Employees() {
                       </FieldRow>
                       <FieldRow label="Contract Expire" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <Input
-                            type="date"
-                            value={editedEmployee.contractExpireDate || ''}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, contractExpireDate: e.target.value })}
+                          <DateInput
+                            value={editedEmployee.contractExpireDate || null}
+                            onChange={v => setEditedEmployee({ ...editedEmployee, contractExpireDate: v ?? '' })}
                             className="h-9"
+                            clearable
                           />
                         ) : (() => {
                           const expire = getLatestContractEnd(selectedEmployee);
@@ -2812,11 +2825,11 @@ export function Employees() {
                       </FieldRow>
                       <FieldRow label="Resign Date" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <Input
-                            type="date"
-                            value={editedEmployee.resignDate || ''}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, resignDate: e.target.value })}
+                          <DateInput
+                            value={editedEmployee.resignDate || null}
+                            onChange={v => setEditedEmployee({ ...editedEmployee, resignDate: v ?? '' })}
                             className="h-9"
+                            clearable
                           />
                         ) : (
                           <p className={selectedEmployee.resignDate ? 'text-red-600 font-medium' : ''}>
@@ -3035,7 +3048,14 @@ export function Employees() {
                       Unsaved changes
                     </span>
                   ) : (
-                    <span className="truncate">Last updated {formatDate(selectedEmployee.joinDate)}</span>
+                    (() => {
+                      // Was printing joinDate — show the real last-saved
+                      // timestamp, or nothing when the row has none.
+                      const updatedAt = (selectedEmployee as { updatedAt?: string | null }).updatedAt;
+                      return updatedAt
+                        ? <span className="truncate">Last updated {formatDateTime(updatedAt)}</span>
+                        : null;
+                    })()
                   )}
                 </div>
                 <div className="flex gap-2">
@@ -3166,31 +3186,28 @@ export function Employees() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="contractStart">
-                  {contractMode === 'renew' ? t('contract.start_date.new') : t('contract.start_date')} *
+                  {contractMode === 'renew' ? t('contract.start_date.new') : t('contract.start_date')} <span className="text-red-500">*</span>
                 </Label>
-                <Input
-                  id="contractStart"
-                  type="date"
-                  value={contractForm.startDate}
-                  onChange={(e) => setContractForm({ ...contractForm, startDate: e.target.value })}
+                <DateInput
+                  value={contractForm.startDate || null}
+                  onChange={v => setContractForm({ ...contractForm, startDate: v ?? '' })}
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="contractEnd">
-                  {contractMode === 'renew' ? t('contract.end_date.new') : t('contract.end_date')} *
+                  {contractMode === 'renew' ? t('contract.end_date.new') : t('contract.end_date')} <span className="text-red-500">*</span>
                 </Label>
-                <Input
-                  id="contractEnd"
-                  type="date"
-                  value={contractForm.endDate}
-                  onChange={(e) => setContractForm({ ...contractForm, endDate: e.target.value })}
+                <DateInput
+                  value={contractForm.endDate || null}
+                  onChange={v => setContractForm({ ...contractForm, endDate: v ?? '' })}
+                  min={contractForm.startDate || undefined}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="contractType">{t('contract.contract_type')} *</Label>
+                <Label htmlFor="contractType">{t('contract.contract_type')} <span className="text-red-500">*</span></Label>
                 <select
                   id="contractType"
                   value={contractForm.contractType}
@@ -3270,12 +3287,11 @@ export function Employees() {
 
             <div className="space-y-2">
               <Label htmlFor="contractNotes">{t('contract.notes')}</Label>
-              <textarea
+              <Textarea
                 id="contractNotes"
                 rows={3}
                 value={contractForm.notes}
                 onChange={(e) => setContractForm({ ...contractForm, notes: e.target.value })}
-                className="w-full px-3 py-2 border rounded-md text-sm"
                 maxLength={LEN.longText}
                 placeholder={
                   contractMode === 'renew' ? t('contract.notes.placeholder.renew')
@@ -3284,7 +3300,7 @@ export function Employees() {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-4">
+            <DialogFooter className="pt-4">
               <Button variant="outline" onClick={() => setContractDialogOpen(false)} disabled={savingContract}>
                 {t('action.cancel')}
               </Button>
@@ -3297,7 +3313,7 @@ export function Employees() {
                   : contractMode === 'edit' ? t('contract.btn.save')
                   : t('contract.renew')}
               </Button>
-            </div>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>

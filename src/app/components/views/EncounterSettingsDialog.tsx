@@ -13,6 +13,10 @@ import {
 import {
   Loader2, Upload, Trash2, Image as ImageIcon, Building2, Hash, Plus, Pencil, Check, X, Star,
 } from 'lucide-react';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../ui/select';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { toast } from 'sonner';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
@@ -233,8 +237,8 @@ export function EncounterSettingsDialog({ open, onOpenChange }: {
         </DialogHeader>
 
         {loading || !settings ? (
-          <div className="py-16 text-center text-sm text-gray-500">
-            <Loader2 className="h-4 w-4 inline mr-1 animate-spin" /> Loading…
+          <div className="px-6 py-4">
+            <TableRowsSkeleton rows={6} columns={3} />
           </div>
         ) : (
           <div className="flex min-h-[500px]">
@@ -296,7 +300,9 @@ export function EncounterSettingsDialog({ open, onOpenChange }: {
         )}
 
         <DialogFooter className="px-6 py-3 border-t">
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          {/* Logo and branch changes save the moment they're made; only
+              the numbering fields wait for Save. Cancel discards those. */}
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={save} disabled={saving || loading}>
             {saving ? 'Saving…' : 'Save'}
           </Button>
@@ -393,6 +399,7 @@ function BranchList({ branches, loading, onRefresh }: {
   loading: boolean;
   onRefresh: () => Promise<void>;
 }) {
+  const confirm = useConfirm();
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
   const [draft, setDraft]         = useState<{ name: string; phone: string; address: string }>({ name: '', phone: '', address: '' });
   const [busy, setBusy]           = useState(false);
@@ -460,7 +467,12 @@ function BranchList({ branches, loading, onRefresh }: {
   };
 
   const remove = async (b: branchesApi.Branch) => {
-    if (!confirm(`Delete branch "${b.name}"?`)) return;
+    if (!(await confirm({
+      title: 'Delete this branch?',
+      message: `"${b.name}" will be removed from the branch list.`,
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    }))) return;
     setBusy(true);
     try {
       await branchesApi.remove(b.id);
@@ -484,9 +496,7 @@ function BranchList({ branches, loading, onRefresh }: {
         </div>
 
         {loading ? (
-          <div className="py-4 text-center text-sm text-gray-500">
-            <Loader2 className="h-4 w-4 mr-1 inline animate-spin" /> Loading…
-          </div>
+          <TableRowsSkeleton rows={3} columns={5} />
         ) : branches.length === 0 && editingId !== 'new' ? (
           <div className="py-6 text-center text-sm text-gray-500">
             No branches yet — click Add branch to register the first location.
@@ -663,16 +673,14 @@ function NumberingSection({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="enc-date" className="text-xs">Date format</Label>
-              <select
-                id="enc-date"
-                className="h-9 w-full border rounded-md px-2 text-sm bg-background"
-                value={dateFormat}
-                onChange={e => setDateFormat(e.target.value as 'DDMMYYYY' | 'MMYYYY' | 'YYYY')}
-              >
-                <option value="YYYY">YYYY (2026)</option>
-                <option value="MMYYYY">MMYYYY (072026)</option>
-                <option value="DDMMYYYY">DDMMYYYY (08072026)</option>
-              </select>
+              <Select value={dateFormat} onValueChange={v => setDateFormat(v as 'DDMMYYYY' | 'MMYYYY' | 'YYYY')}>
+                <SelectTrigger id="enc-date" className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="YYYY">YYYY (2026)</SelectItem>
+                  <SelectItem value="MMYYYY">MMYYYY (072026)</SelectItem>
+                  <SelectItem value="DDMMYYYY">DDMMYYYY (08072026)</SelectItem>
+                </SelectContent>
+              </Select>
               <p className="text-[10px] text-gray-500">
                 Middle chunk of the number. Longer formats reset the
                 sequence more often.
@@ -680,16 +688,14 @@ function NumberingSection({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="enc-width" className="text-xs">Sequence width</Label>
-              <select
-                id="enc-width"
-                className="h-9 w-full border rounded-md px-2 text-sm bg-background"
-                value={String(seqWidth)}
-                onChange={e => setSeqWidth(Number(e.target.value))}
-              >
-                <option value="2">2 digits (01)</option>
-                <option value="3">3 digits (001)</option>
-                <option value="4">4 digits (0001)</option>
-              </select>
+              <Select value={String(seqWidth)} onValueChange={v => setSeqWidth(Number(v))}>
+                <SelectTrigger id="enc-width" className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="2">2 digits (01)</SelectItem>
+                  <SelectItem value="3">3 digits (001)</SelectItem>
+                  <SelectItem value="4">4 digits (0001)</SelectItem>
+                </SelectContent>
+              </Select>
               <p className="text-[10px] text-gray-500">
                 Zero-padding on the running sequence.
               </p>
