@@ -16,7 +16,6 @@ import { Send, KeyRound, Landmark, Trash2, Loader2, Save, Info } from 'lucide-re
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as hrBotApi from '../../api/hrTelegramBots';
 import * as payoutSettingsApi from '../../api/employeePayoutSettings';
-import { HrTelegramGroupCard } from './HrTelegramGroupCard';
 
 type Section = 'hr-bot' | 'payway' | 'other-bank';
 
@@ -335,10 +334,10 @@ export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, o
                     </>
                   )}
 
-                  {/* v-hr-telegram-team-group — shared company group the
-                      HR bot posts team activity into. Disabled until a
-                      bot is registered. */}
-                  {!botLoading && <HrTelegramGroupCard bot={bot} active={open} />}
+                  {/* The team-group card moved to Settings -> Team Activity
+                      Bot. It decides what the whole company sees in a shared
+                      chat, which is a tenant-wide setting rather than part of
+                      registering the bot. Bot registration stays here. */}
                 </div>
               )}
 

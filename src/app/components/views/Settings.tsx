@@ -20,9 +20,11 @@ import {
   Settings as SettingsIcon, Save, 
   AlertTriangle, 
   RefreshCw, KeyRound, Coins, Loader2, Info,
-  Handshake, FileText, Building2, Search,
+  Handshake, FileText, Building2, Search, Send,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import * as hrBotApi from '../../api/hrTelegramBots';
+import { HrTelegramGroupCard } from '../common/HrTelegramGroupCard';
 import { PayWaySettingsDialog } from '../common/PayWaySettingsDialog';
 import * as currencyApi from '../../api/currencySettings';
 import * as paywayApi from '../../api/payway';
@@ -36,6 +38,39 @@ import { Checkbox } from '../ui/checkbox';
 import { tenantAgencyRequests } from '../../api/tenantAgencyRequests';
 import * as TenantAgencyApi from '../../api/tenantAgencyRequests';
 import { PageTitleTooltip } from './agency/PageTitleTooltip';
+
+/**
+ * Team activity bot — the company Telegram group the HR bot posts to.
+ *
+ * Thin host for the shared card: it only supplies the tenant's HR bot,
+ * which the card needs because the group's link code is redeemed by
+ * that bot and the card disables itself until one is registered.
+ * `active` drives the card's poll, and a tab that is mounted is a tab
+ * being looked at, so it is simply true here.
+ */
+function TeamBotCard() {
+  const [bot, setBot] = useState<hrBotApi.HrTelegramBot | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void hrBotApi.getBot()
+      .then(b => { if (!cancelled) setBot(b); })
+      .catch(() => { /* no bot registered, or no permission — the card says so */ })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading the HR bot…
+      </div>
+    );
+  }
+  return <HrTelegramGroupCard bot={bot} active />;
+}
 
 export function Settings() {
   const { t } = useI18n();
@@ -66,6 +101,10 @@ export function Settings() {
             <Handshake className="mr-2 h-4 w-4" />
             Agency
           </TabsTrigger>
+          <TabsTrigger value="teambot">
+            <Send className="mr-2 h-4 w-4" />
+            Team Activity Bot
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="agency" className="space-y-6">
@@ -86,6 +125,12 @@ export function Settings() {
 
         <TabsContent value="payway" className="space-y-6">
           {isAdmin && <PayWayIntegrationCard />}
+        </TabsContent>
+
+        {/* Admin-only, like Currency and PayWay: it decides what the
+            whole company sees in a shared chat. */}
+        <TabsContent value="teambot" className="space-y-6">
+          {isAdmin && <TeamBotCard />}
         </TabsContent>
       </Tabs>
     </div>
