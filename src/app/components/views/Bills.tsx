@@ -59,6 +59,8 @@ import { exportListToExcel } from '../../utils/excelExport';
 import { toast } from 'sonner';
 import { LEN, toNum, dueNotBeforeIssue, isValidPercent } from '../../utils/validation';
 import { useConfirm } from '../../context/ConfirmContext';
+import { statusBadgeClass, DOC_KIND_CLASS } from '../../utils/statusTones';
+import { format as formatLocalDate } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -80,10 +82,11 @@ const KIND_LABEL: Record<billsApi.BillKind, string> = {
   debit_note:  'Debit Note',
 };
 const KIND_BADGE_CLASS: Record<billsApi.BillKind, string> = {
-  commercial:  'border-blue-300 text-blue-700 bg-blue-50',
-  tax:         'border-blue-300 text-blue-700 bg-blue-50',
-  credit_note: 'border-emerald-300 text-emerald-700 bg-emerald-50',
-  debit_note:  'border-amber-300 text-amber-700 bg-amber-50',
+  commercial:  DOC_KIND_CLASS.commercial,
+  // No Tax variant on the purchase side — reads as "Bill" like commercial.
+  tax:         DOC_KIND_CLASS.commercial,
+  credit_note: DOC_KIND_CLASS.credit_note,
+  debit_note:  DOC_KIND_CLASS.debit_note,
 };
 /** V98 simplified the Bill workflow to Progress / Paid (+ Void
  *  terminal). Legacy draft / partially values still appear in
@@ -93,35 +96,25 @@ const KIND_BADGE_CLASS: Record<billsApi.BillKind, string> = {
  *  read-time label (a progress row whose due_date has elapsed and
  *  isn't fully paid, see bills.ts), and hiding it made a bill that's
  *  actually late look identical to one still comfortably on time. */
+// Colours from the app-wide statusTones palette: Pending amber, Draft /
+// Void slate, Progress blue, Partial Paid orange, Paid green, Overdue red.
+// Returned (settled purchase Credit Note — vendor refunded us) reads like
+// `refunded`.
 const STATUS_BADGE_CLASS: Record<billsApi.BillStatus, string> = {
-  // Amber for pending — reads as "waiting on approvers" without
-  // leaning on red (which we reserve for void). V177.
-  pending:   'border-amber-300 text-amber-700 bg-amber-50',
-  // Draft moved off blue: it, progress and partially were ALL blue, so
-  // three different lifecycle states rendered identically. Slate now
-  // matches the Invoices draft chip.
-  draft:     'border-slate-300 text-slate-700 bg-slate-50',
-  // Spec palette, shared with the mobile app: Progress blue (issued,
-  // nothing paid out), Partial Paid orange (money out, not all of it),
-  // Paid red (settled — same ink as the PAID stamp).
-  progress:  'border-blue-300 text-blue-700 bg-blue-50',
-  partially: 'border-orange-300 text-orange-700 bg-orange-50',
-  paid:      'border-red-300 text-red-700 bg-red-50',
-  // Returned = settled purchase Credit Note (vendor refunded us).
-  // Sky hue separates the cash-in-from-vendor direction from a
-  // regular Paid bill (emerald = we paid the vendor).
-  returned:  'border-sky-300 text-sky-700 bg-sky-50',
-  // Same treatment Invoices.tsx already gives overdue — a shade
-  // darker than Partial Paid's orange so a late bill still reads as
-  // more urgent than one that's merely partially settled.
-  overdue:   'border-orange-400 text-orange-800 bg-orange-50',
-  void:      'border-red-300 text-red-700 bg-red-50',
+  pending:   statusBadgeClass('pending'),
+  draft:     statusBadgeClass('draft'),
+  progress:  statusBadgeClass('progress'),
+  partially: statusBadgeClass('partially'),
+  paid:      statusBadgeClass('paid'),
+  returned:  statusBadgeClass('refunded'),
+  overdue:   statusBadgeClass('overdue'),
+  void:      statusBadgeClass('void'),
 };
 const STATUS_LABEL: Record<billsApi.BillStatus, string> = {
   pending:   'pending',
-  draft:     'progress',
+  draft:     'draft',
   progress:  'progress',
-  partially: 'progress',
+  partially: 'Partial Paid',
   paid:      'paid',
   returned:  'returned',
   overdue:   'overdue',
@@ -1097,7 +1090,7 @@ function BillFormDialog({
    *  HR can override the auto-sequential when needed (e.g. matching
    *  an external paper invoice). */
   const [billNo, setInvoiceNo] = useState('');
-  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [issueDate, setIssueDate] = useState(() => formatLocalDate(new Date(), 'yyyy-MM-dd'));
   const [dueDate, setDueDate] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState('4100');
@@ -1217,7 +1210,7 @@ function BillFormDialog({
       setVendorId(seedParent?.vendorId ?? '');
       setParentInvoiceId(parentPrefill ?? '');
       setInvoiceNo('');
-      setIssueDate(new Date().toISOString().slice(0, 10));
+      setIssueDate(formatLocalDate(new Date(), 'yyyy-MM-dd'));
       setDueDate('');
       setCurrency(seedParent?.currency ?? currencySettings?.primaryCurrency ?? 'USD');
       setExchangeRate(seedParent
@@ -1458,29 +1451,6 @@ function BillFormDialog({
     }
   };
 
-  /** Save as Progress + close the dialog. */
-  const submitAndClose = async () => {
-    if (!validate()) return;
-    setSaving(true);
-    try {
-      const created = await createAsProgress();
-      toast.success(`${KIND_LABEL[kind]} ${created.billNo} created`);
-      // Same recent-items push as submit() so Save & close also
-      // primes the typeahead for the next form open.
-      addRecentLineItems(items.map(it => ({
-        name: it.name,
-        unit: it.unit,
-        unitPrice: Number(it.unitPrice) || undefined,
-      })), 'bill');
-      setRecentItems(getRecentLineItems(undefined, 'bill'));
-      await onCreated();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to create bill');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* sm:max-w-[1260px] beats the dialog default `sm:max-w-lg` —
@@ -1601,12 +1571,12 @@ function BillFormDialog({
 
           <div className="grid grid-cols-4 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Issue date</Label>
-              <Input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} />
+              <Label className="text-xs">Issue date <span className="text-red-500">*</span></Label>
+              <DateInput value={issueDate || null} onChange={v => setIssueDate(v ?? '')} clearable={false} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Due date</Label>
-              <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              <DateInput value={dueDate || null} onChange={v => setDueDate(v ?? '')} min={issueDate || undefined} />
             </div>
             {/* Currency picker only appears when the tenant has more
                 than one enabled currency — a single-currency tenant has
@@ -2113,22 +2083,17 @@ function BillFormDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          {/* Save & add new and Save & close both save as Draft on
-              the Bill side — Bills are recorded as drafts during data
-              entry and promoted to Progress / Paid explicitly once
-              the spend is confirmed. Only on create; edit shows a
-              single Save changes button instead. */}
+          {/* Create saves the bill straight to Progress (createAsProgress).
+              Save & New does the same and resets the form for the next
+              entry; Save closes. The old "Save & close" button did
+              exactly what Save does, so it was dropped. Edit shows a
+              single Save changes button. */}
           {!isEdit && (
-            <>
-              <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save as Draft and reset the form for the next entry">
-                {saving ? 'Saving…' : 'Save & New'}
-              </Button>
-              <Button variant="outline" onClick={submitAndClose} disabled={saving} title="Save as Draft and close the dialog">
-                {saving ? 'Saving…' : 'Save & close'}
-              </Button>
-            </>
+            <Button variant="outline" onClick={submitAndNew} disabled={saving} title="Save the bill and reset the form for the next entry">
+              {saving ? 'Saving…' : 'Save & New'}
+            </Button>
           )}
-          <Button onClick={submit} disabled={saving}>
+          <Button onClick={submit} disabled={saving} title={isEdit ? undefined : 'Save the bill and close the dialog'}>
             {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save')}
           </Button>
         </DialogFooter>
@@ -2208,12 +2173,11 @@ function BillDetailDialog({
     return () => { alive = false; };
   }, []);
 
-  // USD-equivalent AP — collapses USD + (KHR ÷ rate) payments against
-  // Total USD (= bill.total + ΣDN − ΣCN). Used by the big top-right
-  // callout AND the Record-payment gate so the operator can keep
-  // adding payments while AP is non-zero, even if the server's
-  // currency-blind status flipped to "paid".
-  const apUsd: number = (() => {
+  // AP in the BILL's currency — collapses USD + KHR payments into the
+  // bill currency via its snapshot rate (same convert() as the list's
+  // apByRowId) and nets them against bill.total + ΣDN − ΣCN. A KHR
+  // bill used to be compared against a USD-converted paid figure.
+  const apBill: number = (() => {
     if (!invoice) return 0;
     const nonVoidAdj = (invoice.adjustments ?? []).filter(a => a.status !== 'void');
     const sumDn = nonVoidAdj.filter(a => a.kind === 'debit_note').reduce((s, a) => s + a.total, 0);
@@ -2224,8 +2188,12 @@ function BillDetailDialog({
     const paidUsd = sumByCurrency('USD');
     const paidKhr = sumByCurrency('KHR');
     const rate = invoice.exchangeRate || 0;
-    const paidTotalUsd = paidUsd + (rate > 0 ? paidKhr / rate : 0);
-    return invoice.total + sumDn - sumCn - paidTotalUsd;
+    const convert = (usd: number, khr: number): number => {
+      if (invoice.currency === 'USD') return usd + (rate > 0 ? khr / rate : 0);
+      if (invoice.currency === 'KHR') return khr + usd * rate;
+      return usd;
+    };
+    return invoice.total + sumDn - sumCn - convert(paidUsd, paidKhr);
   })();
 
   const load = async () => {
@@ -2360,8 +2328,16 @@ function BillDetailDialog({
                 {canEdit && invoice.status !== 'void' && invoice.status !== 'draft' && (
                   <Button size="sm" variant="outline" disabled={busy}
                     className="text-red-600 border-red-200 hover:bg-red-50"
-                    onClick={() => doAction('Bill voided',
-                      () => billsApi.voidBill(invoice.id).then(setInvoice))}
+                    onClick={async () => {
+                      if (!(await confirm({
+                        title: `Void bill ${invoice.billNo}?`,
+                        message: 'The bill stays on record but stops counting toward AP. This cannot be undone.',
+                        confirmLabel: 'Void',
+                        variant: 'destructive',
+                      }))) return;
+                      await doAction('Bill voided',
+                        () => billsApi.voidBill(invoice.id).then(setInvoice));
+                    }}
                   >
                     <Ban className="h-3.5 w-3.5 mr-1" /> Void
                   </Button>
@@ -2371,7 +2347,7 @@ function BillDetailDialog({
           </div>
         </DialogHeader>
         {loading || !invoice ? (
-          <p className="text-sm text-gray-500 py-6 text-center">Loading…</p>
+          <TableRowsSkeleton rows={5} columns={5} />
         ) : (
           <>
             {/* Two-column header row: meta info on the left, big AP
@@ -2383,7 +2359,7 @@ function BillDetailDialog({
               <div className="text-gray-500">Vendor</div>
               <div>{vendor?.name ?? <span className="text-gray-400">(unknown)</span>}</div>
               <div className="text-gray-500">Due date</div>
-              <div>{invoice.dueDate ?? '—'}</div>
+              <div>{invoice.dueDate ? formatDate(invoice.dueDate) : '—'}</div>
               <div className="text-gray-500">Currency</div>
               <div>{invoice.currency}</div>
               {settings.showTax && (
@@ -2416,11 +2392,11 @@ function BillDetailDialog({
               <div className="text-right shrink-0 mr-8 print:hidden">
                 <div className="text-[11px] uppercase tracking-wide text-gray-500">AP ({invoice.currency})</div>
                 <div className={`text-3xl font-bold mt-1 tabular-nums ${
-                  apUsd > 0 ? 'text-rose-700'
-                    : apUsd < 0 ? 'text-amber-700'
+                  apBill > 0 ? 'text-rose-700'
+                    : apBill < 0 ? 'text-amber-700'
                     : 'text-emerald-700'
                 }`}>
-                  {fmtMoney(apUsd, invoice.currency)}
+                  {fmtMoney(apBill, invoice.currency)}
                 </div>
               </div>
             </div>
@@ -2864,7 +2840,7 @@ function RecordBillPaymentDialog({
   const [currency, setCurrency] = useState<billPaymentsApi.PaymentCurrency>(
     invoice.currency === 'KHR' ? 'KHR' : 'USD',
   );
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(() => formatLocalDate(new Date(), 'yyyy-MM-dd'));
   // Default to Bank transfer — vendor payments typically go by wire
   // rather than cash, matching the Invoice-side default.
   const [method, setMethod] = useState<billPaymentsApi.PaymentMethod>('bank');
@@ -2890,7 +2866,9 @@ function RecordBillPaymentDialog({
         referenceNo: referenceNo || undefined,
         notes: notes || undefined,
       });
-      toast.success(direction === 'debit' ? 'Refund recorded' : 'Payment recorded');
+      // Purchase side: debit = we paid the vendor (the normal case),
+      // credit = the vendor refunded us.
+      toast.success(direction === 'credit' ? 'Vendor refund recorded' : 'Payment recorded');
       await onSaved();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to record payment');
@@ -2910,10 +2888,10 @@ function RecordBillPaymentDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          {/* Direction toggle — credit is the normal case (customer
-              paid us); debit covers refunding a credit note (we paid
-              the customer back). The signed sum feeds the invoice's
-              net Paid total. */}
+          {/* Direction toggle — purchase side: debit is the normal case
+              (we paid the vendor); credit covers a vendor refund on a
+              credit note (money back to us). The signed sum feeds the
+              bill's net Paid total. */}
           <div className="space-y-1.5">
             <Label className="text-xs">Direction</Label>
             <div className="grid grid-cols-2 gap-2">
@@ -2926,7 +2904,7 @@ function RecordBillPaymentDialog({
                     : 'border-gray-200 hover:bg-gray-50 text-gray-700'
                 }`}
               >
-                <span className="text-base leading-none">+</span> Credit · money in
+                <span className="text-base leading-none">+</span> Credit · vendor refund
               </button>
               <button
                 type="button"
@@ -2937,7 +2915,7 @@ function RecordBillPaymentDialog({
                     : 'border-gray-200 hover:bg-gray-50 text-gray-700'
                 }`}
               >
-                <span className="text-base leading-none">−</span> Debit · refund out
+                <span className="text-base leading-none">−</span> Debit · paid vendor
               </button>
             </div>
           </div>
@@ -2978,8 +2956,8 @@ function RecordBillPaymentDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Date</Label>
-              <Input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+              <Label className="text-xs">Date <span className="text-red-500">*</span></Label>
+              <DateInput value={paymentDate || null} onChange={v => setPaymentDate(v ?? '')} clearable={false} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Method</Label>

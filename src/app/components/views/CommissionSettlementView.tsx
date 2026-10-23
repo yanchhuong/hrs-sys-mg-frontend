@@ -15,7 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { DateInput } from '../common/DateInput';
-import { Loader2, Plus, RefreshCw, Trash2, Eye, Wallet, ReceiptText, DollarSign, Edit3 } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Trash2, Eye, Wallet, ReceiptText, DollarSign, Edit3, Search } from 'lucide-react';
 import { StatCard } from '../common/StatCard';
 import { formatNumber, formatUSD } from '../../utils/format';
 import {
@@ -25,13 +25,23 @@ import type {
   SettlementHeader, SettlementFull, Preview, PaymentMethod, SettlementStatus,
 } from '../../api/commissionSettlement';
 import * as usersApi from '../../api/users';
+import { NumericInput } from '../common/NumericInput';
+import { Pagination } from '../common/Pagination';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { usePagination } from '../../hooks/usePagination';
+import { useConfirm } from '../../context/ConfirmContext';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { statusBadgeClass } from '../../utils/statusTones';
+import { format as formatLocalDate } from 'date-fns';
 
 const STATUS_META: Record<SettlementStatus, { label: string; cls: string }> = {
-  DRAFT:          { label: 'Draft',          cls: 'bg-gray-100 text-gray-700' },
-  CONFIRMED:      { label: 'Confirmed',      cls: 'bg-blue-100 text-blue-800' },
-  PARTIALLY_PAID: { label: 'Partially Paid', cls: 'bg-amber-100 text-amber-800' },
-  PAID:           { label: 'Paid',           cls: 'bg-green-100 text-green-800' },
-  CANCELLED:      { label: 'Cancelled',      cls: 'bg-red-100 text-red-700' },
+  // App-wide palette (utils/statusTones) — outline Badges.
+  DRAFT:          { label: 'Draft',          cls: statusBadgeClass('draft') },
+  CONFIRMED:      { label: 'Confirmed',      cls: statusBadgeClass('confirmed') },
+  PARTIALLY_PAID: { label: 'Partially Paid', cls: statusBadgeClass('partially') },
+  PAID:           { label: 'Paid',           cls: statusBadgeClass('paid') },
+  CANCELLED:      { label: 'Cancelled',      cls: statusBadgeClass('cancelled') },
 };
 
 const PM_LABEL: Record<PaymentMethod, string> = {
@@ -49,9 +59,18 @@ export function CommissionSettlementView() {
   const [rows, setRows] = useState<SettlementHeader[]>([]);
   const [users, setUsers] = useState<usersApi.User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewing, setViewing] = useState<SettlementFull | null>(null);
   const [editingStatus, setEditingStatus] = useState<SettlementHeader | null>(null);
+  const confirm = useConfirm();
+  const { formatDate } = useDateFormat();
+  // Client-side filters (the list endpoint returns every run).
+  // From/To match on period overlap, like the Commission tab.
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<SettlementStatus | ''>('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,8 +81,9 @@ export function CommissionSettlementView() {
       ]);
       setRows(ls);
       setUsers(((up?.data ?? []) as usersApi.User[]));
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load settlements');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load settlements');
     } finally {
       setLoading(false);
     }
@@ -77,15 +97,37 @@ export function CommissionSettlementView() {
     return m;
   }, [users]);
 
-  const totals = useMemo(() => rows.reduce((a, r) => ({
+  const isFiltered = !!(search || statusFilter || dateFrom || dateTo);
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(r => {
+      if (statusFilter && r.status !== statusFilter) return false;
+      if (dateFrom && r.periodEnd < dateFrom) return false;
+      if (dateTo && r.periodStart > dateTo) return false;
+      if (q) {
+        const seller = userName.get(r.sellerId) ?? '';
+        const hay = `${r.settlementNo} ${r.referenceNo ?? ''} ${seller}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [rows, search, statusFilter, dateFrom, dateTo, userName]);
+  const pagination = usePagination(filteredRows, 20);
+
+  const totals = useMemo(() => filteredRows.reduce((a, r) => ({
     count:  a.count + 1,
     sales:  a.sales + (r.totalSales ?? 0),
     comm:   a.comm  + (r.totalCommission ?? 0),
     unpaid: a.unpaid + (r.balanceAmount ?? 0),
-  }), { count: 0, sales: 0, comm: 0, unpaid: 0 }), [rows]);
+  }), { count: 0, sales: 0, comm: 0, unpaid: 0 }), [filteredRows]);
 
   const doDelete = async (r: SettlementHeader) => {
-    if (!confirm(`Delete settlement ${r.settlementNo}? Its invoices become available for settlement again.`)) return;
+    if (!(await confirm({
+      title: `Delete settlement ${r.settlementNo}?`,
+      message: 'Its invoices become available for settlement again.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    }))) return;
     try {
       await commissionSettlement.remove(r.id);
       toast.success('Settlement deleted');
@@ -110,7 +152,8 @@ export function CommissionSettlementView() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
+        <CardHeader className="space-y-3">
+          <div className="flex flex-row items-center justify-between gap-3">
           <CardTitle>Commission Settlements</CardTitle>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
@@ -120,13 +163,51 @@ export function CommissionSettlementView() {
               <Plus className="h-4 w-4 mr-1.5" /> New settlement
             </Button>
           </div>
+          </div>
+          {/* One filter strip, same as Transactions. */}
+          <div className="filter-strip">
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search No, refer no, seller…"
+                className="h-9 w-64 pl-7 text-sm"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as SettlementStatus | '')}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+            >
+              <option value="">Status : All</option>
+              {(Object.keys(STATUS_META) as SettlementStatus[]).map(k => (
+                <option key={k} value={k}>Status : {STATUS_META[k].label}</option>
+              ))}
+            </select>
+            <Label className="text-xs text-gray-500">From</Label>
+            <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} />
+            <Label className="text-xs text-gray-500">To</Label>
+            <DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} />
+            {isFiltered && (
+              <Button
+                size="sm" variant="ghost" className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setStatusFilter(''); setDateFrom(''); setDateTo(''); }}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
-            <div className="text-center py-10 text-gray-500 text-sm">
-              No settlements yet. Click <b>New settlement</b> to settle a seller for a period.
-            </div>
+          {loading && rows.length === 0 ? (
+            <TableRowsSkeleton columns={10} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
+          ) : filteredRows.length === 0 ? (
+            <ListEmpty noun="settlements" filtered={isFiltered} />
           ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -148,17 +229,17 @@ export function CommissionSettlementView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map(r => {
+                {pagination.paginatedItems.map(r => {
                   const s = STATUS_META[r.status];
                   return (
-                    <TableRow key={r.id}>
+                    <TableRow key={r.id} className="hover:bg-gray-50">
                       <TableCell className="font-medium">{r.settlementNo}</TableCell>
                       <TableCell className="text-xs tabular-nums text-gray-600">
                         {r.referenceNo || '—'}
                       </TableCell>
                       <TableCell>{userName.get(r.sellerId) ?? r.sellerId.slice(0, 8)}</TableCell>
                       <TableCell className="text-xs text-gray-600">
-                        {r.periodStart} → {r.periodEnd}
+                        {formatDate(r.periodStart)} → {formatDate(r.periodEnd)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{formatNumber(r.invoiceCount)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatUSD(r.totalSales)}</TableCell>
@@ -168,17 +249,17 @@ export function CommissionSettlementView() {
                       <TableCell className={`text-right tabular-nums ${r.balanceAmount > 0 ? 'text-amber-700' : ''}`}>
                         {formatUSD(r.balanceAmount)}
                       </TableCell>
-                      <TableCell><Badge className={s.cls}>{s.label}</Badge></TableCell>
+                      <TableCell><Badge variant="outline" className={s.cls}>{s.label}</Badge></TableCell>
                       <TableCell>
                         <div className="flex gap-1">
-                          <Button variant="outline" size="sm" onClick={() => doView(r)} title="View details">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => doView(r)} title="View details">
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => setEditingStatus(r)} title="Update status / payment">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingStatus(r)} title="Update status / payment">
                             <Edit3 className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => doDelete(r)} title="Delete">
-                            <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => void doDelete(r)} title="Delete">
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </TableCell>
@@ -187,6 +268,15 @@ export function CommissionSettlementView() {
                 })}
               </TableBody>
             </Table>
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={pagination.goToPage}
+              startIndex={pagination.startIndex}
+              endIndex={pagination.endIndex}
+              totalItems={pagination.totalItems}
+            />
+            </>
           )}
         </CardContent>
       </Card>
@@ -225,7 +315,9 @@ function NewSettlementDialog({
   users: usersApi.User[];
   onCreated: () => void;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const { formatDate } = useDateFormat();
+  // Local calendar date — toISOString() is UTC (yesterday before 07:00).
+  const today = formatLocalDate(new Date(), 'yyyy-MM-dd');
   const firstOfMonth = today.slice(0, 8) + '01';
   const [sellerId, setSellerId] = useState<string>('');
   const [from, setFrom] = useState<string>(firstOfMonth);
@@ -301,7 +393,7 @@ function NewSettlementDialog({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Seller *</Label>
+              <Label>Seller <span className="text-red-500">*</span></Label>
               <Select value={sellerId} onValueChange={setSellerId}>
                 <SelectTrigger><SelectValue placeholder="Pick a seller" /></SelectTrigger>
                 <SelectContent>
@@ -327,7 +419,7 @@ function NewSettlementDialog({
           </div>
 
           <div className="space-y-1">
-            <Label>Period</Label>
+            <Label>Period <span className="text-red-500">*</span></Label>
             <div className="filter-strip">
               <Label className="text-xs text-gray-500 shrink-0">From</Label>
               <DateInput value={from} onChange={setFrom} max={to || today} className="h-9 w-40 text-sm shrink-0" title="From date" />
@@ -400,7 +492,7 @@ function NewSettlementDialog({
                         {preview.lines.map(l => (
                           <TableRow key={l.invoiceId}>
                             <TableCell className="text-xs font-medium">{l.invoiceNo ?? l.invoiceId.slice(0, 8)}</TableCell>
-                            <TableCell className="text-xs text-gray-600">{l.issueDate}</TableCell>
+                            <TableCell className="text-xs text-gray-600">{l.issueDate ? formatDate(l.issueDate) : '—'}</TableCell>
                             <TableCell className="text-right text-xs tabular-nums">{formatUSD(l.saleAmount)}</TableCell>
                             <TableCell className="text-right text-xs tabular-nums text-emerald-700">
                               {formatUSD(l.commissionAmount)}
@@ -439,6 +531,7 @@ function ViewSettlementDialog({
   sellerName: string;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { formatDate } = useDateFormat();
   return (
     <Dialog open={!!full} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl max-h-[85vh] overflow-y-auto">
@@ -451,8 +544,8 @@ function ViewSettlementDialog({
           <div className="space-y-4 text-sm">
             <div className="grid grid-cols-3 gap-3">
               <div><div className="text-xs text-gray-500">Seller</div><div>{sellerName}</div></div>
-              <div><div className="text-xs text-gray-500">Period</div><div>{full.header.periodStart} → {full.header.periodEnd}</div></div>
-              <div><div className="text-xs text-gray-500">Status</div><div><Badge className={STATUS_META[full.header.status].cls}>{STATUS_META[full.header.status].label}</Badge></div></div>
+              <div><div className="text-xs text-gray-500">Period</div><div>{formatDate(full.header.periodStart)} → {formatDate(full.header.periodEnd)}</div></div>
+              <div><div className="text-xs text-gray-500">Status</div><div><Badge variant="outline" className={STATUS_META[full.header.status].cls}>{STATUS_META[full.header.status].label}</Badge></div></div>
               <div><div className="text-xs text-gray-500">Invoices</div><div>{formatNumber(full.header.invoiceCount)}</div></div>
               <div><div className="text-xs text-gray-500">Total Sales</div><div>{formatUSD(full.header.totalSales)}</div></div>
               <div><div className="text-xs text-gray-500">Commission</div><div className="text-emerald-700 font-medium">{formatUSD(full.header.totalCommission)}</div></div>
@@ -517,6 +610,7 @@ function StatusUpdateDialog({
   const [referenceNo, setReferenceNo] = useState('');
   const [remark, setRemark] = useState('');
   const [saving, setSaving] = useState(false);
+  const confirm = useConfirm();
 
   useEffect(() => {
     if (row) {
@@ -550,6 +644,15 @@ function StatusUpdateDialog({
 
   const submit = async () => {
     if (paidError) { toast.error(paidError); return; }
+    if (status === 'CANCELLED' && row.status !== 'CANCELLED') {
+      if (!(await confirm({
+        title: `Cancel settlement ${row.settlementNo}?`,
+        message: "Its invoices are released and become eligible for a new settlement.",
+        confirmLabel: 'Cancel settlement',
+        cancelLabel: 'Back',
+        variant: 'destructive',
+      }))) return;
+    }
     setSaving(true);
     try {
       await commissionSettlement.updateStatus(row.id, {
@@ -582,12 +685,12 @@ function StatusUpdateDialog({
             </div>
             <div>
               <div className="text-gray-500">Currently</div>
-              <div><Badge className={STATUS_META[row.status].cls}>{STATUS_META[row.status].label}</Badge></div>
+              <div><Badge variant="outline" className={STATUS_META[row.status].cls}>{STATUS_META[row.status].label}</Badge></div>
             </div>
           </div>
 
           <div className="space-y-1">
-            <Label>Status *</Label>
+            <Label>Status <span className="text-red-500">*</span></Label>
             <Select value={status} onValueChange={v => setStatus(v as SettlementStatus)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -610,11 +713,10 @@ function StatusUpdateDialog({
 
           {needsPaidAmount && (
             <div className="space-y-1">
-              <Label>Amount received</Label>
-              <Input
-                type="number" min="0" step="0.01"
+              <Label>Amount received <span className="text-red-500">*</span></Label>
+              <NumericInput
                 value={paidAmount}
-                onChange={e => setPaidAmount(e.target.value)}
+                onChange={setPaidAmount}
                 placeholder="e.g. 500.00"
               />
               {paidError && <p className="text-[11px] text-red-600">{paidError}</p>}
@@ -625,7 +727,7 @@ function StatusUpdateDialog({
             {keepsPaymentDate && (
               <div className="space-y-1">
                 <Label>Payment Date</Label>
-                <DateInput value={paymentDate} onChange={setPaymentDate} className="h-9 text-sm" />
+                <DateInput value={paymentDate || null} onChange={v => setPaymentDate(v ?? '')} className="h-9 text-sm" />
                 <p className="text-[11px] text-gray-500">Leave blank for today.</p>
               </div>
             )}

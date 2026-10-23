@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import {
@@ -21,6 +20,10 @@ import { CommissionSettlementView } from './CommissionSettlementView';
 import { formatNumber, formatUSD } from '../../utils/format';
 import * as currencyApi from '../../api/currencySettings';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { ListError } from '../common/ListStates';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { useI18n } from '../../i18n/I18nContext';
+import { format as formatLocalDate } from 'date-fns';
 
 /**
  * v-commission-settlement-mvp — Commission page shell. Two tabs:
@@ -29,7 +32,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
  * which sub-view renders.
  */
 export function Commission() {
+  const { t } = useI18n();
   return (
+    <div className="space-y-6">
+    <div className="page-header-strip">
+      <h1 className="text-3xl font-bold">{t('nav.commission')}</h1>
+    </div>
     <Tabs defaultValue="report" className="w-full">
       <TabsList>
         <TabsTrigger value="report">Commission</TabsTrigger>
@@ -42,13 +50,16 @@ export function Commission() {
         <CommissionSettlementView />
       </TabsContent>
     </Tabs>
+    </div>
   );
 }
 
 /** The by-seller accrued-commission report (formerly the whole
  *  Commission page). Now the first tab under the shell above. */
 function CommissionReport() {
-  const today = new Date().toISOString().slice(0, 10);
+  // Local calendar date — toISOString() is UTC and reads as
+  // yesterday before 07:00 in Cambodia.
+  const today = formatLocalDate(new Date(), 'yyyy-MM-dd');
   const firstOfMonth = today.slice(0, 8) + '01';
   const [from, setFrom] = useState<string>(firstOfMonth);
   const [to, setTo]   = useState<string>(today);
@@ -61,6 +72,7 @@ function CommissionReport() {
    *  that haven't touched the settings row. */
   const [khrPerUsd, setKhrPerUsd] = useState<number>(4100);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -87,8 +99,9 @@ function CommissionReport() {
       if (cs && cs.primaryCurrency === 'USD' && cs.secondaryCurrency === 'KHR' && cs.secondaryRate) {
         setKhrPerUsd(cs.secondaryRate);
       }
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load commission report');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load commission report');
     } finally {
       setLoading(false);
     }
@@ -220,33 +233,41 @@ function CommissionReport() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 shrink-0">
             <CardTitle>By Seller</CardTitle>
             {/* Gear icon opens the same Commission Plans manager
                 embedded in POS Settings — a manager viewing the
                 report can adjust rates without navigating to POS. */}
-            <button
-              type="button"
+            <Button
+              variant="ghost" size="icon" className="h-7 w-7 text-gray-500"
               onClick={() => setSettingsOpen(true)}
-              className="text-gray-400 hover:text-gray-700 transition"
               aria-label="Manage Commission Plans"
               title="Manage Commission Plans"
             >
               <SettingsIcon className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
           {/* Date filter — matches Transactions verbatim (canonical
               style per feedback: From / To labels + DateInput, no
               calendar icon or arrow). */}
           <div className="filter-strip print:hidden">
+            {/* The report reloads on every From/To change (load's deps),
+                so the old Apply button was redundant. The range is
+                required, so the inputs aren't clearable; Clear puts
+                them back to this month. */}
             <Label className="text-xs text-gray-500">From</Label>
-            <DateInput value={from} onChange={setFrom} className="h-9 w-36 text-sm" title="From date" />
+            <DateInput value={from} onChange={v => setFrom(v ?? firstOfMonth)} clearable={false} max={to || undefined} className="h-9 w-36 text-sm" title="From date" />
             <Label className="text-xs text-gray-500">To</Label>
-            <DateInput value={to}   onChange={setTo}   className="h-9 w-36 text-sm" title="To date" />
-            <Button size="sm" onClick={load} disabled={loading} className="h-9">
-              {loading ? 'Loading…' : 'Apply'}
-            </Button>
+            <DateInput value={to}   onChange={v => setTo(v ?? today)}   clearable={false} min={from || undefined} className="h-9 w-36 text-sm" title="To date" />
+            {(from !== firstOfMonth || to !== today) && (
+              <Button
+                size="sm" variant="ghost" className="h-9 shrink-0"
+                onClick={() => { setFrom(firstOfMonth); setTo(today); }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -275,15 +296,21 @@ function CommissionReport() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sellerGroups.length === 0 && (
-                  <TableRow>
+                {loading && sellerGroups.length === 0 && (
+                  <TableBodySkeletonRows columns={9} />
+                )}
+                {!loading && loadError && sellerGroups.length === 0 && (
+                  <ListError colSpan={9} message={loadError} onRetry={() => void load()} />
+                )}
+                {!loading && !loadError && sellerGroups.length === 0 && (
+                  <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={9} className="text-center text-sm text-gray-500 py-8">
                       No sale invoices in this range.
                     </TableCell>
                   </TableRow>
                 )}
                 {sellerGroups.map(s => (
-                  <TableRow key={s.sellerId}>
+                  <TableRow key={s.sellerId} className="hover:bg-gray-50">
                     <TableCell>
                       <div className="font-medium">{s.sellerName}</div>
                       {s.planName && (

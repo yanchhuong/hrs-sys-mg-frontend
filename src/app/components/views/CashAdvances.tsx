@@ -11,7 +11,6 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
@@ -22,6 +21,12 @@ import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import { DocAuditLine } from '../common/DocAuditLine';
 import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import { StatCard } from '../common/StatCard';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { statusBadgeClass } from '../../utils/statusTones';
+import { format as formatLocalDate } from 'date-fns';
 import * as cashAdvancesApi from '../../api/cashAdvances';
 import * as cashAdvancePurposesApi from '../../api/cashAdvancePurposes';
 import * as employeesApi from '../../api/employees';
@@ -31,7 +36,7 @@ import * as receiptsApi from '../../api/receipts';
 import * as receiptPaymentsApi from '../../api/receiptPayments';
 import * as vendorsApi from '../../api/vendors';
 import {
-  ArrowLeftRight, Banknote, Check, Info, Plus, RefreshCw, Search, Settings, Trash2, X,
+  ArrowLeftRight, Banknote, Check, Info, Pencil, Plus, Receipt, RefreshCw, Scale, Search, Settings, Trash2, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CashAdvancePurposesDialog } from '../common/CashAdvancePurposesDialog';
@@ -49,12 +54,14 @@ const STATUS_TABS: { value: '' | cashAdvancesApi.CashAdvanceStatus; label: strin
   { value: 'cancelled',         label: 'Cancelled' },
 ];
 
+// App-wide palette (utils/statusTones): Draft / Cancelled slate,
+// Disbursed blue, Partially Settled orange, Settled green.
 const STATUS_BADGE: Record<cashAdvancesApi.CashAdvanceStatus, string> = {
-  draft:             'bg-slate-100 text-slate-700 border-slate-200',
-  disbursed:         'bg-blue-100 text-blue-700 border-blue-200',
-  partially_settled: 'bg-amber-100 text-amber-700 border-amber-200',
-  settled:           'bg-emerald-100 text-emerald-700 border-emerald-200',
-  cancelled:         'bg-rose-100 text-rose-700 border-rose-200',
+  draft:             statusBadgeClass('draft'),
+  disbursed:         statusBadgeClass('disbursed'),
+  partially_settled: statusBadgeClass('partially_settled'),
+  settled:           statusBadgeClass('settled'),
+  cancelled:         statusBadgeClass('cancelled'),
 };
 
 const COMMON_EXPENSE_CATEGORIES = [
@@ -80,6 +87,7 @@ export function CashAdvances() {
   const { t } = useI18n();
   const [rows, setRows] = useState<cashAdvancesApi.CashAdvance[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'' | cashAdvancesApi.CashAdvanceStatus>('');
   /** Client-side filters layered on top of the server-side status
    *  query. Search is a case-insensitive contains-match against
@@ -91,6 +99,8 @@ export function CashAdvances() {
   const [dateTo, setDateTo] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [detail, setDetail] = useState<cashAdvancesApi.CashAdvance | null>(null);
+  /** Draft being edited — opened from the detail dialog's Edit button. */
+  const [editing, setEditing] = useState<cashAdvancesApi.CashAdvance | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Purpose presets — loaded once on mount + reloaded whenever the
    *  settings dialog changes them so the New Advance form picker
@@ -104,6 +114,7 @@ export function CashAdvances() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await cashAdvancesApi.list({
         status: statusFilter || undefined,
@@ -111,7 +122,7 @@ export function CashAdvances() {
       });
       setRows(res.content ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load cash advances');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load cash advances');
     } finally {
       setLoading(false);
     }
@@ -171,53 +182,55 @@ export function CashAdvances() {
           </TooltipProvider>
         </h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            New Advance
-          </Button>
           <Button
-            variant="outline" size="sm"
+            variant="outline" size="icon"
             onClick={() => setSettingsOpen(true)}
             title="Manage purpose presets"
           >
             <Settings className="h-4 w-4" />
           </Button>
+          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Advance
+          </Button>
         </div>
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 flex-wrap">
-          <Tabs value={statusFilter} onValueChange={v => setStatusFilter(v as typeof statusFilter)}>
-            <TabsList>
-              {STATUS_TABS.map(t => <TabsTrigger key={t.value || 'all'} value={t.value}>{t.label}</TabsTrigger>)}
-            </TabsList>
-          </Tabs>
-          {/* Search + date range strip — mirrors the Bills / Stock
-              pages so the filter UI feels the same across the app.
-              `.filter-strip` gives the same POS-style single-line scroll
-              on tablet / phone. */}
+        <CardHeader className="space-y-0">
+          {/* One filter strip, same as Transactions: search, Status
+              select (was a tab row), From/To, one Clear for all. */}
           <div className="filter-strip">
-            <div className="relative">
+            <div className="relative shrink-0">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search no, employee, purpose…"
-                className="h-9 w-60 pl-7 text-sm"
+                className="h-9 w-64 pl-7 text-sm"
               />
             </div>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+            >
+              {STATUS_TABS.map(o => (
+                <option key={o.value || 'all'} value={o.value}>Status : {o.label}</option>
+              ))}
+            </select>
             <Label className="text-xs text-gray-500">From</Label>
             <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} />
             <Label className="text-xs text-gray-500">To</Label>
             <DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} />
-            {(searchQuery || dateFrom || dateTo) && (
+            {(searchQuery || statusFilter || dateFrom || dateTo) && (
               <Button
-                size="sm" variant="ghost" className="h-9"
-                onClick={() => { setSearchQuery(''); setDateFrom(''); setDateTo(''); }}
+                size="sm" variant="ghost" className="h-9 shrink-0"
+                onClick={() => { setSearchQuery(''); setStatusFilter(''); setDateFrom(''); setDateTo(''); }}
               >
                 Clear
               </Button>
@@ -246,16 +259,20 @@ export function CashAdvances() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pagination.paginatedItems.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="text-center text-sm text-gray-500 py-8">
-                      {loading ? 'Loading…' : 'No cash advances yet — click New Advance to create one.'}
-                    </TableCell>
-                  </TableRow>
+                {loading && rows.length === 0 ? (
+                  <TableBodySkeletonRows columns={10} />
+                ) : loadError && rows.length === 0 ? (
+                  <ListError colSpan={10} message={loadError} onRetry={() => void load()} />
+                ) : pagination.paginatedItems.length === 0 ? (
+                  <ListEmpty
+                    colSpan={10}
+                    noun="cash advances"
+                    filtered={!!(searchQuery || statusFilter || dateFrom || dateTo)}
+                  />
                 ) : pagination.paginatedItems.map(r => (
                   <TableRow
                     key={r.id}
-                    className="cursor-pointer hover:bg-slate-50"
+                    className="cursor-pointer hover:bg-gray-50"
                     onClick={() => setDetail(r)}
                   >
                     <TableCell className="text-xs">
@@ -346,11 +363,23 @@ export function CashAdvances() {
         onChanged={() => void loadPurposes()}
       />
 
+      {editing && (
+        <CashAdvanceFormDialog
+          open={!!editing}
+          onOpenChange={v => { if (!v) setEditing(null); }}
+          editing={editing}
+          purposes={purposes}
+          onPurposesChanged={loadPurposes}
+          onSaved={() => { setEditing(null); void load(); }}
+        />
+      )}
+
       {detail && (
         <CashAdvanceDetailDialog
           advanceId={detail.id}
           onClose={() => setDetail(null)}
           onChanged={() => { void load(); }}
+          onEdit={a => { setDetail(null); setEditing(a); }}
         />
       )}
     </div>
@@ -520,7 +549,7 @@ function CashAdvanceFormDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label className="text-xs">Employee</Label>
+            <Label className="text-xs">Employee <span className="text-red-500">*</span></Label>
             <SearchablePicker
               value={employeeId}
               onChange={setEmployeeId}
@@ -545,7 +574,7 @@ function CashAdvanceFormDialog({
               nothing telling the operator whether what they typed was
               a preset or a brand-new value. */}
           <div className="space-y-1">
-            <Label className="text-xs">Purpose</Label>
+            <Label className="text-xs">Purpose <span className="text-red-500">*</span></Label>
             <SearchablePicker
               value={purpose}
               onChange={setPurpose}
@@ -586,8 +615,8 @@ function CashAdvanceFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Amount</Label>
-              <Input type="number" min={0} step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="text-right" />
+              <Label className="text-xs">Amount <span className="text-red-500">*</span></Label>
+              <NumericInput decimals={currency === 'KHR' ? 0 : 2} value={amount} onChange={setAmount} className="text-right" />
             </div>
             {/* Picker hidden on single-currency tenants — currency is
                 pinned to the primary. Gated on `currencySettings`
@@ -627,8 +656,8 @@ function CashAdvanceFormDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button size="sm" onClick={() => void save()} disabled={saving}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          <Button onClick={() => void save()} disabled={saving}>
             {saving ? 'Saving…' : (editing ? 'Save' : 'Create')}
           </Button>
         </DialogFooter>
@@ -642,11 +671,13 @@ function CashAdvanceFormDialog({
    ==================================================================== */
 
 function CashAdvanceDetailDialog({
-  advanceId, onClose, onChanged,
+  advanceId, onClose, onChanged, onEdit,
 }: {
   advanceId: string;
   onClose: () => void;
   onChanged: () => void;
+  /** Open the edit form for this advance (drafts only). */
+  onEdit: (advance: cashAdvancesApi.CashAdvance) => void;
 }) {
   const { formatDate } = useDateFormat();
   const confirm = useConfirm();
@@ -655,7 +686,7 @@ function CashAdvanceDetailDialog({
   const [newCategory, setNewCategory] = useState('hotel');
   const [newReceiptNo, setNewReceiptNo] = useState('');
   const [newAmount, setNewAmount] = useState('');
-  const [newDate, setNewDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [newDate, setNewDate] = useState(() => formatLocalDate(new Date(), 'yyyy-MM-dd'));
 
   // Receipt No options — feeds the same SearchablePicker the create
   // dialog uses for Purpose. Not a real FK: this manual row's
@@ -745,6 +776,7 @@ function CashAdvanceDetailDialog({
   const canDisburse = advance.status === 'draft';
   const canSettle   = advance.status === 'disbursed' || advance.status === 'partially_settled';
   const canCancel   = advance.status === 'draft';
+  const canEdit     = advance.status === 'draft';
   const canAddExpense = advance.status === 'disbursed' || advance.status === 'partially_settled';
   const isTerminal  = advance.status === 'settled' || advance.status === 'cancelled';
 
@@ -842,31 +874,24 @@ function CashAdvanceDetailDialog({
           <DocAuditLine createdBy={advance.createdByName} updatedBy={advance.updatedByName} className="mt-1" />
         </DialogHeader>
 
-        {/* Money summary */}
-        <div className="grid grid-cols-3 gap-2 text-sm">
-          <div className="rounded-md border p-3">
-            <div className="text-xs uppercase tracking-wide text-gray-500">Advance</div>
-            <div className="font-semibold">{fmtMoney(Number(advance.advanceAmount), advance.currency)}</div>
-          </div>
-          <div className="rounded-md border p-3">
-            <div className="text-xs uppercase tracking-wide text-gray-500">Expenses</div>
-            <div className="font-semibold">{fmtMoney(Number(advance.expenseTotal), advance.currency)}</div>
-          </div>
-          <div className="rounded-md border p-3">
-            <div className="text-xs uppercase tracking-wide text-gray-500">Balance</div>
-            <div className={`font-semibold ${
-              Number(advance.balance) > 0 ? 'text-emerald-700'
-              : Number(advance.balance) < 0 ? 'text-rose-700'
-              : 'text-gray-600'
-            }`}>
-              {fmtMoney(Number(advance.balance), advance.currency)}
-            </div>
-            <div className="text-[11px] text-gray-500 mt-1">
-              {Number(advance.balance) > 0 ? 'Employee returns'
-                : Number(advance.balance) < 0 ? 'Company reimburses'
-                : 'Clean'}
-            </div>
-          </div>
+        {/* Money summary — shared StatCard tiles. */}
+        <div className="stat-strip">
+          <StatCard
+            label="Advance" icon={Banknote} tone="blue"
+            value={fmtMoney(Number(advance.advanceAmount), advance.currency)}
+          />
+          <StatCard
+            label="Expenses" icon={Receipt} tone="amber"
+            value={fmtMoney(Number(advance.expenseTotal), advance.currency)}
+          />
+          <StatCard
+            label="Balance" icon={Scale}
+            tone={Number(advance.balance) > 0 ? 'green' : Number(advance.balance) < 0 ? 'red' : 'purple'}
+            value={fmtMoney(Number(advance.balance), advance.currency)}
+            hint={Number(advance.balance) > 0 ? 'Employee returns'
+              : Number(advance.balance) < 0 ? 'Company reimburses'
+              : 'Clean'}
+          />
         </div>
 
         {/* Expense receipts */}
@@ -961,8 +986,8 @@ function CashAdvanceDetailDialog({
           {canAddExpense && (
             <div className="grid grid-cols-12 gap-2 items-end pt-1">
               <div className="col-span-2 space-y-1">
-                <Label className="text-[11px]">Date</Label>
-                <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} className="h-9 text-sm" />
+                <Label className="text-[11px]">Date <span className="text-red-500">*</span></Label>
+                <DateInput value={newDate || null} onChange={v => setNewDate(v ?? '')} clearable={false} className="h-9 text-sm" />
               </div>
               <div className="col-span-3 space-y-1">
                 <Label className="text-[11px]">Receipt No</Label>
@@ -1020,8 +1045,8 @@ function CashAdvanceDetailDialog({
                 />
               </div>
               <div className="col-span-2 space-y-1">
-                <Label className="text-[11px]">Amount</Label>
-                <Input type="number" min={0} step="0.01" value={newAmount} onChange={e => setNewAmount(e.target.value)} className="h-9 text-sm text-right" />
+                <Label className="text-[11px]">Amount <span className="text-red-500">*</span></Label>
+                <NumericInput decimals={advance.currency === 'KHR' ? 0 : 2} value={newAmount} onChange={setNewAmount} className="h-9 text-sm text-right" />
               </div>
               <div className="col-span-4 space-y-1">
                 <Label className="text-[11px]">Category</Label>
@@ -1053,6 +1078,12 @@ function CashAdvanceDetailDialog({
         )}
 
         <DialogFooter className="gap-2 flex-wrap">
+          {canEdit && (
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => onEdit(advance)}>
+              <Pencil className="h-3.5 w-3.5 mr-1.5" />
+              Edit
+            </Button>
+          )}
           {canCancel && (
             <Button variant="outline" size="sm" className="text-rose-700" disabled={busy}
               onClick={async () => {

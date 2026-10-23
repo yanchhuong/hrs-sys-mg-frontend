@@ -22,6 +22,11 @@ import type {
 } from '../../api/commission';
 import * as usersApi from '../../api/users';
 import { formatMoney, formatNumber } from '../../utils/format';
+import { NumericInput } from '../common/NumericInput';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { useConfirm } from '../../context/ConfirmContext';
+import { statusBadgeClass } from '../../utils/statusTones';
 
 const TYPE_META: Record<CommissionType, { label: string; hint: string; cls: string }> = {
   PER_INVOICE: { label: 'Per Invoice', hint: 'Rate applied to the invoiced total (% or $).',                  cls: 'border-blue-200 bg-blue-50 text-blue-700' },
@@ -30,8 +35,8 @@ const TYPE_META: Record<CommissionType, { label: string; hint: string; cls: stri
 };
 
 const STATUS_META: Record<CommissionStatus, { label: string; cls: string }> = {
-  ACTIVE:   { label: 'Active',   cls: 'bg-green-100 text-green-800' },
-  INACTIVE: { label: 'Inactive', cls: 'bg-gray-100 text-gray-700' },
+  ACTIVE:   { label: 'Active',   cls: statusBadgeClass('active') },
+  INACTIVE: { label: 'Inactive', cls: statusBadgeClass('inactive') },
 };
 
 /**
@@ -44,8 +49,10 @@ export function CommissionSettings() {
   const [rows, setRows] = useState<CommissionProgram[]>([]);
   const [users, setUsers] = useState<usersApi.User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<CommissionProgram | null>(null);
+  const confirm = useConfirm();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,8 +63,9 @@ export function CommissionSettings() {
       ]);
       setRows(plans);
       setUsers((userPage?.data ?? []) as usersApi.User[]);
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load commission plans');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load commission plans');
     } finally {
       setLoading(false);
     }
@@ -74,7 +82,12 @@ export function CommissionSettings() {
   const openNew  = () => { setEditing(null); setDialogOpen(true); };
   const openEdit = (r: CommissionProgram) => { setEditing(r); setDialogOpen(true); };
   const doDelete = async (r: CommissionProgram) => {
-    if (!confirm(`Delete "${r.name}"? Existing payouts stay in reports; new commissions stop accruing.`)) return;
+    if (!(await confirm({
+      title: `Delete "${r.name}"?`,
+      message: 'Existing payouts stay in reports; new commissions stop accruing.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    }))) return;
     try {
       await commission.remove(r.id);
       toast.success('Plan deleted');
@@ -105,10 +118,12 @@ export function CommissionSettings() {
           </div>
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
-            <div className="text-center py-10 text-gray-500 text-sm">
-              No commission plans yet. Click <b>New plan</b> to create one.
-            </div>
+          {loading && rows.length === 0 ? (
+            <TableRowsSkeleton rows={4} columns={6} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
+          ) : rows.length === 0 ? (
+            <ListEmpty noun="commission plans" />
           ) : (
             <Table>
               <TableHeader>
@@ -131,7 +146,7 @@ export function CommissionSettings() {
                         .map(id => userName.get(id) ?? id.slice(0, 8))
                         .join(', ');
                   return (
-                    <TableRow key={r.id}>
+                    <TableRow key={r.id} className="hover:bg-gray-50">
                       <TableCell className="font-medium">{r.name}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={t.cls}>{t.label}</Badge>
@@ -149,15 +164,15 @@ export function CommissionSettings() {
                           : <span title={applies}>{applies}</span>}
                       </TableCell>
                       <TableCell>
-                        <Badge className={s.cls}>{s.label}</Badge>
+                        <Badge variant="outline" className={s.cls}>{s.label}</Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
-                          <Button variant="outline" size="sm" onClick={() => openEdit(r)}>
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => openEdit(r)}>
                             <Edit3 className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="outline" size="sm" onClick={() => doDelete(r)}>
-                            <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" title="Delete" onClick={() => void doDelete(r)}>
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </TableCell>
@@ -259,7 +274,7 @@ function CommissionDialog({
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Name *</Label>
+            <Label htmlFor="name">Name <span className="text-red-500">*</span></Label>
             <Input
               id="name"
               placeholder="e.g. Cashier — 2% of sale"
@@ -271,7 +286,7 @@ function CommissionDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Type *</Label>
+              <Label>Type <span className="text-red-500">*</span></Label>
               <Select value={type} onValueChange={v => setType(v as CommissionType)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -308,13 +323,12 @@ function CommissionDialog({
             </div>
             <div className="space-y-2">
               <Label>Rate {mode === 'PERCENT' ? '(%)' : '($)'}</Label>
-              <Input
-                type="number"
-                min="0"
-                step={mode === 'PERCENT' ? '0.1' : '0.01'}
+              <NumericInput
+                decimals={2}
+                maxInt={mode === 'PERCENT' ? 3 : 10}
                 placeholder={mode === 'PERCENT' ? '2 = 2%' : '0.50'}
                 value={rate}
-                onChange={e => setRate(e.target.value)}
+                onChange={setRate}
               />
             </div>
           </div>
@@ -363,7 +377,7 @@ function CommissionDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
           <Button onClick={submit} disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
-            {editing ? 'Update' : 'Create'}
+            {editing ? 'Save' : 'Create'}
           </Button>
         </DialogFooter>
       </DialogContent>

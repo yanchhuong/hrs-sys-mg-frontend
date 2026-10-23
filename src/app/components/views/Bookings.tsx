@@ -15,12 +15,16 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { DateInput } from '../common/DateInput';
+import { NumericInput } from '../common/NumericInput';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
+import { useConfirm } from '../../context/ConfirmContext';
+import { statusBadgeClass } from '../../utils/statusTones';
 import { SearchablePicker } from '../common/SearchablePicker';
 import {
   Plus, Search, Loader2, Ticket, CheckCircle2, DollarSign, Undo2, X,
-  Ban, Trash2, Settings, Info,
+  Ban, Trash2, Settings, Info, Eye,
   Image as ImageIconLucide,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -75,8 +79,12 @@ export function Bookings() {
 
   const [rows, setRows] = useState<bookingsApi.Booking[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<bookingsApi.BookingStatus | 'all'>('all');
   const [search, setSearch] = useState('');
+  /** Client-side From/To range on bookingDate ('YYYY-MM-DD', lex-compare). */
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [items, setItems] = useState<paymentPlanItemsApi.PaymentPlanItem[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -109,8 +117,9 @@ export function Bookings() {
       setItems(its.filter(i => i.active));
       setSchedules(ss);
       setTrips(ts);
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load bookings');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load bookings');
     } finally { setLoading(false); }
   }, [statusFilter]);
 
@@ -138,8 +147,10 @@ export function Bookings() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter(r => {
+      if (dateFrom && r.bookingDate < dateFrom) return false;
+      if (dateTo   && r.bookingDate > dateTo)   return false;
+      if (!q) return true;
       const cust = r.customerId ? customersById.get(r.customerId)?.name ?? '' : '';
       const item = r.itemId ? itemsById.get(r.itemId)?.name ?? '' : '';
       return (
@@ -148,7 +159,8 @@ export function Bookings() {
         item.toLowerCase().includes(q)
       );
     });
-  }, [rows, search, customersById, itemsById]);
+  }, [rows, search, dateFrom, dateTo, customersById, itemsById]);
+  const isFiltered = !!(search || statusFilter !== 'all' || dateFrom || dateTo);
 
   const detail = useMemo(
     () => (detailId ? rows.find(r => r.id === detailId) ?? null : null),
@@ -157,7 +169,7 @@ export function Bookings() {
 
   // v-receivables-pagination-consistency — 15 rows/page matches Plans.
   const pagination = usePagination(filtered, 15);
-  useEffect(() => { pagination.resetPage(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search, statusFilter]);
+  useEffect(() => { pagination.resetPage(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [search, statusFilter, dateFrom, dateTo]);
 
   return (
     <div className="space-y-6">
@@ -217,23 +229,39 @@ export function Bookings() {
 
       <Card>
         <CardHeader className="pb-3">
+          {/* One filter strip, same as Transactions: search, Status
+              select (was a tab row), From/To on booking date, one Clear. */}
           <div className="filter-strip">
-            <div className="relative flex-1 min-w-[220px]">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 placeholder="Search booking #, customer, item"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-8"
+                className="h-9 w-64 pl-7 text-sm"
               />
             </div>
-            <Tabs value={statusFilter} onValueChange={v => setStatusFilter(v as bookingsApi.BookingStatus | 'all')}>
-              <TabsList>
-                <TabsTrigger value="all">All</TabsTrigger>
-                {(Object.entries(bookingsApi.BOOKING_STATUS_META) as [bookingsApi.BookingStatus, { label: string }][])
-                  .map(([k, m]) => <TabsTrigger key={k} value={k}>{m.label}</TabsTrigger>)}
-              </TabsList>
-            </Tabs>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value as bookingsApi.BookingStatus | 'all')}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+            >
+              <option value="all">Status : All</option>
+              {(Object.entries(bookingsApi.BOOKING_STATUS_META) as [bookingsApi.BookingStatus, { label: string }][])
+                .map(([k, m]) => <option key={k} value={k}>Status : {m.label}</option>)}
+            </select>
+            <Label className="text-xs text-gray-500">From</Label>
+            <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} />
+            <Label className="text-xs text-gray-500">To</Label>
+            <DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} />
+            {isFiltered && (
+              <Button
+                size="sm" variant="ghost" className="h-9 shrink-0"
+                onClick={() => { setSearch(''); setStatusFilter('all'); setDateFrom(''); setDateTo(''); }}
+              >
+                Clear
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -255,18 +283,12 @@ export function Bookings() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center text-xs text-gray-500 py-6">
-                      <Loader2 className="h-4 w-4 animate-spin inline mr-2" /> Loading…
-                    </TableCell>
-                  </TableRow>
+                {loading && rows.length === 0 ? (
+                  <TableBodySkeletonRows columns={8} />
+                ) : loadError && rows.length === 0 ? (
+                  <ListError colSpan={8} message={loadError} onRetry={() => void load()} />
                 ) : filtered.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center text-xs text-gray-500 py-8">
-                      No bookings yet. Click <b>+ New booking</b> to get started.
-                    </TableCell>
-                  </TableRow>
+                  <ListEmpty colSpan={8} noun="bookings" filtered={isFiltered} />
                 ) : pagination.paginatedItems.map(r => {
                   const item = r.itemId ? itemsById.get(r.itemId) : null;
                   const picks = item?.options?.filter(o => r.selectedOptionIds.includes(o.id)) ?? [];
@@ -315,15 +337,17 @@ export function Bookings() {
                           <span className="text-gray-400">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs">{r.bookingDate}</TableCell>
+                      <TableCell className="text-xs">{formatDate(r.bookingDate)}</TableCell>
                       <TableCell className="text-right tabular-nums">${formatMoney(r.amount)}</TableCell>
                       <TableCell className="text-center">
-                        <Badge className={bookingsApi.BOOKING_STATUS_META[r.status].badge}>
+                        <Badge variant="outline" className={statusBadgeClass(r.status)}>
                           {bookingsApi.BOOKING_STATUS_META[r.status].label}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                        <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => setDetailId(r.id)}>Open</Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Open" onClick={() => setDetailId(r.id)}>
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );
@@ -510,7 +534,7 @@ function CreateBookingDialogContent({
 
   // v-session-picker-past — a past session may be SELECTED so the
   // operator can inspect its seat map / who booked what (history
-  // view), but Continue to Payment stays disabled so no new
+  // view), but Create booking stays disabled so no new
   // booking lands against a session that already happened.
   const isPastTripSelected = ((): boolean => {
     if (!tripId) return false;
@@ -684,7 +708,7 @@ function CreateBookingDialogContent({
                 <span className="tabular-nums font-semibold text-2xl text-gray-300">$0.00</span>
               </div>
               <Button className="w-full mt-3 h-11 bg-indigo-600 hover:bg-indigo-700" disabled>
-                Continue to Payment
+                Create booking
               </Button>
             </div>
           </div>
@@ -706,7 +730,7 @@ function CreateBookingDialogContent({
           </div>
           <div className="space-y-1">
             <Label>Amount <span className="text-red-500">*</span></Label>
-            <Input type="number" step="0.01" min="0" value={amount} onChange={e => setAmount(e.target.value)}
+            <NumericInput value={amount} onChange={setAmount}
               className="text-right tabular-nums" placeholder="0.00" />
           </div>
           <div className="space-y-1">
@@ -849,7 +873,7 @@ function CreateBookingDialogContent({
                 onClick={handleSave}
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
-                Continue to Payment
+                Create booking
               </Button>
             </div>
           </div>
@@ -860,6 +884,15 @@ function CreateBookingDialogContent({
         <Button variant="outline" onClick={onSaved} disabled={saving}>
           <X className="h-3.5 w-3.5 mr-1" /> Cancel
         </Button>
+        {/* The plain (no-options) property form has no in-panel submit
+            like the seat / option panels do, so its Create button lives
+            here — without it a plain-property booking could not be saved. */}
+        {pickedItem && pickedItemOptions.length === 0 && (
+          <Button onClick={handleSave} disabled={saving || !canSave}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
+            Create booking
+          </Button>
+        )}
       </DialogFooter>
     </DialogContent>
   );
@@ -909,7 +942,7 @@ function SeatMapPanel({
   canSave: boolean;
   /** v-session-picker-past — true when the picked session is
    *  historical (view-only). Renders the "not bookable" hint
-   *  above Continue to Payment. */
+   *  above Create booking. */
   isPastTripSelected: boolean;
 }) {
   // v-session-picker-date-format — Session dropdown formats trip
@@ -1019,7 +1052,7 @@ function SeatMapPanel({
                             {/* v-session-picker-past — selectable so
                                 the operator can inspect who booked
                                 what (seat map still hydrates for a
-                                past tripId). Continue to Payment is
+                                past tripId). Create booking is
                                 gated separately via canSave. */}
                             {past.map(t => (
                               <SelectItem key={t.id} value={t.id}>
@@ -1085,7 +1118,7 @@ function SeatMapPanel({
             onClick={onSubmit}
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : null}
-            Continue to Payment
+            Create booking
           </Button>
         </div>
       </div>
@@ -1109,10 +1142,19 @@ function BookingDetailDialog({
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
+  const { formatDate } = useDateFormat();
   const picks = (item?.options ?? []).filter(o => booking.selectedOptionIds.includes(o.id));
 
   const doTransition = async (target: bookingsApi.BookingStatus, verb: string) => {
-    if (!confirm(`${verb} booking ${booking.bookingNo}?`)) return;
+    // Cancel / Refund undo the booking → destructive styling.
+    const destructive = target === 'cancelled' || target === 'refunded';
+    if (!(await confirm({
+      title: `${verb} booking ${booking.bookingNo}?`,
+      confirmLabel: verb === 'Mark paid on' ? 'Mark as Paid' : verb,
+      cancelLabel: 'Back',
+      variant: destructive ? 'destructive' : 'default',
+    }))) return;
     setBusy(true);
     try {
       await bookingsApi.setStatus(booking.id, target);
@@ -1125,7 +1167,12 @@ function BookingDetailDialog({
   };
 
   const doDelete = async () => {
-    if (!confirm(`Delete booking ${booking.bookingNo}? This cannot be undone.`)) return;
+    if (!(await confirm({
+      title: `Delete booking ${booking.bookingNo}?`,
+      message: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    }))) return;
     setBusy(true);
     try {
       await bookingsApi.remove(booking.id);
@@ -1152,12 +1199,12 @@ function BookingDetailDialog({
           <DialogTitle className="inline-flex items-center gap-2">
             <Ticket className="h-4 w-4 text-indigo-600" />
             Booking {booking.bookingNo}
-            <Badge className={`ml-2 ${meta.badge}`}>{meta.label}</Badge>
+            <Badge variant="outline" className={`ml-2 ${statusBadgeClass(booking.status)}`}>{meta.label}</Badge>
           </DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div><Label className="text-xs">Customer</Label><div>{customer?.name ?? <span className="text-gray-400">—</span>}</div></div>
-          <div><Label className="text-xs">Booking Date</Label><div>{booking.bookingDate}</div></div>
+          <div><Label className="text-xs">Booking Date</Label><div>{formatDate(booking.bookingDate)}</div></div>
           <div className="col-span-2"><Label className="text-xs">Property</Label><div>{item?.name ?? <span className="text-gray-400">—</span>}</div></div>
           {picks.length > 0 && (
             <div className="col-span-2">
@@ -1166,7 +1213,7 @@ function BookingDetailDialog({
             </div>
           )}
           <div><Label className="text-xs">Amount</Label><div className="tabular-nums font-semibold">${formatMoney(booking.amount)}</div></div>
-          <div><Label className="text-xs">Paid Date</Label><div>{booking.paidDate ?? <span className="text-gray-400">—</span>}</div></div>
+          <div><Label className="text-xs">Paid Date</Label><div>{booking.paidDate ? formatDate(booking.paidDate) : <span className="text-gray-400">—</span>}</div></div>
           {booking.notes && (
             <div className="col-span-2"><Label className="text-xs">Notes</Label><div className="text-xs text-gray-700 whitespace-pre-wrap">{booking.notes}</div></div>
           )}

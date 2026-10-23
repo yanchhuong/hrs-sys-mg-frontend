@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import { toast } from 'sonner';
 import {
   Handshake, Wallet, ReceiptText, Package, DollarSign,
-  Plus, Loader2, RefreshCw, Trash2, Edit3, Eye, Copy, Printer, Info,
+  Plus, Loader2, RefreshCw, Trash2, Edit3, Eye, Copy, Printer, Info, Search,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
@@ -21,6 +21,14 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { DateInput } from '../common/DateInput';
+import { Pagination } from '../common/Pagination';
+import { ListEmpty, ListError } from '../common/ListStates';
+import { TableRowsSkeleton } from '../common/LoadingSkeletons';
+import { usePagination } from '../../hooks/usePagination';
+import { useConfirm } from '../../context/ConfirmContext';
+import { useDateFormat } from '../../context/DateFormatContext';
+import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
+import { format as formatLocalDate } from 'date-fns';
 import { StatCard } from '../common/StatCard';
 import { StockItemPicker } from '../common/StockItemPicker';
 import { SearchablePicker, type PickerOption } from '../common/SearchablePicker';
@@ -50,6 +58,10 @@ export function Consignment() {
   // ("ការទូរទាត់").
   const { t } = useI18n();
   return (
+    <div className="space-y-6">
+    <div className="page-header-strip">
+      <h1 className="text-3xl font-bold km-title">{t('nav.consignment')}</h1>
+    </div>
     <Tabs defaultValue="report" className="w-full">
       <TabsList>
         {/* km-title flips these two labels to Moul (the display
@@ -67,23 +79,25 @@ export function Consignment() {
         <ConsignmentSettlementView />
       </TabsContent>
     </Tabs>
+    </div>
   );
 }
 
+// App-wide palette (utils/statusTones) — used on outline Badges.
 const CONSIGN_TONE: Record<consignmentsApi.ConsignmentStatus, string> = {
-  draft:              'bg-gray-100 text-gray-700',
-  active:             'bg-emerald-100 text-emerald-800',
-  partially_settled:  'bg-amber-100 text-amber-800',
-  settled:            'bg-blue-100 text-blue-800',
-  closed:             'bg-slate-200 text-slate-700',
-  cancelled:          'bg-red-100 text-red-700',
+  draft:              statusBadgeClass('draft'),
+  active:             statusBadgeClass('active'),
+  partially_settled:  statusBadgeClass('partially_settled'),
+  settled:            statusBadgeClass('settled'),
+  closed:             statusBadgeClass('closed'),
+  cancelled:          statusBadgeClass('cancelled'),
 };
 
 const SETTLE_TONE: Record<settlementsApi.SettlementStatus, string> = {
-  draft:     'bg-gray-100 text-gray-700',
-  pending:   'bg-amber-100 text-amber-800',
-  paid:      'bg-green-100 text-green-800',
-  cancelled: 'bg-red-100 text-red-700',
+  draft:     statusBadgeClass('draft'),
+  pending:   statusBadgeClass('pending'),
+  paid:      statusBadgeClass('paid'),
+  cancelled: statusBadgeClass('cancelled'),
 };
 
 /* ------------------------------------------------------------------ */
@@ -109,7 +123,9 @@ function ConsignmentReport() {
   // pre-filled from the source. Supplier is deliberately left empty
   // so the operator picks a (possibly different) partner.
   const [copyFrom, setCopyFrom] = useState<consignmentsApi.Consignment | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<consignmentsApi.Consignment | null>(null);
+  const confirm = useConfirm();
+  const { formatDate } = useDateFormat();
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Settlement refs per consignment — powers the "Ref No." column
   // (multiple settlements can attach to one consignment as it goes
   // through partial → paid rounds). Map keyed by consignmentId,
@@ -150,8 +166,9 @@ function ConsignmentReport() {
         grouped.set(st.consignmentId, arr);
       }
       setRefsByConsignment(grouped);
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load consignments');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load consignments');
     } finally {
       setLoading(false);
     }
@@ -211,11 +228,18 @@ function ConsignmentReport() {
     };
   }, { count: 0, active: 0, qty: 0, sold: 0, gross: 0, soldGross: 0, comm: 0, paidComm: 0 }), [filteredRows]);
 
+  const pagination = usePagination(filteredRows, 20);
+
   const doDelete = async (c: consignmentsApi.Consignment) => {
+    if (!(await confirm({
+      title: `Delete ${c.consignmentNo}?`,
+      message: 'Line items go with it. Settlement records referencing this consignment stay behind (they carry their own copy of the amounts) — remove those separately if needed.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    }))) return;
     try {
       await consignmentsApi.remove(c.id);
       toast.success(`Deleted ${c.consignmentNo}`);
-      setDeleteTarget(null);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');
@@ -240,17 +264,20 @@ function ConsignmentReport() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           {/* Filter strip — keyword search + From/To date range.
               Same style Commission / Transactions use so the row
               reads as a familiar shape across list pages. */}
           <div className="filter-strip">
-            <Input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search by No, consignee, warehouse, or notes…"
-              className="h-9 w-64 text-sm"
-            />
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by No, consignee, warehouse, or notes…"
+                className="h-9 w-64 pl-7 text-sm"
+              />
+            </div>
             <Label className="text-xs text-gray-500">From</Label>
             <DateInput
               value={dateFrom || null}
@@ -285,13 +312,14 @@ function ConsignmentReport() {
           </div>
         </CardHeader>
         <CardContent>
-          {filteredRows.length === 0 ? (
-            <div className="text-center py-10 text-gray-500 text-sm">
-              {rows.length === 0
-                ? <>No consignments yet. Click <b>New consignment</b> to record a consignee agreement.</>
-                : <>No consignments match the current filter.</>}
-            </div>
+          {loading && rows.length === 0 ? (
+            <TableRowsSkeleton columns={10} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
+          ) : filteredRows.length === 0 ? (
+            <ListEmpty noun="consignments" filtered={!!(search || dateFrom || dateTo)} />
           ) : (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -308,7 +336,7 @@ function ConsignmentReport() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRows.map(c => {
+                {pagination.paginatedItems.map(c => {
                   let qty = 0, sold = 0, gross = 0, soldGross = 0, comm = 0, paidComm = 0;
                   for (const it of c.items) {
                     const q     = it.receivedQty ?? 0;
@@ -339,11 +367,11 @@ function ConsignmentReport() {
                   const canMutate = c.status === 'draft';
                   const refs = refsByConsignment.get(c.id) ?? [];
                   return (
-                    <TableRow key={c.id}>
+                    <TableRow key={c.id} className="hover:bg-gray-50">
                       <TableCell className="font-medium tabular-nums">{c.consignmentNo}</TableCell>
                       <TableCell>{c.consigneeName ?? '—'}</TableCell>
                       <TableCell>{c.warehouseName ?? '—'}</TableCell>
-                      <TableCell className="text-xs text-gray-600">{c.startDate}</TableCell>
+                      <TableCell className="text-xs text-gray-600">{c.startDate ? formatDate(c.startDate) : '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatNumber(qty)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatUSD(gross)}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium text-emerald-700">
@@ -365,7 +393,7 @@ function ConsignmentReport() {
                           )}
                       </TableCell>
                       <TableCell>
-                        <Badge className={CONSIGN_TONE[c.status]}>
+                        <Badge variant="outline" className={CONSIGN_TONE[c.status]}>
                           {consignmentsApi.CONSIGNMENT_STATUS_LABELS[c.status]}
                         </Badge>
                       </TableCell>
@@ -375,7 +403,7 @@ function ConsignmentReport() {
                               consignments stay inspectable + printable.
                               Opens the same ConsignmentDialog layout
                               wrapped in a disabled fieldset. */}
-                          <Button variant="outline" size="sm"
+                          <Button variant="ghost" size="icon" className="h-7 w-7"
                             onClick={() => setViewing(c)}
                             title="View">
                             <Eye className="h-3.5 w-3.5" />
@@ -386,7 +414,7 @@ function ConsignmentReport() {
                               exists. Opens a new-consignment dialog
                               with items pre-filled but supplier blank
                               so the operator picks a new partner. */}
-                          <Button variant="outline" size="sm"
+                          <Button variant="ghost" size="icon" className="h-7 w-7"
                             onClick={() => setCopyFrom(c)}
                             title="Copy — new consignment, same items">
                             <Copy className="h-3.5 w-3.5" />
@@ -398,15 +426,15 @@ function ConsignmentReport() {
                               audit trail apart. */}
                           {canMutate && (
                             <>
-                              <Button variant="outline" size="sm"
+                              <Button variant="ghost" size="icon" className="h-7 w-7"
                                 onClick={() => { setEditing(c); setDialogOpen(true); }}
                                 title="Edit">
                                 <Edit3 className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="outline" size="sm"
-                                onClick={() => setDeleteTarget(c)}
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => void doDelete(c)}
                                 title="Delete">
-                                <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </>
                           )}
@@ -417,6 +445,15 @@ function ConsignmentReport() {
                 })}
               </TableBody>
             </Table>
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={pagination.goToPage}
+              startIndex={pagination.startIndex}
+              endIndex={pagination.endIndex}
+              totalItems={pagination.totalItems}
+            />
+            </>
           )}
         </CardContent>
       </Card>
@@ -477,26 +514,6 @@ function ConsignmentReport() {
         />
       )}
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete {deleteTarget?.consignmentNo}?</DialogTitle>
-            <DialogDescription>
-              Line items go with it. Settlement records referencing this consignment stay behind
-              (they carry their own copy of the amounts) — remove those separately if needed.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteTarget && doDelete(deleteTarget)}
-            >
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -535,8 +552,10 @@ function printConsignmentNote(
     totalComm   += rowComm;
     return { it, qty, price, supplier, commPerUnit, total, rowComm };
   });
+  // Not rounded here — the template prints it with toFixed(2), so a
+  // Math.round() first turned 12.4% into "12.00%".
   const effectiveRatePct = totalRetail > 0
-    ? Math.round((totalComm / totalRetail) * 100)
+    ? (totalComm / totalRetail) * 100
     : 0;
   const rowsHtml = rowMath.map((r, i) => {
     const item = itemsById.get(r.it.stockItemId);
@@ -962,7 +981,7 @@ function ConsignmentDialog({
   const [consigneeId, setConsigneeId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
   const [status, setStatus] = useState<consignmentsApi.ConsignmentStatus>('draft');
-  const [startDate, setStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState<string>(() => formatLocalDate(new Date(), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState<string>('');
   /** Bulk-apply commission % — types a rate here, hits Apply, and
    *  every non-empty line (Retail > 0) gets its per-unit commission
@@ -1058,7 +1077,7 @@ function ConsignmentDialog({
       // button commits a live agreement (matches operator intent when
       // duplicating an in-flight consignment).
       setStatus('active');
-      setStartDate(new Date().toISOString().slice(0, 10));
+      setStartDate(formatLocalDate(new Date(), 'yyyy-MM-dd'));
       setEndDate('');
       // Copy opens in % mode — same reasoning as Edit: the operator is
       // re-reading an existing agreement's commission structure.
@@ -1105,7 +1124,7 @@ function ConsignmentDialog({
       // footer button, so if the operator hits the primary Create
       // action they get a live agreement, not a draft.
       setStatus('active');
-      setStartDate(new Date().toISOString().slice(0, 10));
+      setStartDate(formatLocalDate(new Date(), 'yyyy-MM-dd'));
       setEndDate('');
       // Create starts in $ mode with an empty bulk field — no data
       // to derive a rate from yet.
@@ -1300,43 +1319,6 @@ function ConsignmentDialog({
                     ? `Editing ${editing.consignmentNo}`
                     : 'Server auto-mints the consignment number (C-YYMM-001) on save.'}
               </DialogDescription>
-            </div>
-            {/* Actions moved from the bottom Footer to the top-right.
-                readOnly: [Print, Close] — same layout, no mutation.
-                Edit:    [Print, Cancel, Save]
-                Create:  [Cancel, Save Draft, Create]
-                Print is edit / view only (nothing to print on a fresh
-                blank line). mr-8 reserves space for Radix's × close. */}
-            <div className="flex items-center gap-2 shrink-0 mr-8">
-              {editing && (
-                <Button variant="outline" size="sm"
-                  onClick={() => printConsignmentNote(editing, itemById)}>
-                  <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
-                </Button>
-              )}
-              {readOnly ? (
-                <Button variant="outline" size="sm"
-                  onClick={() => onOpenChange(false)}>
-                  Close
-                </Button>
-              ) : (
-                <>
-                  <Button variant="outline" size="sm"
-                    onClick={() => onOpenChange(false)} disabled={saving}>
-                    Cancel
-                  </Button>
-                  {!editing && (
-                    <Button variant="outline" size="sm"
-                      onClick={() => save('draft')} disabled={saving}>
-                      Save as Draft
-                    </Button>
-                  )}
-                  <Button size="sm" onClick={() => save()} disabled={saving}>
-                    {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-                    {editing ? 'Save changes' : 'Create'}
-                  </Button>
-                </>
-              )}
             </div>
           </div>
         </div>
@@ -1761,6 +1743,38 @@ function ConsignmentDialog({
         </fieldset>
         </div>{/* end scrolling body */}
 
+        {/* Actions in a DialogFooter under the scrolling body.
+            readOnly: [Print, Close] · Edit: [Print, Cancel, Save]
+            Create: [Cancel, Save as Draft, Create]. */}
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
+          {editing && (
+            <Button variant="outline" className="sm:mr-auto"
+              onClick={() => printConsignmentNote(editing, itemById)}>
+              <Printer className="h-4 w-4 mr-1.5" /> Print
+            </Button>
+          )}
+          {readOnly ? (
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+                Cancel
+              </Button>
+              {!editing && (
+                <Button variant="outline" onClick={() => save('draft')} disabled={saving}>
+                  Save as Draft
+                </Button>
+              )}
+              <Button onClick={() => save()} disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
+                {editing ? 'Save' : 'Create'}
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+
         {/* Quick-add Supplier sub-dialog. Mirrors POS Customer quick-add:
             resolves the picker's pending onCreate promise on save so
             the SearchablePicker closes with the new option selected,
@@ -1885,7 +1899,9 @@ function ConsignmentSettlementView() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<settlementsApi.ConsignmentSettlement | null>(null);
   const [viewing, setViewing] = useState<settlementsApi.ConsignmentSettlement | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<settlementsApi.ConsignmentSettlement | null>(null);
+  const confirm = useConfirm();
+  const { formatDate } = useDateFormat();
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Client-side filters — same shape as the Consignment tab's
   // filter row. Search matches settlementNo / consignmentNo /
   // consigneeName / notes. Date range checks settlementDate.
@@ -1906,8 +1922,9 @@ function ConsignmentSettlementView() {
       setConsignments(c.content ?? []);
       setConsignees(v.content ?? []);
       setItems(i.content ?? []);
+      setLoadError(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load settlements');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load settlements');
     } finally {
       setLoading(false);
     }
@@ -1980,11 +1997,18 @@ function ConsignmentSettlementView() {
     return { sold, remain, remark };
   };
 
+  const pagination = usePagination(filteredRows, 20);
+
   const doDelete = async (r: settlementsApi.ConsignmentSettlement) => {
+    if (!(await confirm({
+      title: `Delete ${r.settlementNo}?`,
+      message: 'This removes the settlement record. If the parent consignment was flipped to "settled" because of this row, its status won\'t roll back — adjust manually.',
+      confirmLabel: 'Delete',
+      variant: 'destructive',
+    }))) return;
     try {
       await settlementsApi.remove(r.id);
       toast.success(`Deleted ${r.settlementNo}`);
-      setDeleteTarget(null);
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');
@@ -2003,17 +2027,20 @@ function ConsignmentSettlementView() {
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           {/* Filter strip — keyword search + From/To date range on
               settlementDate. Same shape the Consignment tab uses so
               the two lists read as one system. */}
           <div className="filter-strip">
-            <Input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search by No, consignment, consignee, or notes…"
-              className="h-9 w-64 text-sm"
-            />
+            <div className="relative shrink-0">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by No, consignment, consignee, or notes…"
+                className="h-9 w-64 pl-7 text-sm"
+              />
+            </div>
             <Label className="text-xs text-gray-500">From</Label>
             <DateInput
               value={dateFrom || null}
@@ -2051,19 +2078,16 @@ function ConsignmentSettlementView() {
           </div>
         </CardHeader>
         <CardContent>
-          {filteredRows.length === 0 ? (
-            <div className="text-center py-10 text-gray-500 text-sm">
-              {rows.length === 0
-                ? (
-                  <>
-                    No settlements yet.
-                    {consignments.length === 0
-                      ? <> Create a consignment on the previous tab before you can settle one.</>
-                      : <> Click <b>New settlement</b> to record a period payout.</>}
-                  </>
-                )
-                : <>No settlements match the current filter.</>}
-            </div>
+          {loading && rows.length === 0 ? (
+            <TableRowsSkeleton columns={13} />
+          ) : loadError && rows.length === 0 ? (
+            <ListError message={loadError} onRetry={() => void load()} />
+          ) : filteredRows.length === 0 ? (
+            <ListEmpty noun="settlements" filtered={!!(search || dateFrom || dateTo)}>
+              {rows.length === 0 && consignments.length === 0 && (
+                <p className="text-xs text-gray-400 mt-1">Create a consignment on the previous tab before you can settle one.</p>
+              )}
+            </ListEmpty>
           ) : (
             <div className="overflow-x-auto">
             <Table>
@@ -2072,7 +2096,7 @@ function ConsignmentSettlementView() {
                   <TableHead>Settlement No</TableHead>
                   <TableHead>Consignment</TableHead>
                   <TableHead>Consignee</TableHead>
-                  <TableHead>Period</TableHead>
+                  <TableHead>Settlement Date</TableHead>
                   <TableHead className="text-right">Sold</TableHead>
                   <TableHead className="text-right">Remain</TableHead>
                   <TableHead>Remark</TableHead>
@@ -2085,7 +2109,7 @@ function ConsignmentSettlementView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRows.map(r => {
+                {pagination.paginatedItems.map(r => {
                   // Once a settlement transitions from draft to any
                   // downstream status (pending/paid/cancelled), the
                   // sold_qty bumps + stock-return disposition have
@@ -2095,21 +2119,22 @@ function ConsignmentSettlementView() {
                   const canMutate = r.status === 'draft';
                   const meta = rowMeta(r);
                   return (
-                  <TableRow key={r.id}>
+                  <TableRow key={r.id} className="hover:bg-gray-50">
                     <TableCell className="font-medium tabular-nums">{r.settlementNo}</TableCell>
                     <TableCell className="tabular-nums text-xs">{r.consignmentNo ?? '—'}</TableCell>
                     <TableCell>{r.consigneeName ?? '—'}</TableCell>
+                    {/* Was "periodFrom → periodTo", but settlements are
+                        one-shot now and both ends are always the same
+                        day — show the settlement date once instead. */}
                     <TableCell className="text-xs text-gray-600">
-                      {r.periodFrom} → {r.periodTo}
+                      {r.settlementDate ? formatDate(r.settlementDate) : '—'}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{meta.sold || '—'}</TableCell>
                     <TableCell className="text-right tabular-nums">{meta.remain || '—'}</TableCell>
                     <TableCell>
                       {meta.remark
-                        ? <Badge className={
-                            meta.remark === 'Partial'
-                              ? 'bg-amber-100 text-amber-800 hover:bg-amber-100'
-                              : 'bg-sky-100 text-sky-800 hover:bg-sky-100'
+                        ? <Badge variant="outline" className={
+                            meta.remark === 'Partial' ? TONE_CLASS.warning : TONE_CLASS.info
                           }>{meta.remark}</Badge>
                         : <span className="text-gray-400">—</span>}
                     </TableCell>
@@ -2120,13 +2145,13 @@ function ConsignmentSettlementView() {
                       {formatUSD(r.netAmount)}
                     </TableCell>
                     <TableCell>
-                      <Badge className={SETTLE_TONE[r.status]}>
+                      <Badge variant="outline" className={SETTLE_TONE[r.status]}>
                         {settlementsApi.SETTLEMENT_STATUS_LABELS[r.status]}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="outline" size="sm" onClick={() => setViewing(r)} title="View details">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setViewing(r)} title="View details">
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
                         {/* Only draft settlements are mutable — see
@@ -2135,15 +2160,15 @@ function ConsignmentSettlementView() {
                             paid settlement. */}
                         {canMutate && (
                           <>
-                            <Button variant="outline" size="sm"
+                            <Button variant="ghost" size="icon" className="h-7 w-7"
                               onClick={() => { setEditing(r); setDialogOpen(true); }}
                               title="Edit">
                               <Edit3 className="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="outline" size="sm"
-                              onClick={() => setDeleteTarget(r)}
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => void doDelete(r)}
                               title="Delete">
-                              <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </>
                         )}
@@ -2155,6 +2180,16 @@ function ConsignmentSettlementView() {
               </TableBody>
             </Table>
             </div>
+          )}
+          {filteredRows.length > 0 && (
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={pagination.goToPage}
+              startIndex={pagination.startIndex}
+              endIndex={pagination.endIndex}
+              totalItems={pagination.totalItems}
+            />
           )}
         </CardContent>
       </Card>
@@ -2189,24 +2224,6 @@ function ConsignmentSettlementView() {
         />
       )}
 
-      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete {deleteTarget?.settlementNo}?</DialogTitle>
-            <DialogDescription>
-              This removes the settlement record. If the parent consignment was flipped to
-              "settled" because of this row, its status won't roll back — adjust manually.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive"
-              onClick={() => deleteTarget && doDelete(deleteTarget)}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -2239,7 +2256,7 @@ function SettlementDialog({
     for (const it of items) m.set(it.id, it);
     return m;
   }, [items]);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = formatLocalDate(new Date(), 'yyyy-MM-dd');
   const [consignmentId, setConsignmentId] = useState('');
   const [settlementDate, setSettlementDate] = useState<string>(today);
   // Period from/to fields retired from the UI — settlements are
@@ -2527,44 +2544,6 @@ function SettlementDialog({
                     ? `Editing ${editing.settlementNo}`
                     : 'New settlement — net = gross minus commission minus deductions.'}
               </DialogDescription>
-            </div>
-            {/* Actions moved from the bottom Footer to the top-right.
-                readOnly: [Print, Close]
-                Edit:     [Cancel, Save changes]
-                Create:   [Cancel, Save as Draft, Create]
-                Print is view-only (Edit doesn't include it — matches
-                the Consignment dialog's rule). mr-8 reserves space
-                for Radix's built-in × close. */}
-            <div className="flex items-center gap-2 shrink-0 mr-8">
-              {readOnly && editing && (
-                <Button variant="outline" size="sm"
-                  onClick={() => printSettlementNote(editing, consignments, itemById)}>
-                  <Printer className="h-3.5 w-3.5 mr-1.5" /> Print
-                </Button>
-              )}
-              {readOnly ? (
-                <Button variant="outline" size="sm"
-                  onClick={() => onOpenChange(false)}>
-                  Close
-                </Button>
-              ) : (
-                <>
-                  <Button variant="outline" size="sm"
-                    onClick={() => onOpenChange(false)} disabled={saving}>
-                    Cancel
-                  </Button>
-                  {!editing && (
-                    <Button variant="outline" size="sm"
-                      onClick={() => save('draft')} disabled={saving}>
-                      Save as Draft
-                    </Button>
-                  )}
-                  <Button size="sm" onClick={() => save()} disabled={saving}>
-                    {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-                    {editing ? 'Save changes' : 'Create'}
-                  </Button>
-                </>
-              )}
             </div>
           </div>
         </div>
@@ -2863,6 +2842,38 @@ function SettlementDialog({
         </div>{/* end space-y-4 inside fieldset */}
         </fieldset>
         </div>{/* end scrolling body */}
+
+        {/* Actions in a DialogFooter under the scrolling body.
+            readOnly: [Print, Close] · Edit: [Cancel, Save]
+            Create: [Cancel, Save as Draft, Create]. */}
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
+          {readOnly && editing && (
+            <Button variant="outline" className="sm:mr-auto"
+              onClick={() => printSettlementNote(editing, consignments, itemById)}>
+              <Printer className="h-4 w-4 mr-1.5" /> Print
+            </Button>
+          )}
+          {readOnly ? (
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+                Cancel
+              </Button>
+              {!editing && (
+                <Button variant="outline" onClick={() => save('draft')} disabled={saving}>
+                  Save as Draft
+                </Button>
+              )}
+              <Button onClick={() => save()} disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5" />}
+                {editing ? 'Save' : 'Create'}
+              </Button>
+            </>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
