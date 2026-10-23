@@ -20,6 +20,9 @@ const EVENTS: { key: EventKey; label: string }[] = [
 ];
 
 const POLL_MS = 5000;
+/** Stop polling this long after a code appears — the admin either sent
+ *  `/link` by then or wandered off; "Check again" restarts it. */
+const POLL_WINDOW_MS = 5 * 60_000;
 
 interface Props {
   /** The tenant's HR bot (null = not registered). The card is disabled
@@ -45,7 +48,7 @@ function fmtDate(iso: string | null): string {
  * "Team group" card — connects the company's shared Telegram group
  * where the HR bot posts team activity. Flow: Connect group → mint a
  * `/link CODE` → admin sends it in the group → card polls GET every 5 s
- * until the server reports `linked`. Event switches save on toggle.
+ * (tab visible only, for at most 5 min) until the server reports `linked`. Event switches save on toggle.
  */
 export function HrTelegramGroupCard({ bot, active }: Props) {
   const confirm = useConfirm();
@@ -55,6 +58,9 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  /** Bumped by "Check again" to restart the poll window. */
+  const [pollRound, setPollRound] = useState(0);
+  const [pollTimedOut, setPollTimedOut] = useState(false);
   const groupRef = useRef(group);
   groupRef.current = group;
 
@@ -95,15 +101,20 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
     return () => window.clearTimeout(t);
   }, [expiryMs]);
 
-  // Poll while a code is showing, stop once linked or expired.
+  // Poll while a code is showing, stop once linked, expired, or the
+  // window runs out. Ticks are skipped while the browser tab is hidden.
   useEffect(() => {
     if (!active || disabled || !linkCode) return;
     const expiryMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
     const expired = () => !isNaN(expiryMs) && Date.now() >= expiryMs;
     if (expired()) return;
+    setPollTimedOut(false);
+    const deadline = Date.now() + POLL_WINDOW_MS;
     let cancelled = false;
     const id = window.setInterval(() => {
       if (expired()) { window.clearInterval(id); return; }
+      if (Date.now() >= deadline) { window.clearInterval(id); setPollTimedOut(true); return; }
+      if (document.hidden) return;
       groupApi.getGroup()
         .then(g => {
           if (cancelled) return;
@@ -116,7 +127,12 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
         .catch(() => { /* transient — next tick retries */ });
     }, POLL_MS);
     return () => { cancelled = true; window.clearInterval(id); };
-  }, [active, disabled, linkCode, expiresAt, applyServer]);
+  }, [active, disabled, linkCode, expiresAt, applyServer, pollRound]);
+
+  const checkAgain = () => {
+    groupApi.getGroup().then(g => applyServer(g, true)).catch(() => {});
+    setPollRound(n => n + 1);
+  };
 
   const connect = async () => {
     setBusy(true);
@@ -235,7 +251,12 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
                 </li>
                 <li>
                   Wait a moment — this card will show the group name.
-                  {!codeExpired && <Loader2 className="h-3.5 w-3.5 ml-1.5 animate-spin text-gray-400 inline" />}
+                  {!codeExpired && !pollTimedOut && <Loader2 className="h-3.5 w-3.5 ml-1.5 animate-spin text-gray-400 inline" />}
+                  {!codeExpired && pollTimedOut && (
+                    <Button type="button" variant="link" size="sm" className="h-auto p-0 ml-1.5 text-xs" onClick={checkAgain}>
+                      Check again
+                    </Button>
+                  )}
                 </li>
               </ol>
               <div className="flex items-center justify-between gap-2 pt-1">
