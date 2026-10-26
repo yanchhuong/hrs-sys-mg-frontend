@@ -300,10 +300,17 @@ export function Attendances() {
               </ListTable>
             ) : (
               /* One box around every day-group rather than one per
-                 group: the shell's sticky rule reaches each day's
-                 header, so as you scroll, the current day stays
-                 pinned and the next pushes it up. N bordered boxes
-                 each with their own pinned header would not. */
+                 group, which would give N bordered boxes each with
+                 their own pinned header.
+
+                 What that actually does, since an earlier version of
+                 this note oversold it: a sticky thead is bounded by
+                 its own table, so each day's header holds the top
+                 while that day's rows are passing and leaves with
+                 them — it is a handover, not one header shoving the
+                 next. The date label sits above each table rather
+                 than inside it, so it scrolls through the gap with
+                 no header pinned. */
               <div className="list-table space-y-4">
                 {grouped.map(([date, dayRows]) => (
                   <div key={date}>
