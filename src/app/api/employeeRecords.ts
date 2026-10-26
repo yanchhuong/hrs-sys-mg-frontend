@@ -26,6 +26,9 @@ export interface EmployeeRecord {
   programId: string | null;
   /** True when an Accident's medical fields were withheld from this viewer. */
   restricted: boolean;
+  /** Somebody is waiting on this in Approvals, so the status buttons
+   *  on the Records page stand down — the server refuses them too. */
+  hasPendingApproval?: boolean;
   decidedById: string | null;
   decidedByName: string | null;
   decidedAt: string | null;
@@ -43,6 +46,10 @@ export interface EmployeeRecordRequest {
   amount?: number | null;
   details?: Record<string, unknown>;
   notes?: string | null;
+  /** Optional, create only. Ordered approver user ids for Promoted,
+   *  Join Club and Welfare; empty means no approval is required and
+   *  the type's own rule decides the status. */
+  approverUserIds?: string[];
 }
 
 export interface ListParams {

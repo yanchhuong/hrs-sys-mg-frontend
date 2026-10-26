@@ -26,9 +26,11 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { statusBadgeClass } from '../../utils/statusTones';
 import { formatMoney } from '../../utils/format';
 import * as recordsApi from '../../api/employeeRecords';
+import * as usersApi from '../../api/users';
+import { ApproverChainPicker } from './ApproverChainPicker';
 import type { RecordType, EmployeeRecord } from '../../api/employeeRecords';
 import {
-  RECORD_TYPES, RECORD_TYPE_ORDER, STATUS_LABEL, WELFARE_APPROVAL_THRESHOLD,
+  RECORD_TYPES, RECORD_TYPE_ORDER, STATUS_LABEL, WELFARE_APPROVAL_THRESHOLD, APPROVABLE_TYPES,
   RECORD_GROUPS, GROUP_CHIP, groupOf, isMedicalType, nextStatuses, subtypeLabel, summarize,
 } from './employeeRecordTypes';
 
@@ -92,9 +94,12 @@ export function RecordRowActions({ rec, onChanged, onEdit }: {
   const { canUpdate, canDelete } = useAuth();
   const confirm = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
-  // A pending Join Club request is decided by the program's person in
-  // charge in Approvals, not here (the server refuses it too).
-  const awaitingApprovals = rec.source === 'request' && rec.status === 'pending';
+  // A record somebody is waiting on is decided in Approvals, not
+  // here — the server refuses it either way. Any pending record with
+  // a named approver qualifies, not just a Join Club application:
+  // Promoted and Welfare get a chain too when one was chosen.
+  const awaitingApprovals = rec.status === 'pending'
+    && (rec.source === 'request' || !!rec.hasPendingApproval);
   const moves = canUpdate('employee_records') && !awaitingApprovals ? nextStatuses(rec.recordType, rec.status) : [];
 
   const move = async (to: string) => {
@@ -187,7 +192,7 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
   defaultType?: RecordType;
   onSaved: (rec: EmployeeRecord) => void;
 }) {
-  const { canUpdate } = useAuth();
+  const { canUpdate, currentUser } = useAuth();
   const [empId, setEmpId] = useState('');
   const [type, setType] = useState<RecordType>('accident');
   const [subtype, setSubtype] = useState('');
@@ -196,6 +201,9 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
   const [details, setDetails] = useState<Record<string, unknown>>({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  // Ordered approver user ids; '' is a row added but not yet picked.
+  const [approvers, setApprovers] = useState<string[]>(['']);
+  const [users, setUsers] = useState<usersApi.User[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -208,6 +216,18 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
     setDetails(record?.details ?? {});
     setNotes(record?.notes ?? '');
   }, [open, record, employeeId, defaultType]);
+
+  // Candidates for the approver picker. Only while the dialog is
+  // open and only for the types that can have one, so opening an
+  // Accident form does not go and fetch the user list.
+  useEffect(() => {
+    if (!open || record || !APPROVABLE_TYPES.has(type) || users.length) return;
+    let cancelled = false;
+    void usersApi.list({ size: 500 })
+      .then(res => { if (!cancelled) setUsers(res.data ?? []); })
+      .catch(() => { /* the picker just offers nobody */ });
+    return () => { cancelled = true; };
+  }, [open, record, type, users.length]);
 
   const meta = RECORD_TYPES[type];
   const restricted = !!record?.restricted || !canUpdate('employee_records');
@@ -227,7 +247,15 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
 
   const setField = (k: string, v: unknown) => setDetails(d => ({ ...d, [k]: v }));
 
-  const willNeedApproval = !record && (
+  /** The three somebody can be asked to sign off. Accident, sick and
+   *  ceremony are a thing that happened, not a thing being asked for. */
+  const canChooseApprover = !record && APPROVABLE_TYPES.has(type);
+  const chosenApprovers = approvers.filter(Boolean);
+
+  // Without a named approver the type's own rule still applies —
+  // promotions and larger welfare payments land as Pending for HR to
+  // work on the Records page, as they did before this form could ask.
+  const willNeedApproval = !record && chosenApprovers.length === 0 && (
     type === 'promoted'
     || (type === 'welfare' && (amountNum ?? 0) > WELFARE_APPROVAL_THRESHOLD)
     || (type === 'club' && (amountNum ?? 0) > 0));
@@ -243,6 +271,10 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
         employeeId: empId, recordType: type, subtype, recordDate: date,
         amount: meta.amountLabel ? amountNum : null,
         details, notes: notes.trim() || null,
+        // Create only — the server ignores it on update, and changing
+        // the approver of a chain already under way is not something
+        // this form can do coherently.
+        ...(record ? {} : { approverUserIds: approvers.filter(Boolean).length ? approvers.filter(Boolean) : undefined }),
       };
       const saved = record ? await recordsApi.update(record.id, req) : await recordsApi.create(req);
       toast.success(record ? 'Record updated' : `${meta.label} recorded`
@@ -388,9 +420,23 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
             </div>
           )}
 
+          {canChooseApprover && (
+            <ApproverChainPicker
+              value={approvers}
+              onChange={setApprovers}
+              candidates={users.filter(u => u.isActive && u.id !== currentUser?.id)}
+              noun={meta.label.toLowerCase()}
+            />
+          )}
+
           {willNeedApproval && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
               This record will be saved as Pending until HR approves it.
+            </p>
+          )}
+          {canChooseApprover && chosenApprovers.length > 0 && (
+            <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+              Saved as Pending and sent to {chosenApprovers.length === 1 ? 'that approver' : 'those approvers'} in Approvals.
             </p>
           )}
         </div>

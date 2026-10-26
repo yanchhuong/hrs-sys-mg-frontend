@@ -57,6 +57,13 @@ export interface RecordTypeMeta {
 /** Welfare above this needs approval — RecordTypes.WELFARE_APPROVAL_THRESHOLD. */
 export const WELFARE_APPROVAL_THRESHOLD = 100;
 
+/** The three a named approver can be asked for. Mirrors
+ *  RecordTypes.APPROVABLE on the API. Accident, sick and ceremony are
+ *  a thing that happened, recorded after the fact — there is nothing
+ *  to approve. Leave-sourced records are excluded too: the leave was
+ *  already approved through its own Manager 1 chain. */
+export const APPROVABLE_TYPES = new Set<RecordType>(['promoted', 'club', 'welfare']);
+
 export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
   accident: {
     label: 'Accident',
