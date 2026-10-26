@@ -6,7 +6,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { User, Briefcase, CreditCard, UserPlus, Info, Wallet, Banknote } from 'lucide-react';
+import { User, Briefcase, UserPlus, Info, Wallet } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
@@ -26,6 +26,7 @@ import { useTeamScope } from '../../hooks/useTeamScope';
 import { USE_MOCKS, ApiError as ApiClientError } from '../../api/client';
 import { SearchablePicker } from './SearchablePicker';
 import { SeatCapDialog } from './SeatCapDialog';
+import { PaymentMethodToggle, paymentMethodHint } from './PaymentMethodToggle';
 
 interface Props {
   open: boolean;
@@ -648,28 +649,14 @@ export function AddEmployeeDialog({
 
           {/* Payment Method — Transfer (bank / wallet) or Cash */}
           <TabsContent value="payment" className="space-y-4 pt-4">
-            <Field label="Payment Method">
-              <div className="inline-flex rounded-md border p-0.5 bg-gray-50" role="radiogroup" aria-label="Payment method">
-                {([['transfer', 'Bank transfer'], ['cash', 'Cash']] as const).map(([v, label]) => {
-                  const on = (form.paymentMethod ?? 'transfer') === v;
-                  return (
-                    <button
-                      key={v}
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      onClick={() => patch({ paymentMethod: v })}
-                      className={`inline-flex items-center gap-1.5 px-3 h-8 rounded text-sm transition-colors ${on ? 'bg-white shadow-sm text-blue-700 font-medium' : 'text-gray-600 hover:text-gray-900'}`}
-                    >
-                      {v === 'transfer' ? <CreditCard className="h-3.5 w-3.5" /> : <Banknote className="h-3.5 w-3.5" />}
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+            <Field label="Type">
+              <PaymentMethodToggle
+                value={form.paymentMethod}
+                onChange={v => patch({ paymentMethod: v })}
+              />
             </Field>
             {(form.paymentMethod ?? 'transfer') === 'cash' ? (
-              <p className="text-xs text-gray-500">Salary is paid in cash — no bank account needed.</p>
+              <p className="text-xs text-gray-500">{paymentMethodHint('cash')}</p>
             ) : !paywayEnabled ? (
               <div className="rounded-md bg-gray-50 border p-3 text-xs text-gray-600">
                 PayWay payout is turned off in Employee Payout Settings, so no bank account is registered here.

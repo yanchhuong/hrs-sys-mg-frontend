@@ -45,7 +45,7 @@ import { TableBodySkeletonRows, TableRowsSkeleton } from '../common/LoadingSkele
 import { ListEmpty, ListError } from '../common/ListStates';
 import { Textarea } from '../ui/textarea';
 import { TONE_CLASS, statusBadgeClass } from '../../utils/statusTones';
-import { Eye, Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network, CreditCard, Banknote } from 'lucide-react';
+import { Eye, Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -91,6 +91,7 @@ import {
 import { AuditCell } from '../common/AuditCell';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { EmployeeCell } from '../common/EmployeeCell';
+import { PaymentMethodToggle, paymentMethodHint } from '../common/PaymentMethodToggle';
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -2833,34 +2834,23 @@ export function Employees() {
                         below is the account; Cash needs none. */}
                     <SectionHeading>Payment Method</SectionHeading>
                     <div className="space-y-4">
-                      {isEditing && editedEmployee ? (
-                        <div className="inline-flex rounded-md border p-0.5 bg-gray-50" role="radiogroup" aria-label="Payment method">
-                          {([['transfer', 'Bank transfer'], ['cash', 'Cash']] as const).map(([v, label]) => {
-                            const on = (editedEmployee.paymentMethod ?? 'transfer') === v;
-                            return (
-                              <button
-                                key={v}
-                                type="button"
-                                role="radio"
-                                aria-checked={on}
-                                onClick={() => setEditedEmployee({ ...editedEmployee, paymentMethod: v })}
-                                className={`inline-flex items-center gap-1.5 px-3 h-8 rounded text-sm transition-colors ${on ? 'bg-white shadow-sm text-blue-700 font-medium' : 'text-gray-600 hover:text-gray-900'}`}
-                              >
-                                {v === 'transfer' ? <CreditCard className="h-3.5 w-3.5" /> : <Banknote className="h-3.5 w-3.5" />}
-                                {label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <Badge variant="outline" className="gap-1.5">
-                          {(selectedEmployee.paymentMethod ?? 'transfer') === 'cash'
-                            ? <><Banknote className="h-3.5 w-3.5" /> Cash</>
-                            : <><CreditCard className="h-3.5 w-3.5" /> Bank transfer</>}
-                        </Badge>
-                      )}
+                      {/* Both types stay on screen when reading, not just
+                          the one in force — a lone badge told you the
+                          record said Bank transfer but not that Cash was
+                          an option. */}
+                      <div className="space-y-1.5">
+                        <p className="text-xs text-gray-500">Type</p>
+                        <PaymentMethodToggle
+                          value={isEditing && editedEmployee
+                            ? editedEmployee.paymentMethod
+                            : selectedEmployee.paymentMethod}
+                          onChange={isEditing && editedEmployee
+                            ? v => setEditedEmployee({ ...editedEmployee, paymentMethod: v })
+                            : undefined}
+                        />
+                      </div>
                       {((isEditing && editedEmployee ? editedEmployee.paymentMethod : selectedEmployee.paymentMethod) ?? 'transfer') === 'cash' ? (
-                        <p className="text-xs text-gray-500">Salary is paid in cash — no bank account needed.</p>
+                        <p className="text-xs text-gray-500">{paymentMethodHint('cash')}</p>
                       ) : (
                         <EmployeeBeneficiarySection
                           employeeId={(selectedEmployee as any).apiId ?? selectedEmployee.id}
