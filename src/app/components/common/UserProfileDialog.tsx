@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   User as UserIcon, Mail, Phone, MapPin, Calendar, KeyRound, Shield,
   Eye, EyeOff, Save, CheckCircle, AlertTriangle, Lock, Bell, BellOff,
-  Paperclip, Upload, Download, Trash2,
+  Paperclip, Upload, Download, Trash2, Users,
 } from 'lucide-react';
 import { Switch } from '../ui/switch';
 // V-fcm-3-user-pref — re-registers the browser's FCM token when the
@@ -31,6 +31,7 @@ import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from '../views/documentExtension';
 import { useConfirm } from '../../context/ConfirmContext';
+import { MyClubsPanel } from './ClubPrograms';
 
 interface Props {
   open: boolean;
@@ -373,7 +374,9 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
         </div>
 
         <Tabs defaultValue="profile" className="px-6 pt-4 pb-2">
-          <TabsList className={`grid ${showAttachments ? 'grid-cols-4 max-w-xl' : 'grid-cols-3 max-w-md'}`}>
+          {/* Five tabs in a dialog this narrow need tighter tabs, or the
+              labels run into each other. */}
+          <TabsList className={`grid ${showAttachments ? 'grid-cols-5 w-full [&_[role=tab]]:px-1 [&_[role=tab]]:text-[13px]' : 'grid-cols-3 max-w-md'}`}>
             <TabsTrigger value="profile">
               <UserIcon className="h-3.5 w-3.5 mr-1.5" />
               Profile
@@ -390,6 +393,14 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
               <TabsTrigger value="attachments">
                 <Paperclip className="h-3.5 w-3.5 mr-1.5" />
                 Attachments
+              </TabsTrigger>
+            )}
+            {/* V382 — join a club / program (needs a linked employee, as
+                Attachments does). */}
+            {showAttachments && (
+              <TabsTrigger value="clubs">
+                <Users className="h-3.5 w-3.5 mr-1.5" />
+                Clubs
               </TabsTrigger>
             )}
           </TabsList>
@@ -762,6 +773,12 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                   })}
                 </div>
               )}
+            </TabsContent>
+          )}
+
+          {showAttachments && (
+            <TabsContent value="clubs" className="pt-4 pb-2">
+              <MyClubsPanel />
             </TabsContent>
           )}
         </Tabs>

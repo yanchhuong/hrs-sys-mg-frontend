@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCw, Search, ShieldAlert } from 'lucide-react';
+import { Plus, RefreshCw, Search, ShieldAlert, Users } from 'lucide-react';
+import { ClubProgramsDialog } from '../common/ClubPrograms';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -36,7 +37,7 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
   /** Opens that employee's details drawer (on the Records tab's employee cell). */
   onOpenEmployee?: (employeeId: string) => void;
 }) {
-  const { canCreate } = useAuth();
+  const { canCreate, canView } = useAuth();
   const { formatDate } = useDateFormat();
   const [rows, setRows] = useState<EmployeeRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -49,6 +50,7 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<EmployeeRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [programsOpen, setProgramsOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -117,8 +119,14 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
           <Button variant="outline" size="sm" className="h-9 shrink-0" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
+          {canView('employee_records') && (
+            <Button variant="outline" size="sm" className="h-9 shrink-0 ml-auto" onClick={() => setProgramsOpen(true)}
+              title="Clubs / programs employees can apply to join">
+              <Users className="h-4 w-4 mr-1.5" /> Programs
+            </Button>
+          )}
           {canCreate('employee_records') && (
-            <Button size="sm" className="h-9 shrink-0 ml-auto" onClick={() => { setEditing(null); setFormOpen(true); }}>
+            <Button size="sm" className="h-9 shrink-0" onClick={() => { setEditing(null); setFormOpen(true); }}>
               <Plus className="h-4 w-4 mr-1" /> Add record
             </Button>
           )}
@@ -191,6 +199,8 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
 
       <RecordFormDialog open={formOpen} onOpenChange={setFormOpen} record={editing}
         employees={employees} defaultType={type || undefined} onSaved={() => void load()} />
+      <ClubProgramsDialog open={programsOpen} onOpenChange={o => { setProgramsOpen(o); if (!o) void load(); }}
+        employees={employees} />
     </Card>
   );
 }

@@ -64,6 +64,8 @@ function sourceLabel(t: string): string {
     // that need physician / admin sign-off before the Medical Bill
     // can be generated.
     case 'encounter':    return 'Encounter';
+    // V382 — an employee asking to join a club program.
+    case 'club_request': return 'Join Club';
     default:             return t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 }
@@ -409,6 +411,20 @@ function SummaryCell({ approval }: { approval: approvalsApi.Approval }) {
       </div>
     );
   }
+  if (approval.sourceType === 'club_request') {
+    return (
+      <div className="text-sm">
+        <div className="font-medium">
+          {[typeof s.programName === 'string' ? s.programName : '',
+            typeof s.role === 'string' ? capitalize(s.role) : ''].filter(Boolean).join(' · ')}
+        </div>
+        <div className="text-[11px] text-gray-500 truncate max-w-md">
+          {typeof s.employeeName === 'string' ? s.employeeName : ''}
+          {typeof s.note === 'string' && s.note ? ` — "${s.note}"` : ''}
+        </div>
+      </div>
+    );
+  }
   if (approval.sourceType === 'leave') {
     const category = typeof s.category === 'string' ? capitalize(s.category) : '';
     const leaveType = typeof s.leaveType === 'string' ? capitalize(s.leaveType) : '';
@@ -673,6 +689,20 @@ function ApprovalDetailDialog({
                 <div className="col-span-2">
                   <span className="text-gray-500">Reason:</span>{' '}
                   <span className="font-medium italic">"{String(s.reason ?? '—')}"</span>
+                </div>
+              </div>
+            ) : current.sourceType === 'club_request' ? (
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-gray-500">Employee:</span> <span className="font-medium">{String(s.employeeName ?? '—')}</span></div>
+                <div><span className="text-gray-500">Program:</span> <span className="font-medium">{String(s.programName ?? '—')}</span></div>
+                <div><span className="text-gray-500">Kind:</span> <span className="font-medium">{s.subtype ? capitalize(String(s.subtype)) : '—'}</span></div>
+                <div><span className="text-gray-500">Role:</span> <span className="font-medium">{s.role ? capitalize(String(s.role)) : '—'}</span></div>
+                {s.amount != null && (
+                  <div><span className="text-gray-500">Fee:</span> <span className="font-medium tabular-nums">{String(s.amount)}</span></div>
+                )}
+                <div className="col-span-2">
+                  <span className="text-gray-500">Note:</span>{' '}
+                  <span className="font-medium italic">{s.note ? `"${String(s.note)}"` : '—'}</span>
                 </div>
               </div>
             ) : current.sourceType === 'leave' ? (

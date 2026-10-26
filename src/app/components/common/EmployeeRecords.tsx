@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Plus, Pencil, Trash2, Check, X, Search as SearchIcon, ShieldAlert, Loader2, RotateCcw, Sparkles, CalendarCheck,
+  Plus, Pencil, Trash2, Check, X, Search as SearchIcon, ShieldAlert, Loader2, RotateCcw, Sparkles, CalendarCheck, UserPlus,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -40,6 +40,9 @@ export function RecordSourceMark({ source }: { source: EmployeeRecord['source'] 
   }
   if (source === 'leave') {
     return <span title="Added from an approved leave"><CalendarCheck className="h-3.5 w-3.5 text-blue-500 shrink-0" /></span>;
+  }
+  if (source === 'request') {
+    return <span title="Requested by the employee"><UserPlus className="h-3.5 w-3.5 text-emerald-500 shrink-0" /></span>;
   }
   return null;
 }
@@ -89,7 +92,10 @@ export function RecordRowActions({ rec, onChanged, onEdit }: {
   const { canUpdate, canDelete } = useAuth();
   const confirm = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
-  const moves = canUpdate('employee_records') ? nextStatuses(rec.recordType, rec.status) : [];
+  // A pending Join Club request is decided by the program's person in
+  // charge in Approvals, not here (the server refuses it too).
+  const awaitingApprovals = rec.source === 'request' && rec.status === 'pending';
+  const moves = canUpdate('employee_records') && !awaitingApprovals ? nextStatuses(rec.recordType, rec.status) : [];
 
   const move = async (to: string) => {
     if (to === 'rejected' && !(await confirm({
@@ -140,6 +146,9 @@ export function RecordRowActions({ rec, onChanged, onEdit }: {
 
   return (
     <div className="flex items-center justify-end gap-0.5">
+      {awaitingApprovals && (
+        <span className="text-[11px] text-gray-500 mr-1 whitespace-nowrap" title="The program's person in charge decides it in Approvals">In Approvals</span>
+      )}
       {moves.map(to => (
         <Button key={to} variant="ghost" size="icon" className={`h-7 w-7 ${tone(to)}`}
           title={MOVE_LABEL[to] ?? to} aria-label={MOVE_LABEL[to] ?? to}

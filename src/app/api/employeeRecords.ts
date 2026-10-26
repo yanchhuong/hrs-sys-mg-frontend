@@ -20,8 +20,10 @@ export interface EmployeeRecord {
   notes: string | null;
   /** 'auto' = a Promoted row made by a position / department change;
    *  'leave' = made by approving a sick / accident / ceremony leave (V381). */
-  source: 'manual' | 'auto' | 'leave';
+  source: 'manual' | 'auto' | 'leave' | 'request';
   leaveRequestId: string | null;
+  /** V382 — the club program a Join Club request is for (source = request). */
+  programId: string | null;
   /** True when an Accident's medical fields were withheld from this viewer. */
   restricted: boolean;
   decidedById: string | null;
