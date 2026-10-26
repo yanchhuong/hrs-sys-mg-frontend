@@ -17,9 +17,9 @@ interface Props {
    *  (the parent's create flow doesn't have an ID yet — we wait
    *  until after first save). */
   employeeId: string | null;
-  /** Defaults the form's full-name field when no row exists yet. */
+  /** Sent as the account holder name — the employee's own, not retyped. */
   employeeName?: string;
-  /** Defaults the form's phone field when no row exists yet. */
+  /** Sent as the beneficiary phone — the employee's own contact number. */
   employeePhone?: string;
   /** Disable submit when the employee record itself is read-only
    *  (e.g. archived employee, no update perm). */
@@ -44,12 +44,10 @@ export function EmployeeBeneficiarySection({
   const [beneficiary, setBeneficiary] = useState<beneficiaryApi.PayWayBeneficiary | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  // Form fields — pre-populated from an existing registration when
-  // present, or from the employee record defaults on a fresh add.
-  const [fullName, setFullName] = useState('');
+  // Only the account is asked for. Name and phone are the employee's
+  // own (Profile tab), so they are sent from the record, not retyped.
   const [bank, setBank] = useState<string>('ABA');
   const [accountNumber, setAccountNumber] = useState('');
-  const [phone, setPhone] = useState('');
 
   // Load tenant settings — hide the whole section when PayWay is
   // disabled at the tenant level. Soft-fail to "enabled" if the
@@ -72,23 +70,12 @@ export function EmployeeBeneficiarySection({
     beneficiaryApi.getForEmployee(employeeId)
       .then(b => {
         setBeneficiary(b);
-        if (b) {
-          setFullName(b.fullName);
-          setBank(b.bank);
-          setAccountNumber(b.accountNumber);
-          setPhone(b.phone ?? '');
-        } else {
-          // Fresh registration — seed from the employee record so
-          // HR doesn't have to retype the obvious bits.
-          setFullName(employeeName);
-          setBank('ABA');
-          setAccountNumber('');
-          setPhone(employeePhone);
-        }
+        setBank(b?.bank ?? 'ABA');
+        setAccountNumber(b?.accountNumber ?? '');
       })
       .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load beneficiary'))
       .finally(() => setLoading(false));
-  }, [employeeId, employeeName, employeePhone]);
+  }, [employeeId]);
 
   // Lives under Payment Method → Transfer, so say why there is no form
   // rather than leave the section blank.
@@ -109,16 +96,16 @@ export function EmployeeBeneficiarySection({
 
   const submit = async () => {
     if (saving || readOnly) return;
-    if (!fullName.trim()) { toast.error('Full name is required.'); return; }
+    if (!employeeName.trim()) { toast.error('The employee has no name — set it on the Profile tab.'); return; }
     if (!accountNumber.trim()) { toast.error('Account number is required.'); return; }
     setSaving(true);
     try {
       const next = await beneficiaryApi.submit({
         employeeId,
-        fullName: fullName.trim(),
+        fullName: employeeName.trim(),
         bank: bank.trim().toUpperCase(),
         accountNumber: accountNumber.trim(),
-        phone: phone.trim() || undefined,
+        phone: employeePhone.trim() || undefined,
       });
       setBeneficiary(next);
       if (next.status === 'active') {
@@ -198,16 +185,6 @@ export function EmployeeBeneficiarySection({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs text-gray-600">Full name *</Label>
-              <Input
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-                placeholder="Name on the account"
-                maxLength={255}
-                disabled={saving || readOnly}
-              />
-            </div>
-            <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Bank / wallet *</Label>
               <Select value={bank} onValueChange={setBank} disabled={saving || readOnly}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -229,22 +206,11 @@ export function EmployeeBeneficiarySection({
                 disabled={saving || readOnly}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-gray-600">Phone</Label>
-              <Input
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                placeholder="+855…"
-                inputMode="tel"
-                maxLength={32}
-                disabled={saving || readOnly}
-              />
-            </div>
           </div>
 
           <div className="flex items-center justify-between gap-2 pt-1">
             <p className="text-[11px] text-gray-500">
-              Submits to PayWay's Add Beneficiary API.
+              Registered under the employee's name and phone.
               {' '}One-time per employee — re-submit only if the account changes.
             </p>
             <div className="flex items-center gap-2">
