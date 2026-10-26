@@ -713,7 +713,7 @@ function AttendanceReport({
           table renders, so the numbers stay in lockstep. Surfaced
           directly under the page title so HR sees the headline numbers
           before drilling in with filters. */}
-      <div className="stat-strip">
+      <div className="stat-strip stat-cols-4">
         <KpiCard
           label="Perfect Attendance"
           subtitle="No late · No absent"
@@ -986,7 +986,7 @@ function PayrollReport({
     <>
       {/* Summary Stats — surfaced before the filter bar so the headline
           numbers land first, matching the Attendance and Compliance tabs. */}
-      <div className="stat-strip">
+      <div className="stat-strip stat-cols-4">
         <StatCard label="Records" value={stats.count} icon={FileText} tone="blue" />
         <StatCard label="Total Earnings" value={fmtPayTotals(filtered, p => p.totalEarnings)} icon={TrendingUp} tone="green" />
         <StatCard label="Total Deductions" value={fmtPayTotals(filtered, p => p.deductions)} icon={DollarSign} tone="red" />
@@ -1490,7 +1490,7 @@ function AttendanceEmployeeDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="stat-strip">
+          <div className="stat-strip stat-cols-4">
             <StatCard label="Total Days" value={myRecords.length} icon={FileText} tone="purple" />
             <StatCard label="Total Leave" value={stats.byStatus['leave'] ?? 0} icon={Users} tone="blue" />
             <StatCard label="Total Late" value={stats.byStatus['late'] ?? 0} icon={Clock} tone="amber" />
@@ -1757,7 +1757,7 @@ function PayrollDeptDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="stat-strip">
+          <div className="stat-strip stat-cols-3">
             <StatCard label="Total Earnings" value={fmtPayTotals(myRecords, p => p.totalEarnings)} icon={TrendingUp} tone="green" />
             <StatCard label="Total Deductions" value={fmtPayTotals(myRecords, p => p.deductions)} icon={DollarSign} tone="red" />
             <StatCard label="Net Salary" value={fmtPayTotals(myRecords, p => p.totalPay)} icon={DollarSign} tone="purple" />
@@ -1882,7 +1882,7 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
     <>
       {/* Aggregate stats — surfaced before the filter bar so the
           headline numbers land first, matching the other report tabs. */}
-      <div className="stat-strip">
+      <div className="stat-strip stat-cols-4">
         <StatCard label="Overall Compliance" value={`${totals.overallPct}%`} icon={TrendingUp} tone={totals.overallPct >= 90 ? 'green' : totals.overallPct >= 60 ? 'orange' : 'red'} />
         <StatCard label="Complete Days" value={totals.complete} icon={FileText} tone="green" />
         <StatCard label="Single-Scan Days" value={totals.single} icon={AlertCircle} tone="orange" />
