@@ -273,7 +273,7 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
         {/* Table — only this scrolls. */}
         <div className="flex-1 min-h-0 overflow-auto">
           {!preview && loading && (
-            <ListTable className="max-h-[60vh]">
+            <ListTable className="list-table-flow">
               <TableBody><TableBodySkeletonRows columns={10} /></TableBody>
             </ListTable>
           )}
@@ -281,8 +281,8 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
             <ListError message={loadError} onRetry={() => void handleRecalc()} />
           )}
           {preview && (
-                  <ListTable className="max-h-[60vh]">
-                    <TableHeader className="sticky top-0 bg-white z-10">
+                  <ListTable className="list-table-flow">
+                    <TableHeader>
                       <TableRow>
                         <TableHead className="w-10">
                           <Checkbox

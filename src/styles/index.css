@@ -178,6 +178,19 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
   background: #fff;
   box-shadow: inset 0 -1px 0 0 rgb(229, 231, 235);
 }
+/* For a table inside something that already scrolls — a dialog body
+   pane holding a heading, a summary and the table together. The box
+   and its header stay; the cap and the scroll go, so there is one
+   scroll area rather than two nested ones, and the header pins
+   against the pane instead of against a box that never overflows.
+
+   Two classes deep so it beats the base rule above regardless of
+   where Tailwind's utilities land in the cascade. */
+.list-table.list-table-flow {
+  max-height: none;
+  overflow: visible;
+}
+
 /* On paper there is no viewport to scroll, so a height cap would
    simply cut the table off at whatever fitted on screen. Printing
    gets the full list, and the header repeats on each page the way a

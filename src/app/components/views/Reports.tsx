@@ -1497,38 +1497,36 @@ function AttendanceEmployeeDialog({
             <StatCard label="Total Absences" value={stats.byStatus['absent'] ?? 0} icon={AlertCircle} tone="red" />
           </div>
 
-          <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
-            <ListTable className="max-h-96">
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable className="max-h-96">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Check-in</TableHead>
+                <TableHead>Check-out</TableHead>
+                <TableHead className="text-right">Hours</TableHead>
+                <TableHead className="text-right">OT</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {myRecords.length === 0 ? (
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Check-in</TableHead>
-                  <TableHead>Check-out</TableHead>
-                  <TableHead className="text-right">Hours</TableHead>
-                  <TableHead className="text-right">OT</TableHead>
+                  <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-6">
+                    No records in this range
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {myRecords.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-6">
-                      No records in this range
-                    </TableCell>
-                  </TableRow>
-                ) : myRecords.map(r => (
-                  <TableRow key={r.id}>
-                    <TableCell className="text-xs">{format(new Date(r.date), 'MMM dd')}</TableCell>
-                    <TableCell className="text-xs capitalize">{r.status.replace(/_/g, ' ')}</TableCell>
-                    <TableCell className="text-xs tabular-nums">{r.morningIn ?? r.checkIn ?? '-'}</TableCell>
-                    <TableCell className="text-xs tabular-nums">{r.noonOut ?? r.checkOut ?? '-'}</TableCell>
-                    <TableCell className="text-xs text-right">{r.workHours?.toFixed(1) ?? '-'}</TableCell>
-                    <TableCell className="text-xs text-right">{r.otHours?.toFixed(1) ?? '-'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </ListTable>
-          </div>
+              ) : myRecords.map(r => (
+                <TableRow key={r.id}>
+                  <TableCell className="text-xs">{format(new Date(r.date), 'MMM dd')}</TableCell>
+                  <TableCell className="text-xs capitalize">{r.status.replace(/_/g, ' ')}</TableCell>
+                  <TableCell className="text-xs tabular-nums">{r.morningIn ?? r.checkIn ?? '-'}</TableCell>
+                  <TableCell className="text-xs tabular-nums">{r.noonOut ?? r.checkOut ?? '-'}</TableCell>
+                  <TableCell className="text-xs text-right">{r.workHours?.toFixed(1) ?? '-'}</TableCell>
+                  <TableCell className="text-xs text-right">{r.otHours?.toFixed(1) ?? '-'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </ListTable>
         </div>
       </DialogContent>
     </Dialog>
@@ -1763,48 +1761,46 @@ function PayrollDeptDialog({
             <StatCard label="Net Salary" value={fmtPayTotals(myRecords, p => p.totalPay)} icon={DollarSign} tone="purple" />
           </div>
 
-          <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
-            <ListTable className="max-h-96">
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable className="max-h-96">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Employee</TableHead>
+                <TableHead>Month</TableHead>
+                <TableHead className="text-right">Earnings</TableHead>
+                <TableHead className="text-right">Deductions</TableHead>
+                <TableHead className="text-right">Net</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {myRecords.length === 0 ? (
                 <TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Month</TableHead>
-                  <TableHead className="text-right">Earnings</TableHead>
-                  <TableHead className="text-right">Deductions</TableHead>
-                  <TableHead className="text-right">Net</TableHead>
+                  <TableCell colSpan={5} className="text-center text-sm text-gray-400 py-6">
+                    No records
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {myRecords.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-sm text-gray-400 py-6">
-                      No records
+              ) : myRecords.map(p => {
+                const emp = empById.get(p.employeeId);
+                return (
+                  <TableRow key={p.id}>
+                    <TableCell>
+                      <p className="text-sm font-medium">{emp?.name ?? p.employeeId}</p>
+                      <p className="text-xs text-gray-400">{emp?.position ?? ''}</p>
+                    </TableCell>
+                    <TableCell className="text-xs">{p.month}</TableCell>
+                    <TableCell className="text-right text-xs text-green-700">
+                      {fmtCur(p.totalEarnings, p.currency)}
+                    </TableCell>
+                    <TableCell className="text-right text-xs text-red-700">
+                      {fmtCur(p.deductions, p.currency)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm font-semibold">
+                      {fmtCur(p.totalPay, p.currency)}
                     </TableCell>
                   </TableRow>
-                ) : myRecords.map(p => {
-                  const emp = empById.get(p.employeeId);
-                  return (
-                    <TableRow key={p.id}>
-                      <TableCell>
-                        <p className="text-sm font-medium">{emp?.name ?? p.employeeId}</p>
-                        <p className="text-xs text-gray-400">{emp?.position ?? ''}</p>
-                      </TableCell>
-                      <TableCell className="text-xs">{p.month}</TableCell>
-                      <TableCell className="text-right text-xs text-green-700">
-                        {fmtCur(p.totalEarnings, p.currency)}
-                      </TableCell>
-                      <TableCell className="text-right text-xs text-red-700">
-                        {fmtCur(p.deductions, p.currency)}
-                      </TableCell>
-                      <TableCell className="text-right text-sm font-semibold">
-                        {fmtCur(p.totalPay, p.currency)}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </ListTable>
-          </div>
+                );
+              })}
+            </TableBody>
+          </ListTable>
         </div>
       </DialogContent>
     </Dialog>

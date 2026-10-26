@@ -612,7 +612,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
 
           <div className="overflow-y-auto flex-1 min-h-0">
             {loadingSystem && systemHolidays.length === 0 && (
-              <ListTable className="max-h-[60vh]"><TableBody><TableBodySkeletonRows columns={6} rows={4} /></TableBody></ListTable>
+              <ListTable className="list-table-flow"><TableBody><TableBodySkeletonRows columns={6} rows={4} /></TableBody></ListTable>
             )}
             {!loadingSystem && systemHolidays.length === 0 && (
               <div className="text-sm text-gray-600 px-6 py-10 text-center">
@@ -632,7 +632,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
               </div>
             )}
             {!loadingSystem && availableSystemHolidays.length > 0 && (
-              <ListTable className="max-h-[60vh]">
+              <ListTable className="list-table-flow">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[120px]">Source date</TableHead>
@@ -728,111 +728,109 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
               onDayClick={d => openCalendarOn(d)}
             />
           ) : (
-          <div className="max-h-[60vh] overflow-y-auto rounded-md border">
-          <ListTable>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={allFilteredSelected}
-                    onCheckedChange={toggleAllFiltered}
-                    aria-label="Select all filtered"
-                  />
-                </TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Holiday Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading && holidays.length === 0 ? (
-                <TableBodySkeletonRows columns={6} />
-              ) : loadError && holidays.length === 0 ? (
-                <ListError colSpan={6} message={loadError} onRetry={() => void loadHolidays()} />
-              ) : filtered.length === 0 && (
-                <ListEmpty
-                  colSpan={6}
-                  noun="holidays"
-                  filtered={!!search.trim() || yearFilter !== ALL_YEARS_OPT}
+        <ListTable className="list-table-flow">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">
+                <Checkbox
+                  checked={allFilteredSelected}
+                  onCheckedChange={toggleAllFiltered}
+                  aria-label="Select all filtered"
                 />
-              )}
-              {filtered.map(h => {
-                const d = parseISO(h.date);
-                const source = h.clonedFromId ? holidays.find(x => x.id === h.clonedFromId) : null;
-                return (
-                  <TableRow key={h.id} className="hover:bg-gray-50">
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedIds.has(h.id)}
-                        onCheckedChange={() => toggleOne(h.id)}
-                        aria-label={`Select ${h.name}`}
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <button
-                        onClick={() => openCalendarOn(d)}
-                        className="text-blue-700 hover:underline"
-                        title="Show this date on the calendar"
-                      >
-                        {formatDate(d)}
-                      </button>
-                      <p className="text-[11px] text-gray-500 font-normal">{format(d, 'EEEE')}</p>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span>{h.name}</span>
-                        {h.clonedFromId && (
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] font-normal text-gray-600 border-gray-300"
-                            title={
-                              source
-                                ? `Cloned from ${source.date} (${format(parseISO(source.date), 'yyyy')})`
-                                : 'Cloned from a holiday that was later deleted'
-                            }
-                          >
-                            <Copy className="h-2.5 w-2.5 mr-1" />
-                            cloned{source ? ` · ${format(parseISO(source.date), 'yyyy')}` : ''}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`capitalize ${TYPE_BADGE_CLASS[h.type] ?? ''}`}>
-                        {h.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-gray-600 max-w-xs truncate">
-                      {h.description || '-'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Clone" aria-label="Clone" onClick={() => openCloneFor([h.id])}>
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" aria-label="Edit" onClick={() => openEdit(h)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-red-600 hover:text-red-700"
-                          title="Delete"
-                          aria-label="Delete"
-                          onClick={() => handleDelete(h)}
+              </TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead>Holiday Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading && holidays.length === 0 ? (
+              <TableBodySkeletonRows columns={6} />
+            ) : loadError && holidays.length === 0 ? (
+              <ListError colSpan={6} message={loadError} onRetry={() => void loadHolidays()} />
+            ) : filtered.length === 0 && (
+              <ListEmpty
+                colSpan={6}
+                noun="holidays"
+                filtered={!!search.trim() || yearFilter !== ALL_YEARS_OPT}
+              />
+            )}
+            {filtered.map(h => {
+              const d = parseISO(h.date);
+              const source = h.clonedFromId ? holidays.find(x => x.id === h.clonedFromId) : null;
+              return (
+                <TableRow key={h.id} className="hover:bg-gray-50">
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedIds.has(h.id)}
+                      onCheckedChange={() => toggleOne(h.id)}
+                      aria-label={`Select ${h.name}`}
+                    />
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    <button
+                      onClick={() => openCalendarOn(d)}
+                      className="text-blue-700 hover:underline"
+                      title="Show this date on the calendar"
+                    >
+                      {formatDate(d)}
+                    </button>
+                    <p className="text-[11px] text-gray-500 font-normal">{format(d, 'EEEE')}</p>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span>{h.name}</span>
+                      {h.clonedFromId && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] font-normal text-gray-600 border-gray-300"
+                          title={
+                            source
+                              ? `Cloned from ${source.date} (${format(parseISO(source.date), 'yyyy')})`
+                              : 'Cloned from a holiday that was later deleted'
+                          }
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </ListTable>
-          </div>
+                          <Copy className="h-2.5 w-2.5 mr-1" />
+                          cloned{source ? ` · ${format(parseISO(source.date), 'yyyy')}` : ''}
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`capitalize ${TYPE_BADGE_CLASS[h.type] ?? ''}`}>
+                      {h.type}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm text-gray-600 max-w-xs truncate">
+                    {h.description || '-'}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Clone" aria-label="Clone" onClick={() => openCloneFor([h.id])}>
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" aria-label="Edit" onClick={() => openEdit(h)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-red-600 hover:text-red-700"
+                        title="Delete"
+                        aria-label="Delete"
+                        onClick={() => handleDelete(h)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </ListTable>
           )}
           <p className="text-[11px] text-gray-500 mt-2">
             {viewMode === 'table'

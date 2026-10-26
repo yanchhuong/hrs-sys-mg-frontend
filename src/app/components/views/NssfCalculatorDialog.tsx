@@ -264,8 +264,8 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
           {/* First preview still loading — skeleton instead of a blank pane. */}
           {loading && !preview && <TableRowsSkeleton rows={6} columns={6} />}
           {preview && (
-                  <ListTable className="max-h-[60vh]">
-                    <TableHeader className="sticky top-0 bg-white z-10">
+                  <ListTable className="list-table-flow">
+                    <TableHeader>
                       <TableRow>
                         <TableHead className="w-10">
                           <Checkbox

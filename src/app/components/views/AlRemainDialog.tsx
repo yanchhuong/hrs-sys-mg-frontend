@@ -263,7 +263,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
           )}
           {preview && (
                   <ListTable className="max-h-[60vh]">
-                    <TableHeader className="sticky top-0 bg-white z-10">
+                    <TableHeader>
                       <TableRow>
                         <TableHead className="w-10">
                           <Checkbox

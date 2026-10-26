@@ -2345,7 +2345,7 @@ export function Attendance({ onNavigate }: Props = {}) {
               <div className="list-table">
               {dailyViewMode === 'roster' ? (
               <ListTable>
-                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+                <TableHeader>
                   <TableRow>
                     <TableHead>Employee</TableHead>
                     <TableHead>Dept</TableHead>
@@ -2616,7 +2616,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                    sync caught a punch the roster column would mask if a
                    later scan overwrote it. */
                 <ListTable>
-                  <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+                  <TableHeader>
                     <TableRow>
                       <TableHead>Employee</TableHead>
                       <TableHead>Dept</TableHead>

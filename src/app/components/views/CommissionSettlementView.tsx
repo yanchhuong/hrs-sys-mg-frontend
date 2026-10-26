@@ -478,30 +478,28 @@ function NewSettlementDialog({
                     No unsettled sale invoices for this seller in this period.
                   </div>
                 ) : (
-                  <div className="max-h-56 overflow-y-auto border rounded">
-                    <ListTable>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Invoice</TableHead>
-                          <TableHead>Date</TableHead>
-                          <TableHead className="text-right">Sale</TableHead>
-                          <TableHead className="text-right">Commission</TableHead>
+                  <ListTable className="max-h-56">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Invoice</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Sale</TableHead>
+                        <TableHead className="text-right">Commission</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {preview.lines.map(l => (
+                        <TableRow key={l.invoiceId}>
+                          <TableCell className="text-xs font-medium">{l.invoiceNo ?? l.invoiceId.slice(0, 8)}</TableCell>
+                          <TableCell className="text-xs text-gray-600">{l.issueDate ? formatDate(l.issueDate) : '—'}</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">{formatUSD(l.saleAmount)}</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums text-emerald-700">
+                            {formatUSD(l.commissionAmount)}
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {preview.lines.map(l => (
-                          <TableRow key={l.invoiceId}>
-                            <TableCell className="text-xs font-medium">{l.invoiceNo ?? l.invoiceId.slice(0, 8)}</TableCell>
-                            <TableCell className="text-xs text-gray-600">{l.issueDate ? formatDate(l.issueDate) : '—'}</TableCell>
-                            <TableCell className="text-right text-xs tabular-nums">{formatUSD(l.saleAmount)}</TableCell>
-                            <TableCell className="text-right text-xs tabular-nums text-emerald-700">
-                              {formatUSD(l.commissionAmount)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </ListTable>
-                  </div>
+                      ))}
+                    </TableBody>
+                  </ListTable>
                 )}
               </CardContent>
             </Card>

@@ -201,65 +201,63 @@ export function OfficeAssignmentsPanel({ open }: Props) {
             {search || officeFilter ? 'No employees match the current filters.' : 'No active employees yet.'}
           </div>
         ) : (
-          <div className="max-h-[20rem] overflow-y-auto">
-            <ListTable>
-              {/* Caps visible rows at ~5 with internal scroll. Sticky
-                  header keeps column labels in view while scrolling. */}
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[0_1px_0_0_rgb(0_0_0_/_0.05)]">
-                <TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead className="w-[110px]">Employee No</TableHead>
-                  <TableHead className="w-[280px]">Assign</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visibleEmployees.map(e => {
-                  const assigned = primaryOfficeByEmp.get(e.id) ?? null;
-                  const isSaving = savingEmpId === e.id;
-                  return (
-                    <TableRow key={e.id}>
-                      <TableCell className="py-1.5">
-                        <div className="text-sm font-medium">{e.name}</div>
-                        {e.position && (
-                          <div className="text-[11px] text-gray-500 truncate">{e.position}</div>
+          <ListTable className="max-h-[20rem]">
+            {/* Caps visible rows at ~5 with internal scroll. Sticky
+                header keeps column labels in view while scrolling. */}
+            <TableHeader>
+              <TableRow>
+                <TableHead>Employee</TableHead>
+                <TableHead className="w-[110px]">Employee No</TableHead>
+                <TableHead className="w-[280px]">Assign</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visibleEmployees.map(e => {
+                const assigned = primaryOfficeByEmp.get(e.id) ?? null;
+                const isSaving = savingEmpId === e.id;
+                return (
+                  <TableRow key={e.id}>
+                    <TableCell className="py-1.5">
+                      <div className="text-sm font-medium">{e.name}</div>
+                      {e.position && (
+                        <div className="text-[11px] text-gray-500 truncate">{e.position}</div>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-1.5 text-xs text-gray-600 tabular-nums">
+                      {e.empNo || <span className="text-gray-300">—</span>}
+                    </TableCell>
+                    <TableCell className="py-1.5">
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={assigned ?? FLEXIBLE}
+                          onChange={ev => handleChange(e.id, ev.target.value)}
+                          disabled={isSaving}
+                          className="h-8 flex-1 min-w-0 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+                          aria-label={`Assign office for ${e.name}`}
+                        >
+                          <option value={FLEXIBLE}>— Flexible (any office)</option>
+                          {offices.map(o => (
+                            <option key={o.id} value={o.id}>{o.name}</option>
+                          ))}
+                        </select>
+                        {isSaving ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400 shrink-0" />
+                        ) : assigned == null ? (
+                          <Badge variant="outline" className="text-gray-500 shrink-0">
+                            Flexible
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-blue-100 text-blue-700 border-blue-200 shrink-0">
+                            Pinned
+                          </Badge>
                         )}
-                      </TableCell>
-                      <TableCell className="py-1.5 text-xs text-gray-600 tabular-nums">
-                        {e.empNo || <span className="text-gray-300">—</span>}
-                      </TableCell>
-                      <TableCell className="py-1.5">
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={assigned ?? FLEXIBLE}
-                            onChange={ev => handleChange(e.id, ev.target.value)}
-                            disabled={isSaving}
-                            className="h-8 flex-1 min-w-0 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-                            aria-label={`Assign office for ${e.name}`}
-                          >
-                            <option value={FLEXIBLE}>— Flexible (any office)</option>
-                            {offices.map(o => (
-                              <option key={o.id} value={o.id}>{o.name}</option>
-                            ))}
-                          </select>
-                          {isSaving ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400 shrink-0" />
-                          ) : assigned == null ? (
-                            <Badge variant="outline" className="text-gray-500 shrink-0">
-                              Flexible
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-blue-100 text-blue-700 border-blue-200 shrink-0">
-                              Pinned
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </ListTable>
-          </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </ListTable>
         )}
       </div>
 

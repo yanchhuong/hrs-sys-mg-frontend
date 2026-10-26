@@ -140,39 +140,37 @@ export function CashAdvancePurposesDialog({
         </div>
 
         {/* Existing rows */}
-        <div className="rounded-md border max-h-[50vh] overflow-y-auto">
-          <ListTable className="max-h-[60vh]">
-            <TableHeader>
+        <ListTable className="max-h-[50vh]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Label</TableHead>
+              <TableHead className="w-[100px]">Enabled</TableHead>
+              <TableHead className="w-[60px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
               <TableRow>
-                <TableHead>Label</TableHead>
-                <TableHead className="w-[100px]">Enabled</TableHead>
-                <TableHead className="w-[60px]" />
+                <TableCell colSpan={3} className="text-center text-sm text-gray-500 py-4">Loading…</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-center text-sm text-gray-500 py-4">Loading…</TableCell>
-                </TableRow>
-              ) : rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={3} className="text-center text-sm text-gray-500 py-4">
-                    No presets yet — add one above.
-                  </TableCell>
-                </TableRow>
-              ) : rows.map(r => (
-                <PurposeRow
-                  key={r.id}
-                  row={r}
-                  disabled={busy}
-                  onRename={label => void renameRow(r, label)}
-                  onToggle={v => void toggle(r, v)}
-                  onDelete={() => void remove(r)}
-                />
-              ))}
-            </TableBody>
-          </ListTable>
-        </div>
+            ) : rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={3} className="text-center text-sm text-gray-500 py-4">
+                  No presets yet — add one above.
+                </TableCell>
+              </TableRow>
+            ) : rows.map(r => (
+              <PurposeRow
+                key={r.id}
+                row={r}
+                disabled={busy}
+                onRename={label => void renameRow(r, label)}
+                onToggle={v => void toggle(r, v)}
+                onDelete={() => void remove(r)}
+              />
+            ))}
+          </TableBody>
+        </ListTable>
 
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Done</Button>

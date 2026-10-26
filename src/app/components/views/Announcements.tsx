@@ -1371,56 +1371,54 @@ export function Announcements() {
                     <Label className="text-xs">Telegram delivery</Label>
                     <TelegramStatusBadge status={detail.telegramSentStatus} sendTelegram={detail.sendTelegram} />
                   </div>
-                  <div className="border rounded-md max-h-[300px] overflow-y-auto">
-                    <ListTable className="max-h-[60vh]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Recipient</TableHead>
-                          <TableHead className="w-[110px]">Status</TableHead>
-                          <TableHead>Detail</TableHead>
+                  <ListTable className="max-h-[300px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Recipient</TableHead>
+                        <TableHead className="w-[110px]">Status</TableHead>
+                        <TableHead>Detail</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {logsLoading && logs.length === 0 && (
+                        <TableBodySkeletonRows rows={3} columns={3} />
+                      )}
+                      {!logsLoading && logs.length === 0 && (
+                        <TableRow><TableCell colSpan={3} className="text-center text-xs text-gray-500 py-4">No deliveries yet — fan-out may still be in progress.</TableCell></TableRow>
+                      )}
+                      {logs.map(l => (
+                        <TableRow key={l.id}>
+                          <TableCell className="text-xs">
+                            {/* Name + phone resolved server-side
+                                (V126+ enrichment). Fall back to the
+                                type + UUID slice if the source row
+                                is gone — keeps the audit trail
+                                readable even after deletes. */}
+                            <div className="text-sm font-medium text-gray-900">
+                              {l.recipientName ?? `${l.recipientType.toLowerCase()} · ${l.recipientId.slice(0, 8)}`}
+                            </div>
+                            <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
+                              <Badge variant="outline" className="text-[9px] py-0 px-1 capitalize">
+                                {l.recipientType.toLowerCase()}
+                              </Badge>
+                              {l.recipientContact && <span>📞 {l.recipientContact}</span>}
+                              {l.telegramChatId !== null && (
+                                <span className="text-gray-400">chat {l.telegramChatId}</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {l.status === 'SENT' && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Sent</Badge>}
+                            {l.status === 'FAILED' && <Badge className="bg-red-100 text-red-700 border-red-200">Failed</Badge>}
+                            {l.status === 'NOT_LINKED' && <Badge variant="outline" className="text-gray-500">Not linked</Badge>}
+                          </TableCell>
+                          <TableCell className="text-xs text-gray-600 max-w-[260px] truncate" title={l.errorMessage ?? ''}>
+                            {l.errorMessage ?? '—'}
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {logsLoading && logs.length === 0 && (
-                          <TableBodySkeletonRows rows={3} columns={3} />
-                        )}
-                        {!logsLoading && logs.length === 0 && (
-                          <TableRow><TableCell colSpan={3} className="text-center text-xs text-gray-500 py-4">No deliveries yet — fan-out may still be in progress.</TableCell></TableRow>
-                        )}
-                        {logs.map(l => (
-                          <TableRow key={l.id}>
-                            <TableCell className="text-xs">
-                              {/* Name + phone resolved server-side
-                                  (V126+ enrichment). Fall back to the
-                                  type + UUID slice if the source row
-                                  is gone — keeps the audit trail
-                                  readable even after deletes. */}
-                              <div className="text-sm font-medium text-gray-900">
-                                {l.recipientName ?? `${l.recipientType.toLowerCase()} · ${l.recipientId.slice(0, 8)}`}
-                              </div>
-                              <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
-                                <Badge variant="outline" className="text-[9px] py-0 px-1 capitalize">
-                                  {l.recipientType.toLowerCase()}
-                                </Badge>
-                                {l.recipientContact && <span>📞 {l.recipientContact}</span>}
-                                {l.telegramChatId !== null && (
-                                  <span className="text-gray-400">chat {l.telegramChatId}</span>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {l.status === 'SENT' && <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Sent</Badge>}
-                              {l.status === 'FAILED' && <Badge className="bg-red-100 text-red-700 border-red-200">Failed</Badge>}
-                              {l.status === 'NOT_LINKED' && <Badge variant="outline" className="text-gray-500">Not linked</Badge>}
-                            </TableCell>
-                            <TableCell className="text-xs text-gray-600 max-w-[260px] truncate" title={l.errorMessage ?? ''}>
-                              {l.errorMessage ?? '—'}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </ListTable>
-                  </div>
+                      ))}
+                    </TableBody>
+                  </ListTable>
                 </div>
               ) : (
                 <div className="text-xs text-gray-500 flex items-center gap-1.5">
