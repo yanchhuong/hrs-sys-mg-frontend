@@ -1021,16 +1021,14 @@ export function Increase() {
 
           {/* Card body is p-0 so the table goes edge-to-edge; the
               pagination still needs a little chrome around it. */}
-          <div className="px-4 py-3 border-t">
-            <Pagination
-              currentPage={increasePagination.currentPage}
-              totalPages={increasePagination.totalPages}
-              onPageChange={increasePagination.goToPage}
-              startIndex={increasePagination.startIndex}
-              endIndex={increasePagination.endIndex}
-              totalItems={increasePagination.totalItems}
-            />
-          </div>
+          <Pagination
+            currentPage={increasePagination.currentPage}
+            totalPages={increasePagination.totalPages}
+            onPageChange={increasePagination.goToPage}
+            startIndex={increasePagination.startIndex}
+            endIndex={increasePagination.endIndex}
+            totalItems={increasePagination.totalItems}
+          />
         </CardContent>
       </Card>
 

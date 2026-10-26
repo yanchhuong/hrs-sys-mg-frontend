@@ -366,7 +366,7 @@ export function PlatformTelegram() {
       </div>
 
       <Card>
-        <CardContent className="p-0">
+        <CardContent>
           <ListTable>
             <TableHeader>
               <TableRow>

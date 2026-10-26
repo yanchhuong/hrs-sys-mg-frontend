@@ -319,16 +319,15 @@ export function Vendors() {
                 </TableBody>
               </ListTable>
               {pagination.totalPages > 1 && (
-                <div className="px-1 py-0 border-t">
-                  <Pagination
-                    currentPage={pagination.currentPage}
-                    totalPages={pagination.totalPages}
-                    onPageChange={pagination.goToPage}
-                    startIndex={(pagination.currentPage - 1) * 25}
-                    endIndex={Math.min(pagination.currentPage * 25, filtered.length)}
-                    totalItems={filtered.length}
-                  />
-                </div>
+                <Pagination
+                  currentPage={pagination.currentPage}
+                  totalPages={pagination.totalPages}
+                  onPageChange={pagination.goToPage}
+                  startIndex={(pagination.currentPage - 1) * 25}
+                  endIndex={Math.min(pagination.currentPage * 25, filtered.length)}
+                  totalItems={filtered.length}
+                />
+
               )}
             </>
           )}

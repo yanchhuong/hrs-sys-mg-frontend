@@ -605,16 +605,14 @@ export function Members() {
             </ListTable>
           )}
           {pagination.totalPages > 1 && (
-            <div className="px-1 py-0 border-t">
-              <Pagination
-                currentPage={pagination.currentPage}
-                totalPages={pagination.totalPages}
-                onPageChange={pagination.goToPage}
-                startIndex={pagination.startIndex}
-                endIndex={pagination.endIndex}
-                totalItems={pagination.totalItems}
-              />
-            </div>
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={pagination.goToPage}
+              startIndex={pagination.startIndex}
+              endIndex={pagination.endIndex}
+              totalItems={pagination.totalItems}
+            />
           )}
         </CardContent>
       </Card>

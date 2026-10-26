@@ -1043,16 +1043,15 @@ export function Deduction() {
               })}
             </TableBody>
           </ListTable>
-          <div className="px-4 py-3 border-t">
           <Pagination
-            currentPage={deductionsPagination.currentPage}
-            totalPages={deductionsPagination.totalPages}
-            onPageChange={deductionsPagination.goToPage}
-            startIndex={deductionsPagination.startIndex}
-            endIndex={deductionsPagination.endIndex}
-            totalItems={deductionsPagination.totalItems}
-          />
-          </div>
+          currentPage={deductionsPagination.currentPage}
+          totalPages={deductionsPagination.totalPages}
+          onPageChange={deductionsPagination.goToPage}
+          startIndex={deductionsPagination.startIndex}
+          endIndex={deductionsPagination.endIndex}
+          totalItems={deductionsPagination.totalItems}
+        />
+
         </CardContent>
       </Card>
 

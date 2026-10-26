@@ -1090,16 +1090,14 @@ export function Invoices({
                 )}
               </ListTable>
               {groupedRows.length > 0 && (
-                <div className="px-1 py-0 border-t">
-                  <Pagination
-                    currentPage={pagination.currentPage}
-                    totalPages={pagination.totalPages}
-                    onPageChange={pagination.goToPage}
-                    startIndex={pagination.startIndex}
-                    endIndex={pagination.endIndex}
-                    totalItems={pagination.totalItems}
-                  />
-                </div>
+                <Pagination
+                  currentPage={pagination.currentPage}
+                  totalPages={pagination.totalPages}
+                  onPageChange={pagination.goToPage}
+                  startIndex={pagination.startIndex}
+                  endIndex={pagination.endIndex}
+                  totalItems={pagination.totalItems}
+                />
               )}
             </>
           )}
@@ -3161,16 +3159,14 @@ function InvoiceDetailDialog({
                 </TableBody>
               </Table>
               {invoice.items.length > 0 && (
-                <div className="px-1 py-0 border-t">
-                  <Pagination
-                    currentPage={itemsPagination.currentPage}
-                    totalPages={itemsPagination.totalPages}
-                    onPageChange={itemsPagination.goToPage}
-                    startIndex={itemsPagination.startIndex}
-                    endIndex={itemsPagination.endIndex}
-                    totalItems={itemsPagination.totalItems}
-                  />
-                </div>
+                <Pagination
+                  currentPage={itemsPagination.currentPage}
+                  totalPages={itemsPagination.totalPages}
+                  onPageChange={itemsPagination.goToPage}
+                  startIndex={itemsPagination.startIndex}
+                  endIndex={itemsPagination.endIndex}
+                  totalItems={itemsPagination.totalItems}
+                />
               )}
             </div>
 
@@ -3472,16 +3468,14 @@ function InvoiceDetailDialog({
                 </Table>
               )}
               {payments.length > 0 && (
-                <div className="px-1 py-0 border-t">
-                  <Pagination
-                    currentPage={paymentsPagination.currentPage}
-                    totalPages={paymentsPagination.totalPages}
-                    onPageChange={paymentsPagination.goToPage}
-                    startIndex={paymentsPagination.startIndex}
-                    endIndex={paymentsPagination.endIndex}
-                    totalItems={paymentsPagination.totalItems}
-                  />
-                </div>
+                <Pagination
+                  currentPage={paymentsPagination.currentPage}
+                  totalPages={paymentsPagination.totalPages}
+                  onPageChange={paymentsPagination.goToPage}
+                  startIndex={paymentsPagination.startIndex}
+                  endIndex={paymentsPagination.endIndex}
+                  totalItems={paymentsPagination.totalItems}
+                />
               )}
             </div>
 

@@ -237,7 +237,7 @@ export function CashAdvances() {
             )}
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent>
           {/* Table scroller — {@code max-h} so the card shrinks to
               fit its content when rows are few and only engages
               inner scroll when rows would overflow. Header + footer
@@ -333,16 +333,15 @@ export function CashAdvances() {
             </ListTable>
           </div>
           {visibleRows.length > 0 && (
-            <div className="px-1 py-0 border-t">
-              <Pagination
-                currentPage={pagination.currentPage}
-                totalPages={pagination.totalPages}
-                onPageChange={pagination.goToPage}
-                startIndex={pagination.startIndex}
-                endIndex={pagination.endIndex}
-                totalItems={pagination.totalItems}
-              />
-            </div>
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={pagination.goToPage}
+              startIndex={pagination.startIndex}
+              endIndex={pagination.endIndex}
+              totalItems={pagination.totalItems}
+            />
+
           )}
         </CardContent>
       </Card>

@@ -271,7 +271,7 @@ export function StockAdjustments() {
             )}
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent>
           {/* Back on the shared shell. The note that used to sit here
               said the border wrapper had been reverted to match
               StockMovements — but StockMovements carries the shell
@@ -357,16 +357,15 @@ export function StockAdjustments() {
             </TableBody>
           </ListTable>
           {rows.length > 0 && (
-            <div className="px-4 py-3 border-t">
-              <Pagination
-                currentPage={pagination.currentPage}
-                totalPages={pagination.totalPages}
-                onPageChange={pagination.goToPage}
-                startIndex={pagination.startIndex}
-                endIndex={pagination.endIndex}
-                totalItems={pagination.totalItems}
-              />
-            </div>
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={pagination.goToPage}
+              startIndex={pagination.startIndex}
+              endIndex={pagination.endIndex}
+              totalItems={pagination.totalItems}
+            />
+
           )}
         </CardContent>
       </Card>

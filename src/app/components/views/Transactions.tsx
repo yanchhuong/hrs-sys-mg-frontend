@@ -326,7 +326,7 @@ export function Transactions() {
             )}
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent>
           {/* Table scroller — {@code max-h} so the card shrinks to
               fit its content when rows are few (no whitespace below
               the footer), and engages inner scroll only when rows
@@ -435,16 +435,15 @@ export function Transactions() {
           {/* Match Bills + StockMovements: pagination lives in its
               own padded chrome row at the bottom of the card. */}
           {visibleRows.length > 0 && (
-            <div className="px-1 py-0 border-t">
             <Pagination
-              currentPage={pagination.currentPage}
-              totalPages={pagination.totalPages}
-              onPageChange={pagination.goToPage}
-              startIndex={pagination.startIndex}
-              endIndex={pagination.endIndex}
-              totalItems={pagination.totalItems}
-            />
-            </div>
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            onPageChange={pagination.goToPage}
+            startIndex={pagination.startIndex}
+            endIndex={pagination.endIndex}
+            totalItems={pagination.totalItems}
+          />
+
           )}
         </CardContent>
       </Card>

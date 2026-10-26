@@ -273,16 +273,14 @@ export function AgencyTasksPage() {
                 );
               })}
             </ul>
-            <div className="border-t">
-              <Pagination
-                currentPage={pager.currentPage}
-                totalPages={pager.totalPages}
-                onPageChange={pager.goToPage}
-                startIndex={pager.startIndex}
-                endIndex={pager.endIndex}
-                totalItems={pager.totalItems}
-              />
-            </div>
+            <Pagination
+              currentPage={pager.currentPage}
+              totalPages={pager.totalPages}
+              onPageChange={pager.goToPage}
+              startIndex={pager.startIndex}
+              endIndex={pager.endIndex}
+              totalItems={pager.totalItems}
+            />
           </>)}
         </CardContent>
       </Card>

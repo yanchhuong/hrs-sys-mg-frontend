@@ -626,7 +626,7 @@ export function Announcements() {
             )}
           </div>
         </div>
-        <CardContent className="p-0">
+        <CardContent>
           <ListTable>
             <TableHeader>
               <TableRow>
@@ -690,16 +690,15 @@ export function Announcements() {
             </TableBody>
           </ListTable>
           {filteredRows.length > 0 && (
-            <div className="px-4 py-3 border-t">
-              <Pagination
-                currentPage={listPagination.currentPage}
-                totalPages={listPagination.totalPages}
-                onPageChange={listPagination.goToPage}
-                startIndex={listPagination.startIndex}
-                endIndex={listPagination.endIndex}
-                totalItems={listPagination.totalItems}
-              />
-            </div>
+            <Pagination
+              currentPage={listPagination.currentPage}
+              totalPages={listPagination.totalPages}
+              onPageChange={listPagination.goToPage}
+              startIndex={listPagination.startIndex}
+              endIndex={listPagination.endIndex}
+              totalItems={listPagination.totalItems}
+            />
+
           )}
         </CardContent>
       </Card>

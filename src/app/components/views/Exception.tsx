@@ -742,29 +742,25 @@ export function Exception() {
               </TableBody>
             </ListTable>
           )}
-          {/* Pagination gets its own padded chrome since CardContent
-              is p-0. Matches Increase / Deduction / Movement layout. */}
-          <div className="px-4 py-3 border-t">
-            {mode === 'employee' ? (
-              <Pagination
-                currentPage={exceptionEmpsPagination.currentPage}
-                totalPages={exceptionEmpsPagination.totalPages}
-                onPageChange={exceptionEmpsPagination.goToPage}
-                startIndex={exceptionEmpsPagination.startIndex}
-                endIndex={exceptionEmpsPagination.endIndex}
-                totalItems={exceptionEmpsPagination.totalItems}
-              />
-            ) : (
-              <Pagination
-                currentPage={dayExceptionsPagination.currentPage}
-                totalPages={dayExceptionsPagination.totalPages}
-                onPageChange={dayExceptionsPagination.goToPage}
-                startIndex={dayExceptionsPagination.startIndex}
-                endIndex={dayExceptionsPagination.endIndex}
-                totalItems={dayExceptionsPagination.totalItems}
-              />
-            )}
-          </div>
+          {mode === 'employee' ? (
+            <Pagination
+              currentPage={exceptionEmpsPagination.currentPage}
+              totalPages={exceptionEmpsPagination.totalPages}
+              onPageChange={exceptionEmpsPagination.goToPage}
+              startIndex={exceptionEmpsPagination.startIndex}
+              endIndex={exceptionEmpsPagination.endIndex}
+              totalItems={exceptionEmpsPagination.totalItems}
+            />
+          ) : (
+            <Pagination
+              currentPage={dayExceptionsPagination.currentPage}
+              totalPages={dayExceptionsPagination.totalPages}
+              onPageChange={dayExceptionsPagination.goToPage}
+              startIndex={dayExceptionsPagination.startIndex}
+              endIndex={dayExceptionsPagination.endIndex}
+              totalItems={dayExceptionsPagination.totalItems}
+            />
+          )}
         </CardContent>
       </Card>
 

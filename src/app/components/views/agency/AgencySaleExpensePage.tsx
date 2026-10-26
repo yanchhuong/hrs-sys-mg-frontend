@@ -364,7 +364,7 @@ export function AgencySaleExpensePage() {
               )}
             </div>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent>
             {docsLoading && docs.length === 0 ? (
               <div className="px-4"><TableRowsSkeleton rows={8} columns={9} /></div>
             ) : docsError && docs.length === 0 ? (
@@ -458,16 +458,15 @@ export function AgencySaleExpensePage() {
                   </TableBody>
                 </ListTable>
               </div>
-              <div className="px-4 border-t">
-                <Pagination
-                  currentPage={docsPager.currentPage}
-                  totalPages={docsPager.totalPages}
-                  onPageChange={docsPager.goToPage}
-                  startIndex={docsPager.startIndex}
-                  endIndex={docsPager.endIndex}
-                  totalItems={docsPager.totalItems}
-                />
-              </div>
+              <Pagination
+                currentPage={docsPager.currentPage}
+                totalPages={docsPager.totalPages}
+                onPageChange={docsPager.goToPage}
+                startIndex={docsPager.startIndex}
+                endIndex={docsPager.endIndex}
+                totalItems={docsPager.totalItems}
+              />
+
             </>)}
           </CardContent>
         </Card>
@@ -593,16 +592,15 @@ export function AgencySaleExpensePage() {
                   );
                 })}
               </ul>
-              <div className="border-t">
-                <Pagination
-                  currentPage={reqsPager.currentPage}
-                  totalPages={reqsPager.totalPages}
-                  onPageChange={reqsPager.goToPage}
-                  startIndex={reqsPager.startIndex}
-                  endIndex={reqsPager.endIndex}
-                  totalItems={reqsPager.totalItems}
-                />
-              </div>
+              <Pagination
+                currentPage={reqsPager.currentPage}
+                totalPages={reqsPager.totalPages}
+                onPageChange={reqsPager.goToPage}
+                startIndex={reqsPager.startIndex}
+                endIndex={reqsPager.endIndex}
+                totalItems={reqsPager.totalItems}
+              />
+
             </>)}
           </CardContent>
         </Card>

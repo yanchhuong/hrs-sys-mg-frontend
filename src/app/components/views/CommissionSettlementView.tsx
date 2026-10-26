@@ -561,7 +561,7 @@ function ViewSettlementDialog({
             )}
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm">Detail</CardTitle></CardHeader>
-              <CardContent className="p-0">
+              <CardContent>
                 <ListTable>
                   <TableHeader>
                     <TableRow>

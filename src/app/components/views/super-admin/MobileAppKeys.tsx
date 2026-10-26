@@ -253,7 +253,7 @@ export function MobileAppKeys() {
           </Card>
 
           <Card>
-            <CardContent className="p-0">
+            <CardContent>
               <ListTable>
                 <TableHeader>
                   <TableRow>
@@ -365,7 +365,7 @@ export function MobileAppKeys() {
           </Card>
 
           <Card>
-            <CardContent className="p-0">
+            <CardContent>
               <ListTable>
                 <TableHeader>
                   <TableRow>
