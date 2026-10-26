@@ -1455,6 +1455,30 @@ export function Attendance({ onNavigate }: Props = {}) {
     const attendanceByDateEmp = new Map<string, AttendanceType>();
     for (const a of (USE_MOCKS ? attendance : monthlyAttendance)) attendanceByDateEmp.set(`${a.date}|${a.employeeId}`, a);
 
+    // The Daily rule, applied to every working day of the month: a day
+    // with no punch at all and no leave is Absent — whether there is no
+    // record (the Daily synthetic row) or a stored one with every slot
+    // empty. Leave / exception on the day wins, as the Daily overlay
+    // does. Only DUE days count: past days, and today once the absent
+    // deadline has passed (with autoMarkAbsent on); never the future.
+    // `date|employeeId` → is the day an Exception (true) or Leave (false).
+    const leaveDayKind = new Map<string, boolean>();
+    for (const lv of sourceLeaves) {
+      if (lv.status === 'rejected') continue;
+      leaveDayKind.set(`${lv.date}|${lv.employeeId}`,
+        isExceptionCategory((lv as { category?: string | null }).category));
+    }
+    const todayStr = format(new Date(clockMinute * 60_000), 'yyyy-MM-dd');
+    const deadlineReachedToday = (() => {
+      const [h, m] = generalSettings.absentDeadlineTime.split(':').map(Number);
+      const now = new Date(clockMinute * 60_000);
+      return now.getHours() * 60 + now.getMinutes() >= (h || 0) * 60 + (m || 0);
+    })();
+    const absentDue = (dateStr: string) => dateStr < todayStr
+      || (dateStr === todayStr && generalSettings.autoMarkAbsent && deadlineReachedToday);
+    const noPunch = (r: AttendanceType) =>
+      !r.morningIn && !r.morningOut && !r.noonIn && !r.noonOut && !r.checkIn && !r.checkOut;
+
     return employees
       .filter(e => e.status === 'active' && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees)))
       .map(emp => {
@@ -1472,10 +1496,36 @@ export function Attendance({ onNavigate }: Props = {}) {
 
         const record = attendanceByDateEmp.get(`${dateStr}|${emp.id}`)
           ?? (apiId ? attendanceByDateEmp.get(`${dateStr}|${apiId}`) : undefined);
+        const leaveIsException = (apiId ? leaveDayKind.get(`${dateStr}|${apiId}`) : undefined)
+          ?? leaveDayKind.get(`${dateStr}|${emp.id}`);
+        if (leaveIsException !== undefined) {
+          // Leave days are tallied from the leaves aggregation below;
+          // an Exception day is worked, so it counts as present.
+          empRecords[dateStr] = leaveIsException ? 'exception' : 'leave';
+          if (leaveIsException) presentCount++;
+          return;
+        }
+        if (!record || (noPunch(record) && record.status !== 'leave' && record.status !== 'exception')) {
+          // Before the employee joined, or on a day not due yet, there
+          // is nothing to count. Employees exempt from attendance
+          // (attendanceYn = false) are never auto-absent — the Daily
+          // roster leaves them out too.
+          if (!absentDue(dateStr) || emp.attendanceYn === false
+              || (emp.joinDate && dateStr < emp.joinDate.slice(0, 10))) {
+            if (record) empRecords[dateStr] = record.status;
+            return;
+          }
+          empRecords[dateStr] = 'absent';
+          absentCount++;
+          return;
+        }
         if (record) {
           empRecords[dateStr] = record.status;
           if (record.status === 'present' || record.status === 'exception') presentCount++;
-          else if (record.status === 'absent' || record.status === 'no_checkin') absentCount++;
+          else if (record.status === 'absent') absentCount++;
+          // A missing punch on ONE side is an attended day (Daily shows
+          // it under No Check-in / No Check-out, not Absent).
+          else if (record.status === 'no_checkin') presentCount++;
           // Late and early-leave are both rule exceptions and share one
           // tally. They still count as a day attended.
           else if (record.status === 'late' || record.status === 'early_leave') { lateCount++; presentCount++; }
@@ -1508,7 +1558,7 @@ export function Attendance({ onNavigate }: Props = {}) {
     });
     // alVersion invalidates when AL values/rule change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthDate, alVersion, attendance, monthlyAttendance, serverAL, employees, leaves, monthlyLeaves, isTenantWide, matchesScope, scopeMode, generalSettings, holidayDates]);
+  }, [monthDate, alVersion, attendance, monthlyAttendance, serverAL, employees, leaves, monthlyLeaves, isTenantWide, matchesScope, scopeMode, generalSettings, holidayDates, clockMinute]);
 
   // Top absent employees
   const topAbsent = useMemo(() => {
