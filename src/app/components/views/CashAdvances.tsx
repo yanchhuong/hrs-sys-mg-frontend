@@ -238,100 +238,94 @@ export function CashAdvances() {
           </div>
         </CardHeader>
         <CardContent>
-          {/* Table scroller — {@code max-h} so the card shrinks to
-              fit its content when rows are few and only engages
-              inner scroll when rows would overflow. Header + footer
-              stay sticky inside this container. */}
-          <div className="overflow-auto max-h-[calc(100vh-22rem)]">
-            <ListTable>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[110px]">Date</TableHead>
-                  <TableHead className="w-[120px]">Advance No</TableHead>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Purpose</TableHead>
-                  <TableHead className="w-[140px]">Status</TableHead>
-                  <TableHead className="text-right w-[130px]">Advance</TableHead>
-                  <TableHead className="text-right w-[130px]">Expenses</TableHead>
-                  <TableHead className="text-right w-[130px]">Refund</TableHead>
-                  <TableHead className="text-right w-[130px]">Balance</TableHead>
-                  <TableHead className="w-[80px]">Currency</TableHead>
+          <ListTable>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[110px]">Date</TableHead>
+                <TableHead className="w-[120px]">Advance No</TableHead>
+                <TableHead>Employee</TableHead>
+                <TableHead>Purpose</TableHead>
+                <TableHead className="w-[140px]">Status</TableHead>
+                <TableHead className="text-right w-[130px]">Advance</TableHead>
+                <TableHead className="text-right w-[130px]">Expenses</TableHead>
+                <TableHead className="text-right w-[130px]">Refund</TableHead>
+                <TableHead className="text-right w-[130px]">Balance</TableHead>
+                <TableHead className="w-[80px]">Currency</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && rows.length === 0 ? (
+                <TableBodySkeletonRows columns={10} />
+              ) : loadError && rows.length === 0 ? (
+                <ListError colSpan={10} message={loadError} onRetry={() => void load()} />
+              ) : pagination.paginatedItems.length === 0 ? (
+                <ListEmpty
+                  colSpan={10}
+                  noun="cash advances"
+                  filtered={!!(searchQuery || statusFilter || dateFrom || dateTo)}
+                />
+              ) : pagination.paginatedItems.map(r => (
+                <TableRow
+                  key={r.id}
+                  className="cursor-pointer hover:bg-gray-50"
+                  onClick={() => setDetail(r)}
+                >
+                  <TableCell className="text-xs">
+                    {formatDate(r.createdAt)}
+                    {/* v-doc-audit-line — creator / last editor */}
+                    <DocAuditLine compact createdBy={r.createdByName} updatedBy={r.updatedByName} className="max-w-[180px]" />
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs">{r.advanceNo}</TableCell>
+                  <TableCell>{r.employeeName ?? '—'}</TableCell>
+                  <TableCell className="truncate max-w-[280px]" title={r.purpose}>{r.purpose}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={STATUS_BADGE[r.status]}>
+                      {r.status.replace(/_/g, ' ')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{fmtMoney(Number(r.advanceAmount), r.currency)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-gray-600">{fmtMoney(Number(r.expenseTotal), r.currency)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${
+                    Number(r.refundAmount) > 0 ? 'text-emerald-700'
+                    : Number(r.refundAmount) < 0 ? 'text-rose-700'
+                    : 'text-gray-300'
+                  }`}>
+                    {Number(r.refundAmount) === 0
+                      ? '—'
+                      : `${Number(r.refundAmount) < 0 ? '− ' : ''}${fmtMoney(Math.abs(Number(r.refundAmount)), r.currency)}`}
+                  </TableCell>
+                  <TableCell className={`text-right tabular-nums font-medium ${
+                    Number(r.balance) > 0 ? 'text-emerald-700'
+                    : Number(r.balance) < 0 ? 'text-rose-700'
+                    : 'text-gray-600'
+                  }`}>
+                    {fmtMoney(Number(r.balance), r.currency)}
+                  </TableCell>
+                  <TableCell className="text-xs uppercase text-gray-500">{r.currency}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading && rows.length === 0 ? (
-                  <TableBodySkeletonRows columns={10} />
-                ) : loadError && rows.length === 0 ? (
-                  <ListError colSpan={10} message={loadError} onRetry={() => void load()} />
-                ) : pagination.paginatedItems.length === 0 ? (
-                  <ListEmpty
-                    colSpan={10}
-                    noun="cash advances"
-                    filtered={!!(searchQuery || statusFilter || dateFrom || dateTo)}
-                  />
-                ) : pagination.paginatedItems.map(r => (
-                  <TableRow
-                    key={r.id}
-                    className="cursor-pointer hover:bg-gray-50"
-                    onClick={() => setDetail(r)}
-                  >
-                    <TableCell className="text-xs">
-                      {formatDate(r.createdAt)}
-                      {/* v-doc-audit-line — creator / last editor */}
-                      <DocAuditLine compact createdBy={r.createdByName} updatedBy={r.updatedByName} className="max-w-[180px]" />
-                    </TableCell>
-                    <TableCell className="tabular-nums text-xs">{r.advanceNo}</TableCell>
-                    <TableCell>{r.employeeName ?? '—'}</TableCell>
-                    <TableCell className="truncate max-w-[280px]" title={r.purpose}>{r.purpose}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={STATUS_BADGE[r.status]}>
-                        {r.status.replace(/_/g, ' ')}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{fmtMoney(Number(r.advanceAmount), r.currency)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-gray-600">{fmtMoney(Number(r.expenseTotal), r.currency)}</TableCell>
-                    <TableCell className={`text-right tabular-nums ${
-                      Number(r.refundAmount) > 0 ? 'text-emerald-700'
-                      : Number(r.refundAmount) < 0 ? 'text-rose-700'
-                      : 'text-gray-300'
+              ))}
+            </TableBody>
+            {totals.length > 0 && (
+              <TableFooter className="sticky bottom-0 bg-slate-50 z-10 shadow-[0_-1px_0_rgba(0,0,0,0.08)]">
+                {totals.map(t => (
+                  <TableRow key={t.currency} className="bg-slate-50">
+                    <TableCell colSpan={5} className="text-xs uppercase tracking-wide text-gray-500">Total</TableCell>
+                    <TableCell className="text-right text-xs tabular-nums">{fmtMoney(t.advance, t.currency)}</TableCell>
+                    <TableCell className="text-right text-xs tabular-nums">{fmtMoney(t.expense, t.currency)}</TableCell>
+                    <TableCell className={`text-right text-xs tabular-nums ${
+                      t.refund > 0 ? 'text-emerald-700' : t.refund < 0 ? 'text-rose-700' : 'text-gray-400'
                     }`}>
-                      {Number(r.refundAmount) === 0
+                      {t.refund === 0
                         ? '—'
-                        : `${Number(r.refundAmount) < 0 ? '− ' : ''}${fmtMoney(Math.abs(Number(r.refundAmount)), r.currency)}`}
+                        : `${t.refund < 0 ? '− ' : ''}${fmtMoney(Math.abs(t.refund), t.currency)}`}
                     </TableCell>
-                    <TableCell className={`text-right tabular-nums font-medium ${
-                      Number(r.balance) > 0 ? 'text-emerald-700'
-                      : Number(r.balance) < 0 ? 'text-rose-700'
-                      : 'text-gray-600'
-                    }`}>
-                      {fmtMoney(Number(r.balance), r.currency)}
-                    </TableCell>
-                    <TableCell className="text-xs uppercase text-gray-500">{r.currency}</TableCell>
+                    <TableCell className={`text-right text-xs font-semibold tabular-nums ${t.balance >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{fmtMoney(t.balance, t.currency)}</TableCell>
+                    <TableCell className="text-xs uppercase text-gray-500">{t.currency}</TableCell>
                   </TableRow>
                 ))}
-              </TableBody>
-              {totals.length > 0 && (
-                <TableFooter className="sticky bottom-0 bg-slate-50 z-10 shadow-[0_-1px_0_rgba(0,0,0,0.08)]">
-                  {totals.map(t => (
-                    <TableRow key={t.currency} className="bg-slate-50">
-                      <TableCell colSpan={5} className="text-xs uppercase tracking-wide text-gray-500">Total</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">{fmtMoney(t.advance, t.currency)}</TableCell>
-                      <TableCell className="text-right text-xs tabular-nums">{fmtMoney(t.expense, t.currency)}</TableCell>
-                      <TableCell className={`text-right text-xs tabular-nums ${
-                        t.refund > 0 ? 'text-emerald-700' : t.refund < 0 ? 'text-rose-700' : 'text-gray-400'
-                      }`}>
-                        {t.refund === 0
-                          ? '—'
-                          : `${t.refund < 0 ? '− ' : ''}${fmtMoney(Math.abs(t.refund), t.currency)}`}
-                      </TableCell>
-                      <TableCell className={`text-right text-xs font-semibold tabular-nums ${t.balance >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{fmtMoney(t.balance, t.currency)}</TableCell>
-                      <TableCell className="text-xs uppercase text-gray-500">{t.currency}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableFooter>
-              )}
-            </ListTable>
-          </div>
+              </TableFooter>
+            )}
+          </ListTable>
           {visibleRows.length > 0 && (
             <Pagination
               currentPage={pagination.currentPage}

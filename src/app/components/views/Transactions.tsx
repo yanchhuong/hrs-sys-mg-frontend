@@ -327,110 +327,103 @@ export function Transactions() {
           </div>
         </CardHeader>
         <CardContent>
-          {/* Table scroller — {@code max-h} so the card shrinks to
-              fit its content when rows are few (no whitespace below
-              the footer), and engages inner scroll only when rows
-              would overflow. Header + footer stay sticky inside this
-              container. */}
-          <div className="overflow-auto max-h-[calc(100vh-22rem)]">
-            <ListTable>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[110px]">Date</TableHead>
-                  <TableHead className="w-[110px]">Source</TableHead>
-                  <TableHead className="w-[140px]">Reference</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="w-[160px]">Category</TableHead>
-                  <TableHead className="w-[100px]">Method</TableHead>
-                  <TableHead className="w-[160px]">Author</TableHead>
-                  <TableHead className="w-[80px]">Currency</TableHead>
-                  <TableHead className="text-right w-[160px]">Amount</TableHead>
+          <ListTable>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[110px]">Date</TableHead>
+                <TableHead className="w-[110px]">Source</TableHead>
+                <TableHead className="w-[140px]">Reference</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead className="w-[160px]">Category</TableHead>
+                <TableHead className="w-[100px]">Method</TableHead>
+                <TableHead className="w-[160px]">Author</TableHead>
+                <TableHead className="w-[80px]">Currency</TableHead>
+                <TableHead className="text-right w-[160px]">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pagination.paginatedItems.length === 0 ? (
+                loading && rows.length === 0
+                  ? <TableBodySkeletonRows rows={8} columns={9} />
+                  : <ListEmpty noun="transactions" filtered={!!(from || to || refTypeFilter || dirFilter || currencyFilter)} colSpan={9} />
+              ) : pagination.paginatedItems.map(entry => {
+                const r = entry.row;
+                const isChild = entry.depth > 0;
+                const isExpandable = !isChild && entry.childCount > 0 && !!entry.advanceId;
+                const isExpanded = isExpandable && expandedAdvances.has(entry.advanceId!);
+                return (
+                <TableRow
+                  key={r.id}
+                  className={`${isChild ? 'bg-slate-50/50' : ''} ${isExpandable ? 'cursor-pointer' : ''}`}
+                  onClick={() => { if (isExpandable && entry.advanceId) toggleAdvance(entry.advanceId); }}
+                >
+                  <TableCell className="text-xs">
+                    {isExpandable && (
+                      <span className="inline-flex items-center mr-1 text-gray-500">
+                        {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      </span>
+                    )}
+                    {formatDate(r.date)}
+                  </TableCell>
+                  <TableCell>{sourceBadge(r.referenceType)}</TableCell>
+                  <TableCell className="tabular-nums text-xs">
+                    {isChild && <span className="text-gray-400 mr-1 ml-3">↳</span>}
+                    {r.referenceNo ?? '—'}
+                    {isExpandable && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">
+                        {entry.childCount} item{entry.childCount === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="truncate max-w-[240px]" title={r.partyName ?? ''}>{r.partyName ?? '—'}</TableCell>
+                  <TableCell className="text-xs text-gray-600">{categoryLabel(r.category)}</TableCell>
+                  <TableCell className="text-xs uppercase text-gray-500">{r.paymentMethod?.replace(/_/g, ' ') ?? '—'}</TableCell>
+                  <TableCell className="text-xs text-gray-600 truncate max-w-[160px]" title={r.createdByName ?? ''}>
+                    {r.createdByName ?? '—'}
+                  </TableCell>
+                  <TableCell className="text-xs uppercase text-gray-500">{r.currency}</TableCell>
+                  <TableCell className={`text-right font-medium tabular-nums ${
+                    isChildSpend(r)
+                      ? 'text-gray-400 italic'
+                      : (r.direction === 'in' ? 'text-emerald-700' : 'text-rose-700')
+                  }`} title={isChildSpend(r) ? 'Funded from a Cash Advance — already counted at disbursement' : undefined}>
+                    {!isChildSpend(r) && r.direction === 'out' ? '− ' : ''}{fmtMoney(Number(r.amount), r.currency)}
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pagination.paginatedItems.length === 0 ? (
-                  loading && rows.length === 0
-                    ? <TableBodySkeletonRows rows={8} columns={9} />
-                    : <ListEmpty noun="transactions" filtered={!!(from || to || refTypeFilter || dirFilter || currencyFilter)} colSpan={9} />
-                ) : pagination.paginatedItems.map(entry => {
-                  const r = entry.row;
-                  const isChild = entry.depth > 0;
-                  const isExpandable = !isChild && entry.childCount > 0 && !!entry.advanceId;
-                  const isExpanded = isExpandable && expandedAdvances.has(entry.advanceId!);
-                  return (
-                  <TableRow
-                    key={r.id}
-                    className={`${isChild ? 'bg-slate-50/50' : ''} ${isExpandable ? 'cursor-pointer' : ''}`}
-                    onClick={() => { if (isExpandable && entry.advanceId) toggleAdvance(entry.advanceId); }}
-                  >
-                    <TableCell className="text-xs">
-                      {isExpandable && (
-                        <span className="inline-flex items-center mr-1 text-gray-500">
-                          {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                        </span>
-                      )}
-                      {formatDate(r.date)}
+                );
+              })}
+            </TableBody>
+            {totals.length > 0 && (
+              <TableFooter className="sticky bottom-0 bg-slate-50 z-10 shadow-[0_-1px_0_rgba(0,0,0,0.08)]">
+                {/* One footer row per currency — keeps the sum
+                    column-aligned with the Amount column even when
+                    multiple currencies appear in the filtered set. */}
+                {totals.map(t => (
+                  <TableRow key={t.currency} className="bg-slate-50">
+                    <TableCell colSpan={4} className="text-xs uppercase tracking-wide text-gray-500">
+                      Total
                     </TableCell>
-                    <TableCell>{sourceBadge(r.referenceType)}</TableCell>
-                    <TableCell className="tabular-nums text-xs">
-                      {isChild && <span className="text-gray-400 mr-1 ml-3">↳</span>}
-                      {r.referenceNo ?? '—'}
-                      {isExpandable && (
-                        <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">
-                          {entry.childCount} item{entry.childCount === 1 ? '' : 's'}
-                        </span>
-                      )}
+                    <TableCell className="text-xs text-emerald-700 tabular-nums">
+                      <span className="inline-flex items-center gap-1">
+                        <ArrowDownLeft className="h-3 w-3" />
+                        {fmtMoney(t.in, t.currency)}
+                      </span>
                     </TableCell>
-                    <TableCell className="truncate max-w-[240px]" title={r.partyName ?? ''}>{r.partyName ?? '—'}</TableCell>
-                    <TableCell className="text-xs text-gray-600">{categoryLabel(r.category)}</TableCell>
-                    <TableCell className="text-xs uppercase text-gray-500">{r.paymentMethod?.replace(/_/g, ' ') ?? '—'}</TableCell>
-                    <TableCell className="text-xs text-gray-600 truncate max-w-[160px]" title={r.createdByName ?? ''}>
-                      {r.createdByName ?? '—'}
+                    <TableCell className="text-xs text-rose-700 tabular-nums" colSpan={2}>
+                      <span className="inline-flex items-center gap-1">
+                        <ArrowUpRight className="h-3 w-3" />
+                        {fmtMoney(t.out, t.currency)}
+                      </span>
                     </TableCell>
-                    <TableCell className="text-xs uppercase text-gray-500">{r.currency}</TableCell>
-                    <TableCell className={`text-right font-medium tabular-nums ${
-                      isChildSpend(r)
-                        ? 'text-gray-400 italic'
-                        : (r.direction === 'in' ? 'text-emerald-700' : 'text-rose-700')
-                    }`} title={isChildSpend(r) ? 'Funded from a Cash Advance — already counted at disbursement' : undefined}>
-                      {!isChildSpend(r) && r.direction === 'out' ? '− ' : ''}{fmtMoney(Number(r.amount), r.currency)}
+                    <TableCell className="text-xs uppercase text-gray-500">{t.currency}</TableCell>
+                    <TableCell className={`text-right font-semibold tabular-nums ${t.net >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      Net: {fmtMoney(t.net, t.currency)}
                     </TableCell>
                   </TableRow>
-                  );
-                })}
-              </TableBody>
-              {totals.length > 0 && (
-                <TableFooter className="sticky bottom-0 bg-slate-50 z-10 shadow-[0_-1px_0_rgba(0,0,0,0.08)]">
-                  {/* One footer row per currency — keeps the sum
-                      column-aligned with the Amount column even when
-                      multiple currencies appear in the filtered set. */}
-                  {totals.map(t => (
-                    <TableRow key={t.currency} className="bg-slate-50">
-                      <TableCell colSpan={4} className="text-xs uppercase tracking-wide text-gray-500">
-                        Total
-                      </TableCell>
-                      <TableCell className="text-xs text-emerald-700 tabular-nums">
-                        <span className="inline-flex items-center gap-1">
-                          <ArrowDownLeft className="h-3 w-3" />
-                          {fmtMoney(t.in, t.currency)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs text-rose-700 tabular-nums" colSpan={2}>
-                        <span className="inline-flex items-center gap-1">
-                          <ArrowUpRight className="h-3 w-3" />
-                          {fmtMoney(t.out, t.currency)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs uppercase text-gray-500">{t.currency}</TableCell>
-                      <TableCell className={`text-right font-semibold tabular-nums ${t.net >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        Net: {fmtMoney(t.net, t.currency)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableFooter>
-              )}
-            </ListTable>
-          </div>
+                ))}
+              </TableFooter>
+            )}
+          </ListTable>
 
           {/* Match Bills + StockMovements: pagination lives in its
               own padded chrome row at the bottom of the card. */}
