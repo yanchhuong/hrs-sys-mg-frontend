@@ -20,7 +20,7 @@ import type { EmployeeRecord, RecordType } from '../../api/employeeRecords';
 import {
   RecordFormDialog, RecordRowActions, RecordSourceMark, RecordStatusBadge, RecordTypeChip, type RecordEmployeeOption,
 } from '../common/EmployeeRecords';
-import { RECORD_TYPES, RECORD_TYPE_ORDER, STATUS_LABEL, summarize } from '../common/employeeRecordTypes';
+import { RECORD_GROUPS, RECORD_TYPES, STATUS_LABEL, summarize } from '../common/employeeRecordTypes';
 
 const filterSelectCls =
   'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
@@ -96,7 +96,11 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
           <select value={type} onChange={e => { setType(e.target.value as RecordType | ''); setStatus(''); }}
             className={filterSelectCls} aria-label="Filter by record type">
             <option value="">Type : All</option>
-            {RECORD_TYPE_ORDER.map(t => <option key={t} value={t}>Type : {RECORD_TYPES[t].label}</option>)}
+            {RECORD_GROUPS.map(g => (
+              <optgroup key={g.key} label={g.label}>
+                {g.types.map(t => <option key={t} value={t}>Type : {RECORD_TYPES[t].label}</option>)}
+              </optgroup>
+            ))}
           </select>
           <select value={status} onChange={e => setStatus(e.target.value)} className={filterSelectCls}
             aria-label="Filter by status">

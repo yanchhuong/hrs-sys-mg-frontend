@@ -7,6 +7,30 @@ import type { RecordType } from '../../api/employeeRecords';
  * here are the jsonb keys stored there.
  */
 
+/**
+ * Where a record comes from, which is also its colour everywhere:
+ *   leave    Accident, Sick, Ceremony — the employee applies for leave;
+ *            the leave's own approval rule covers them.
+ *   hr       Promoted, Welfare — entered by HR.
+ *   request  Join Club — the employee applies; the person in charge approves.
+ */
+export type RecordGroup = 'leave' | 'hr' | 'request';
+
+export const GROUP_CHIP: Record<RecordGroup, string> = {
+  leave:   'bg-blue-50 text-blue-700 border-blue-200',
+  hr:      'bg-violet-50 text-violet-700 border-violet-200',
+  request: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+};
+
+export const RECORD_GROUPS: { key: RecordGroup; label: string; hint: string; types: RecordType[] }[] = [
+  { key: 'leave',   label: 'From leave',       hint: 'Applied for by the employee as leave', types: ['accident', 'sick', 'ceremony'] },
+  { key: 'hr',      label: 'HR input',         hint: 'Entered by HR',                          types: ['promoted', 'welfare'] },
+  { key: 'request', label: 'Employee request', hint: 'Applied for by the employee; approved by the person in charge', types: ['club'] },
+];
+
+export const groupOf = (t: RecordType): RecordGroup =>
+  RECORD_GROUPS.find(g => g.types.includes(t))?.key ?? 'hr';
+
 export interface RecordField {
   key: string;
   label: string;
@@ -37,7 +61,7 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
   accident: {
     label: 'Accident',
     category: 'Case',
-    chip: 'bg-red-50 text-red-700 border-red-200',
+    chip: GROUP_CHIP.leave,
     subtypes: [
       { value: 'workplace', label: 'Workplace' },
       { value: 'commuting', label: 'Commuting' },
@@ -52,12 +76,12 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
       { key: 'lostDays', label: 'Lost days', kind: 'number', medical: true },
       { key: 'nssfClaimNo', label: 'NSSF claim no.', kind: 'text', medical: true },
     ],
-    approvalHint: 'A case: Open → Investigating → Closed. Medical details are visible only to HR (update rights).',
+    approvalHint: 'Comes from approved sick leave marked as an accident, then runs as a case: Open → Investigating → Closed. Medical details are visible only to HR (update rights).',
   },
   club: {
     label: 'Join Club',
     category: 'Activity',
-    chip: 'bg-sky-50 text-sky-700 border-sky-200',
+    chip: GROUP_CHIP.request,
     subtypes: [
       { value: 'sport', label: 'Sport' },
       { value: 'social', label: 'Social' },
@@ -80,7 +104,7 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
   promoted: {
     label: 'Promoted',
     category: 'Activity',
-    chip: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    chip: GROUP_CHIP.hr,
     subtypes: [
       { value: 'promotion', label: 'Promotion' },
       { value: 'transfer', label: 'Transfer' },
@@ -99,7 +123,7 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
   welfare: {
     label: 'Welfare',
     category: 'Activity',
-    chip: 'bg-violet-50 text-violet-700 border-violet-200',
+    chip: GROUP_CHIP.hr,
     subtypes: [
       { value: 'gift', label: 'Gift' },
       { value: 'allowance', label: 'Allowance' },
@@ -119,7 +143,7 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
   sick: {
     label: 'Sick',
     category: 'Case',
-    chip: 'bg-teal-50 text-teal-700 border-teal-200',
+    chip: GROUP_CHIP.leave,
     subtypes: [
       { value: 'illness', label: 'Illness' },
       { value: 'hospital', label: 'Hospital stay' },
@@ -131,12 +155,12 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
       { key: 'hospital', label: 'Hospital / clinic', kind: 'text' },
       { key: 'diagnosis', label: 'Diagnosis', kind: 'text', medical: true },
     ],
-    approvalHint: 'Recorded from approved sick leave (or by hand). Diagnosis and the leave reason are visible only to HR (update rights).',
+    approvalHint: 'Comes from approved sick leave — the leave\'s approval rule applies. Diagnosis and the leave reason are visible only to HR (update rights).',
   },
   ceremony: {
     label: 'Ceremony',
     category: 'Activity',
-    chip: 'bg-amber-50 text-amber-700 border-amber-200',
+    chip: GROUP_CHIP.leave,
     subtypes: [
       { value: 'wedding', label: 'Wedding' },
       { value: 'funeral', label: 'Funeral' },
@@ -153,11 +177,12 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
       ] },
       { key: 'attendedByCompany', label: 'Attended by company', kind: 'bool' },
     ],
-    approvalHint: 'No approval — recorded as is.',
+    approvalHint: 'Comes from approved special leave — the leave\'s approval rule applies; no second approval.',
   },
 };
 
-export const RECORD_TYPE_ORDER: RecordType[] = ['accident', 'sick', 'club', 'promoted', 'welfare', 'ceremony'];
+/** Group by group: From leave, HR input, Employee request. */
+export const RECORD_TYPE_ORDER: RecordType[] = RECORD_GROUPS.flatMap(g => g.types);
 
 /** Accident and Sick details carry medical fields. */
 export const isMedicalType = (t: RecordType) => t === 'accident' || t === 'sick';

@@ -29,7 +29,7 @@ import * as recordsApi from '../../api/employeeRecords';
 import type { RecordType, EmployeeRecord } from '../../api/employeeRecords';
 import {
   RECORD_TYPES, RECORD_TYPE_ORDER, STATUS_LABEL, WELFARE_APPROVAL_THRESHOLD,
-  isMedicalType, nextStatuses, subtypeLabel, summarize,
+  RECORD_GROUPS, GROUP_CHIP, groupOf, isMedicalType, nextStatuses, subtypeLabel, summarize,
 } from './employeeRecordTypes';
 
 /** The ✨ / calendar mark before a record's details: made automatically
@@ -266,22 +266,30 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
           {/* Type — fixed once saved: the status hangs off it. */}
           <div className="space-y-1.5">
             <Label className="text-xs text-gray-600">Record type</Label>
-            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Record type">
-              {RECORD_TYPE_ORDER.map(t => {
-                const on = t === type;
-                return (
-                  <button key={t} type="button" role="radio" aria-checked={on}
-                    disabled={!!record && !on}
-                    onClick={() => !record && changeType(t)}
-                    className={`px-3 h-8 rounded-full border text-sm transition-colors ${on
-                      ? RECORD_TYPES[t].chip + ' font-medium'
-                      : 'border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent'}`}>
-                    {RECORD_TYPES[t].label}
-                  </button>
-                );
-              })}
+            {/* Grouped and coloured by where the record comes from. */}
+            <div className="flex flex-wrap gap-x-4 gap-y-2" role="radiogroup" aria-label="Record type">
+              {RECORD_GROUPS.map(g => (
+                <div key={g.key} className="space-y-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400" title={g.hint}>{g.label}</p>
+                  <div className="flex gap-1.5">
+                    {g.types.map(t => {
+                      const on = t === type;
+                      return (
+                        <button key={t} type="button" role="radio" aria-checked={on}
+                          disabled={!!record && !on}
+                          onClick={() => !record && changeType(t)}
+                          className={`px-3 h-8 rounded-full border text-sm transition-colors ${on
+                            ? GROUP_CHIP[g.key] + ' font-medium ring-1 ring-current/30'
+                            : 'border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent'}`}>
+                          {RECORD_TYPES[t].label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-            <p className="text-[11px] text-gray-500">{RECORD_TYPES[type].category} · {meta.approvalHint}</p>
+            <p className="text-[11px] text-gray-500">{meta.approvalHint}</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -438,11 +446,15 @@ export function EmployeeRecordsPanel({ employeeId, onCount }: {
             className={`px-2.5 h-7 rounded-full border text-xs shrink-0 ${typeFilter === '' ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
             All {rows.length}
           </button>
-          {RECORD_TYPE_ORDER.map(t => (
-            <button key={t} type="button" onClick={() => setTypeFilter(t)}
-              className={`px-2.5 h-7 rounded-full border text-xs shrink-0 ${typeFilter === t ? RECORD_TYPES[t].chip + ' font-medium' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-              {RECORD_TYPES[t].label} {countOf(t)}
-            </button>
+          {RECORD_TYPE_ORDER.map((t, i) => (
+            <span key={t} className="contents">
+              {/* A thin divider where the group changes. */}
+              {i > 0 && groupOf(RECORD_TYPE_ORDER[i - 1]) !== groupOf(t) && <span className="w-px h-4 bg-gray-200 shrink-0" />}
+              <button type="button" onClick={() => setTypeFilter(t)}
+                className={`px-2.5 h-7 rounded-full border text-xs shrink-0 ${typeFilter === t ? RECORD_TYPES[t].chip + ' font-medium' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                {RECORD_TYPES[t].label} {countOf(t)}
+              </button>
+            </span>
           ))}
         </div>
         {canCreate('employee_records') && (
