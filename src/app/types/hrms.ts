@@ -1,3 +1,4 @@
+import type { EducationLevel } from '../utils/education';
 // Core HRMS Types
 
 export type UserRole =
@@ -171,6 +172,10 @@ export interface Employee {
   /** V376 — how salary is paid. 'transfer' uses the PayWay beneficiary
    *  (bank / wallet + account) for the account; 'cash' needs none. */
   paymentMethod?: 'transfer' | 'cash';
+  /** V377 — highest education reached. Undefined means never
+   *  recorded, which is not the same as 'under_diploma'. Labels live
+   *  in utils/education.ts. */
+  education?: EducationLevel | null;
   /** Spreadsheet-only: the bulk import / export still carries Bank and
    *  Account columns, but the employee API has no such fields — the
    *  account lives on the PayWay beneficiary. Not shown on any form. */

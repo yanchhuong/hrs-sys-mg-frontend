@@ -92,6 +92,7 @@ import { AuditCell } from '../common/AuditCell';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { PaymentMethodToggle, paymentMethodHint } from '../common/PaymentMethodToggle';
+import { EDUCATION_OPTIONS, educationLabel } from '../../utils/education';
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -514,6 +515,10 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     // V70 — Cambodian Labour Law skill level; nullable until HR sets it.
     level: (e.level as Employee['level']) ?? undefined,
     paymentMethod: e.paymentMethod ?? 'transfer',
+    // V377 — left undefined when unrecorded rather than defaulted to a
+    // level, and carried on the FE object so the detail dialog's
+    // full-replace PUT does not blank it while saving something else.
+    education: e.education ?? undefined,
     // Forward audit fields (createdAt/By/Name + updatedAt/By/Name) so
     // the Author/Modifier columns can read them. Cast to a dynamic
     // shape since the FE Employee type doesn't declare them yet.
@@ -2824,6 +2829,29 @@ export function Employees() {
                           <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-0">
                             Yes
                           </Badge>
+                        )}
+                      </FieldRow>
+                      <FieldRow label="Education" isEditing={isEditing}>
+                        {isEditing && editedEmployee ? (
+                          <select
+                            value={editedEmployee.education ?? ''}
+                            onChange={(e) =>
+                              setEditedEmployee({
+                                ...editedEmployee,
+                                education: (e.target.value || undefined) as typeof editedEmployee.education,
+                              })
+                            }
+                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
+                          >
+                            {/* Blank is a real answer — "never recorded"
+                                is not the lowest level. */}
+                            <option value="">— not set —</option>
+                            {EDUCATION_OPTIONS.map(o => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <p>{educationLabel(selectedEmployee.education)}</p>
                         )}
                       </FieldRow>
                     </div>

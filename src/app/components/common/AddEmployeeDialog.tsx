@@ -27,6 +27,7 @@ import { USE_MOCKS, ApiError as ApiClientError } from '../../api/client';
 import { SearchablePicker } from './SearchablePicker';
 import { SeatCapDialog } from './SeatCapDialog';
 import { PaymentMethodToggle, paymentMethodHint } from './PaymentMethodToggle';
+import { EDUCATION_OPTIONS } from '../../utils/education';
 
 interface Props {
   open: boolean;
@@ -234,6 +235,9 @@ export function AddEmployeeDialog({
         status: form.status || 'active',
         linkUserId: linkUserId || undefined,
         paymentMethod: form.paymentMethod ?? 'transfer',
+        // Omitted rather than sent empty when not picked — the column
+        // stays unrecorded instead of claiming a level.
+        education: form.education || undefined,
       } as employeesApi.CreateEmployeeRequest);
       // Transfer with an account typed in → register it straight away, so
       // the new hire is payout-ready without a second visit. A failure
@@ -575,6 +579,20 @@ export function AddEmployeeDialog({
                   <option value="specialized">Specialized</option>
                   <option value="ns_cook">Non-Specialized · Cook</option>
                   <option value="ns_labour">Non-Specialized · Labour</option>
+                </select>
+              </Field>
+              <Field label="Education">
+                <select
+                  className="h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+                  value={form.education ?? ''}
+                  onChange={(e) => patch({ education: (e.target.value || undefined) as typeof form.education })}
+                >
+                  {/* Blank is a real answer here — "never recorded" is
+                      not the same as the lowest level. */}
+                  <option value="">— not set —</option>
+                  {EDUCATION_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
                 </select>
               </Field>
             </div>

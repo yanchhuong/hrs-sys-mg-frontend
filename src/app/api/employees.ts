@@ -1,4 +1,5 @@
 import { apiJson, apiVoid, Page } from './client';
+import type { EducationLevel } from '../utils/education';
 
 /** V196 — clinical role tag surfaced on the Healthcare business
  *  base. Drives the Doctor picker filter + the Staff Roles
@@ -85,6 +86,9 @@ export interface Employee {
   /** V376 — 'transfer' (bank / wallet, via the PayWay beneficiary) or
    *  'cash'. Omitted / null on update leaves it unchanged. */
   paymentMethod?: 'transfer' | 'cash' | null;
+  /** V377 — under_diploma | diploma | bachelor | master | doctorate.
+   *  Omitted / null on update leaves it unchanged; '' clears it. */
+  education?: EducationLevel | null;
   /** Author + modifier audit. Display names resolved server-side. */
   createdAt?: string | null;
   createdById?: string | null;
