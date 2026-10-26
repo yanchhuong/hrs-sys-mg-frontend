@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Gift, X, Copy, Loader2, Check, Clock, QrCode, Share2, ArrowLeft } from 'lucide-react';
+import { Gift, X, Copy, Loader2, Check, Clock, QrCode, Share2, ArrowLeft, Maximize2, Minimize2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
@@ -83,6 +83,46 @@ export function PublicShopSpin({ shopCode, lifted }: {
       .catch(() => setQrData(''));
   }, [showQr, qrData, playUrl]);
   useEffect(() => { if (!open) setShowQr(false); }, [open]);
+
+  /* Maximize — the game fills the screen with a bigger wheel. Uses the
+   * browser's real full-screen mode where it exists (hides the address
+   * bar on Android / desktop) and a full-viewport layout everywhere, so
+   * iPhone Safari, which has no element full screen, still gets it. */
+  const [maximized, setMaximized] = useState(false);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const exitNativeFullscreen = () => {
+    if (typeof document !== 'undefined' && document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => {});
+    }
+  };
+  const toggleMaximize = () => {
+    if (maximized) {
+      setMaximized(false);
+      exitNativeFullscreen();
+      return;
+    }
+    setMaximized(true);
+    const el = overlayRef.current;
+    if (el && typeof el.requestFullscreen === 'function' && !document.fullscreenElement) {
+      // Refused (iframe, iOS, user setting) — the CSS layout still applies.
+      void el.requestFullscreen().catch(() => {});
+    }
+  };
+  // Leaving full screen with Esc / the system back gesture minimizes too.
+  useEffect(() => {
+    const onChange = () => { if (!document.fullscreenElement) setMaximized(false); };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  // Closing the game always restores the normal window.
+  useEffect(() => {
+    if (!open) { setMaximized(false); exitNativeFullscreen(); }
+  }, [open]);
+  /** Wheel edge in px: the card's 288, or as big as the screen allows
+   *  (leaving room for the title and the result below it). */
+  const wheelStyle = maximized
+    ? { width: 'min(88vw, 62vh)', height: 'min(88vw, 62vh)' }
+    : undefined;
   const copyPlayUrl = async () => {
     try { await navigator.clipboard.writeText(playUrl); toast.success('Link copied'); }
     catch { toast.error('Could not copy — long-press the link instead'); }
@@ -283,12 +323,16 @@ export function PublicShopSpin({ shopCode, lifted }: {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={() => !spinning && setOpen(false)}>
+        <div
+          ref={overlayRef}
+          className={`fixed inset-0 z-50 flex justify-center bg-black/50 ${maximized ? 'items-stretch p-0' : 'items-end sm:items-center p-0 sm:p-4'}`}
+          onClick={() => !spinning && !maximized && setOpen(false)}
+        >
           <div
             // While the QR layer is up the card stops scrolling, at the top,
             // so the layer (inset-0) covers exactly what's on screen.
             ref={el => { if (el && showQr) el.scrollTop = 0; }}
-            className={`relative w-full sm:max-w-sm max-h-[92vh] ${showQr ? 'overflow-hidden min-h-[600px]' : 'overflow-y-auto'} rounded-t-2xl sm:rounded-2xl bg-white p-5 pb-7 shadow-2xl`}
+            className={`relative w-full ${maximized ? 'h-full max-h-none rounded-none flex flex-col justify-center' : 'sm:max-w-sm max-h-[92vh] rounded-t-2xl sm:rounded-2xl'} ${showQr ? 'overflow-hidden min-h-[600px]' : 'overflow-y-auto'} bg-white p-5 pb-7 shadow-2xl`}
             onClick={e => e.stopPropagation()}
             role="dialog"
             aria-label="Spin and win"
@@ -301,6 +345,15 @@ export function PublicShopSpin({ shopCode, lifted }: {
               aria-label="Close"
             >
               <X className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={toggleMaximize}
+              className="absolute right-12 top-3 rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-blue-600"
+              aria-label={maximized ? 'Minimize' : 'Maximize'}
+              title={maximized ? 'Minimize' : 'Full screen'}
+            >
+              {maximized ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
             </button>
             <button
               type="button"
@@ -321,7 +374,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
               </div>
             </div>
 
-            <div className="relative mx-auto mt-4 h-72 w-72">
+            <div className={`relative mx-auto mt-4 ${maximized ? '' : 'h-72 w-72'}`} style={wheelStyle}>
               {/* Pointer — blue like the SPIN button; it stays still while
                   the wheel turns. */}
               <div className="absolute left-1/2 -top-1 z-20 -translate-x-1/2 h-0 w-0 border-x-[12px] border-t-[20px] border-x-transparent border-t-blue-600 drop-shadow" />
@@ -368,7 +421,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
                 onClick={spin}
                 disabled={spinning || !!result || checkingToday}
                 aria-label="Spin the wheel"
-                className={`absolute left-1/2 top-1/2 z-10 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full ring-4 ring-white font-extrabold tracking-wider text-white transition-transform active:scale-95 disabled:cursor-default ${
+                className={`absolute left-1/2 top-1/2 z-10 ${maximized ? 'h-24 w-24 text-lg' : 'h-20 w-20'} -translate-x-1/2 -translate-y-1/2 rounded-full ring-4 ring-white font-extrabold tracking-wider text-white transition-transform active:scale-95 disabled:cursor-default ${
                   result ? 'bg-gray-300' : 'bg-blue-600 hover:bg-blue-700 shadow-[0_6px_18px_rgba(37,99,235,0.45)]'
                 }`}
               >
