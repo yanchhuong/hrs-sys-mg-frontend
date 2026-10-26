@@ -31,6 +31,7 @@ import { ListEmpty, ListError } from '../common/ListStates';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
+import { Checkbox } from '../ui/checkbox';
 import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
 import { useConfirm } from '../../context/ConfirmContext';
 import { EmployeeCell } from '../common/EmployeeCell';
@@ -117,6 +118,10 @@ function adaptApiLeave(r: leaveApi.LeaveRequest): AttendanceException {
     correctedCheckIn: r.correctedCheckIn ?? undefined,
     correctedCheckOut: r.correctedCheckOut ?? undefined,
     isException: r.isException ?? false,
+    // V381 — what this leave becomes in Employee Records once approved.
+    accident: r.accident ?? false,
+    ceremonyType: r.ceremonyType ?? null,
+    ceremonyRelation: r.ceremonyRelation ?? null,
     // v-doc-audit-line — keep the audit fields; they were dropped here,
     // which left the Author / Modifier columns blank.
     createdByName: r.createdByName ?? null,
@@ -191,6 +196,12 @@ export function AllLeave() {
   /** Duration — independent from category. Half-day implies single-day. */
   const [newDuration, setNewDuration] = useState<'full' | 'half_morning' | 'half_noon'>('full');
   const [newReason, setNewReason] = useState('');
+  // V381 — become an Employee Record once approved: sick leave caused
+  // by an accident → Accident case; special leave for a ceremony →
+  // Ceremony. Plain sick leave becomes a Sick record on its own.
+  const [newAccident, setNewAccident] = useState(false);
+  const [newCeremonyType, setNewCeremonyType] = useState('');
+  const [newCeremonyRelation, setNewCeremonyRelation] = useState('self');
   const [newCorrectedIn, setNewCorrectedIn] = useState('');
   const [newCorrectedOut, setNewCorrectedOut] = useState('');
 
@@ -353,7 +364,7 @@ export function AllLeave() {
     if (USE_MOCKS) {
       toast.success('Leave submitted for approval');
       setDialogOpen(false);
-      setNewReason('');
+      setNewReason(''); setNewAccident(false); setNewCeremonyType(''); setNewCeremonyRelation('self');
       setNewCorrectedIn('');
       setNewCorrectedOut('');
       return;
@@ -368,6 +379,9 @@ export function AllLeave() {
         type: newDuration,
         category: newCategory,
         reason: newReason,
+        accident: newCategory === 'sick' ? newAccident : undefined,
+        ceremonyType: newCategory === 'special' && newCeremonyType ? newCeremonyType : undefined,
+        ceremonyRelation: newCategory === 'special' && newCeremonyType ? newCeremonyRelation : undefined,
         correctedCheckIn: newCorrectedIn || undefined,
         correctedCheckOut: newCorrectedOut || undefined,
       });
@@ -377,7 +391,7 @@ export function AllLeave() {
           : `Leave submitted for approval (${totalDays} days)`,
       );
       setDialogOpen(false);
-      setNewReason('');
+      setNewReason(''); setNewAccident(false); setNewCeremonyType(''); setNewCeremonyRelation('self');
       setNewCorrectedIn('');
       setNewCorrectedOut('');
       await loadLeaves();
@@ -552,6 +566,39 @@ export function AllLeave() {
                       {LEAVE_CATEGORIES_DEDUCTIBLE.find(c => c.value === newCategory)?.hint}
                     </p>
                   </div>
+                  {/* V381 — what this leave becomes in Employee Records once approved. */}
+                  {newCategory === 'sick' && (
+                    <label className="flex items-start gap-2 rounded-md border bg-gray-50 px-3 py-2 cursor-pointer">
+                      <Checkbox checked={newAccident} onCheckedChange={v => setNewAccident(v === true)} className="mt-0.5" />
+                      <span className="text-sm">
+                        Caused by an accident
+                        <span className="block text-[11px] text-gray-500">
+                          Opens an Accident case in Employee Records when approved; otherwise it is kept as a Sick record.
+                        </span>
+                      </span>
+                    </label>
+                  )}
+                  {newCategory === 'special' && (
+                    <div className="grid grid-cols-2 gap-3 rounded-md border bg-gray-50 px-3 py-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="lv-ceremony" className="text-xs">Ceremony</Label>
+                        <select id="lv-ceremony" value={newCeremonyType} onChange={e => setNewCeremonyType(e.target.value)}
+                          className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm">
+                          <option value="">Not a ceremony</option>
+                          {leaveApi.CEREMONY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="lv-relation" className="text-xs">Whose</Label>
+                        <select id="lv-relation" value={newCeremonyRelation} disabled={!newCeremonyType}
+                          onChange={e => setNewCeremonyRelation(e.target.value)}
+                          className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm disabled:opacity-50">
+                          {leaveApi.RELATION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                      <p className="col-span-2 text-[11px] text-gray-500">A ceremony is added to Employee Records when the leave is approved.</p>
+                    </div>
+                  )}
                   {/* Duration — Full / Half. Half-day implies single-day
                       (end_date gets locked to start_date below). */}
                   <div className="space-y-2">
@@ -965,6 +1012,20 @@ export function AllLeave() {
                     </div>
                   </div>
                 ) : null}
+                {(viewTarget.accident || viewTarget.ceremonyType) && (
+                  <div>
+                    <p className="text-xs text-gray-500">Employee Record</p>
+                    <p className="font-medium">
+                      {viewTarget.accident
+                        ? 'Accident case'
+                        : `Ceremony · ${leaveApi.CEREMONY_OPTIONS.find(o => o.value === viewTarget.ceremonyType)?.label ?? viewTarget.ceremonyType}`
+                          + (viewTarget.ceremonyRelation ? ` (${leaveApi.RELATION_OPTIONS.find(o => o.value === viewTarget.ceremonyRelation)?.label ?? viewTarget.ceremonyRelation})` : '')}
+                      <span className="text-xs text-gray-500 font-normal">
+                        {viewTarget.status === 'approved' ? ' — added to Records' : ' — added to Records once approved'}
+                      </span>
+                    </p>
+                  </div>
+                )}
                 <div>
                   <p className="text-xs text-gray-500">Reason</p>
                   <p className="whitespace-pre-wrap">{viewTarget.reason || <span className="text-gray-300">—</span>}</p>

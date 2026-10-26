@@ -115,6 +115,23 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
     amountLabel: 'Amount ($)',
     approvalHint: `Needs approval above $${WELFARE_APPROVAL_THRESHOLD}; smaller amounts are approved on save.`,
   },
+  sick: {
+    label: 'Sick',
+    category: 'Case',
+    chip: 'bg-teal-50 text-teal-700 border-teal-200',
+    subtypes: [
+      { value: 'illness', label: 'Illness' },
+      { value: 'hospital', label: 'Hospital stay' },
+      { value: 'medical_check', label: 'Medical check' },
+      { value: 'other', label: 'Other' },
+    ],
+    fields: [
+      { key: 'days', label: 'Days off', kind: 'number' },
+      { key: 'hospital', label: 'Hospital / clinic', kind: 'text' },
+      { key: 'diagnosis', label: 'Diagnosis', kind: 'text', medical: true },
+    ],
+    approvalHint: 'Recorded from approved sick leave (or by hand). Diagnosis and the leave reason are visible only to HR (update rights).',
+  },
   ceremony: {
     label: 'Ceremony',
     category: 'Activity',
@@ -139,7 +156,10 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
   },
 };
 
-export const RECORD_TYPE_ORDER: RecordType[] = ['accident', 'club', 'promoted', 'welfare', 'ceremony'];
+export const RECORD_TYPE_ORDER: RecordType[] = ['accident', 'sick', 'club', 'promoted', 'welfare', 'ceremony'];
+
+/** Accident and Sick details carry medical fields. */
+export const isMedicalType = (t: RecordType) => t === 'accident' || t === 'sick';
 
 export const STATUS_LABEL: Record<string, string> = {
   open: 'Open', investigating: 'Investigating', closed: 'Closed',
@@ -153,7 +173,7 @@ export function nextStatuses(type: RecordType, status: string): string[] {
     if (status === 'investigating') return ['closed'];
     return ['open'];                         // reopen a closed case
   }
-  if (type === 'ceremony') return [];
+  if (type === 'ceremony' || type === 'sick') return [];
   if (status === 'pending') return ['approved', 'rejected'];
   return ['pending'];                        // reopen a decision
 }
@@ -180,6 +200,9 @@ export function summarize(type: RecordType, d: Record<string, unknown>): string 
     case 'welfare':
       return [s('item'), s('paymentMethod') && ({ cash: 'Cash', transfer: 'Transfer', payroll: 'Payroll' } as Record<string, string>)[s('paymentMethod')]]
         .filter(Boolean).join(' · ');
+    case 'sick':
+      return [s('days') && `${s('days')} day${s('days') === '1' ? '' : 's'}`, s('hospital'), s('diagnosis')]
+        .filter(Boolean).join(' · ') || (s('leaveDays') ? `${s('leaveDays')} day leave` : '');
     case 'ceremony': {
       const rel = s('relation') ? `${s('relation')[0].toUpperCase()}${s('relation').slice(1)}` : '';
       return [rel, d.attendedByCompany === true ? 'Company attended' : ''].filter(Boolean).join(' · ');

@@ -37,6 +37,11 @@ export interface LeaveRequest {
   /** Legacy flag — kept for backwards compatibility with V46 rows.
    *  Equivalent to category in ('maternity', 'exception'). */
   isException?: boolean;
+  /** V381 — sick leave caused by an accident (→ Accident record on approval). */
+  accident?: boolean;
+  /** V381 — special leave ceremony (→ Ceremony record on approval). */
+  ceremonyType?: string | null;
+  ceremonyRelation?: string | null;
   /** Author + modifier audit. Display names resolved server-side. */
   createdById?: string | null;
   createdByName?: string | null;
@@ -67,7 +72,32 @@ export interface CreateLeaveRequest {
    *  V46 backend on the off-chance a stale server is deployed. New
    *  code should set {@link #category} instead. */
   isException?: boolean;
+  /** V381 — sick only: caused by an accident. */
+  accident?: boolean;
+  /** V381 — special only: wedding | funeral | birthday | childbirth |
+   *  ordination | housewarming | other, and whose (self | spouse | child | parent). */
+  ceremonyType?: string;
+  ceremonyRelation?: string;
 }
+
+/** V381 — the ceremony kinds special leave can be for (same values as
+ *  the Ceremony record subtypes). */
+export const CEREMONY_OPTIONS: { value: string; label: string }[] = [
+  { value: 'wedding', label: 'Wedding' },
+  { value: 'funeral', label: 'Funeral' },
+  { value: 'birthday', label: 'Birthday' },
+  { value: 'childbirth', label: 'Childbirth' },
+  { value: 'ordination', label: 'Ordination' },
+  { value: 'housewarming', label: 'Housewarming' },
+  { value: 'other', label: 'Other' },
+];
+
+export const RELATION_OPTIONS: { value: string; label: string }[] = [
+  { value: 'self', label: 'Self' },
+  { value: 'spouse', label: 'Spouse' },
+  { value: 'child', label: 'Child' },
+  { value: 'parent', label: 'Parent' },
+];
 
 export interface ListParams {
   status?: LeaveStatus | '';

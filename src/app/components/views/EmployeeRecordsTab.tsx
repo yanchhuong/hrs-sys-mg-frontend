@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCw, Search, Sparkles, ShieldAlert } from 'lucide-react';
+import { Plus, RefreshCw, Search, ShieldAlert } from 'lucide-react';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -18,7 +18,7 @@ import { formatMoney } from '../../utils/format';
 import * as recordsApi from '../../api/employeeRecords';
 import type { EmployeeRecord, RecordType } from '../../api/employeeRecords';
 import {
-  RecordFormDialog, RecordRowActions, RecordStatusBadge, RecordTypeChip, type RecordEmployeeOption,
+  RecordFormDialog, RecordRowActions, RecordSourceMark, RecordStatusBadge, RecordTypeChip, type RecordEmployeeOption,
 } from '../common/EmployeeRecords';
 import { RECORD_TYPES, RECORD_TYPE_ORDER, STATUS_LABEL, summarize } from '../common/employeeRecordTypes';
 
@@ -81,7 +81,7 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
   const clear = () => { setType(''); setStatus(''); setFrom(''); setTo(''); setSearch(''); };
   const statusOptions = type
     ? Array.from(new Set(type === 'accident' ? ['open', 'investigating', 'closed']
-      : type === 'ceremony' ? ['recorded'] : ['pending', 'approved', 'rejected']))
+      : type === 'ceremony' || type === 'sick' ? ['recorded'] : ['pending', 'approved', 'rejected']))
     : ['pending', 'approved', 'rejected', 'open', 'investigating', 'closed', 'recorded'];
 
   return (
@@ -152,9 +152,7 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
                 <TableCell><RecordTypeChip type={r.recordType} subtype={r.subtype} /></TableCell>
                 <TableCell className="text-sm text-gray-700 whitespace-normal min-w-[200px]">
                   <span className="inline-flex items-center gap-1.5">
-                    {r.source === 'auto' && (
-                      <span title="Added automatically from an employee change"><Sparkles className="h-3.5 w-3.5 text-emerald-500 shrink-0" /></span>
-                    )}
+                    <RecordSourceMark source={r.source} />
                     {summarize(r.recordType, r.details) || <span className="text-gray-400">—</span>}
                   </span>
                   {r.restricted && <ShieldAlert className="inline h-3.5 w-3.5 ml-1 text-gray-400" aria-label="Medical details hidden" />}

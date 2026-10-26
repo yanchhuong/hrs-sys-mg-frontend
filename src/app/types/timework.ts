@@ -76,6 +76,11 @@ export interface AttendanceException {
   /** Legacy flag — pre-V47 rows used this boolean alone. Now equivalent
    *  to category in ('maternity', 'exception'). */
   isException?: boolean;
+  /** V381 — sick leave caused by an accident / special leave ceremony;
+   *  each becomes an Employee Record once the leave is approved. */
+  accident?: boolean;
+  ceremonyType?: string | null;
+  ceremonyRelation?: string | null;
   /** Display names of the creator / last editor (server-resolved). */
   createdByName?: string | null;
   updatedByName?: string | null;

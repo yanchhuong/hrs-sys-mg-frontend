@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Plus, Pencil, Trash2, Check, X, Search as SearchIcon, ShieldAlert, Loader2, RotateCcw, Sparkles,
+  Plus, Pencil, Trash2, Check, X, Search as SearchIcon, ShieldAlert, Loader2, RotateCcw, Sparkles, CalendarCheck,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -29,8 +29,20 @@ import * as recordsApi from '../../api/employeeRecords';
 import type { RecordType, EmployeeRecord } from '../../api/employeeRecords';
 import {
   RECORD_TYPES, RECORD_TYPE_ORDER, STATUS_LABEL, WELFARE_APPROVAL_THRESHOLD,
-  nextStatuses, subtypeLabel, summarize,
+  isMedicalType, nextStatuses, subtypeLabel, summarize,
 } from './employeeRecordTypes';
+
+/** The ✨ / calendar mark before a record's details: made automatically
+ *  from an employee change, or from an approved leave. */
+export function RecordSourceMark({ source }: { source: EmployeeRecord['source'] }) {
+  if (source === 'auto') {
+    return <span title="Added automatically from an employee change"><Sparkles className="h-3.5 w-3.5 text-emerald-500 shrink-0" /></span>;
+  }
+  if (source === 'leave') {
+    return <span title="Added from an approved leave"><CalendarCheck className="h-3.5 w-3.5 text-blue-500 shrink-0" /></span>;
+  }
+  return null;
+}
 
 const selectCls =
   'h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60';
@@ -327,10 +339,23 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
             ))}
           </div>
 
-          {type === 'accident' && restricted && (
+          {isMedicalType(type) && restricted && (
             <p className="flex items-center gap-1.5 text-xs text-gray-500">
-              <ShieldAlert className="h-3.5 w-3.5" /> Medical details (injury, body part, lost days, NSSF claim) are visible to HR only.
+              <ShieldAlert className="h-3.5 w-3.5" /> Medical details ({type === 'accident' ? 'injury, body part, lost days, NSSF claim' : 'diagnosis'} and the leave reason) are visible to HR only.
             </p>
+          )}
+
+          {/* From an approved leave: what the leave said, read-only. */}
+          {record?.source === 'leave' && (
+            <div className="rounded-md border bg-blue-50/50 border-blue-100 px-3 py-2 text-xs text-gray-700 space-y-0.5">
+              <p className="flex items-center gap-1.5 font-medium text-blue-700">
+                <CalendarCheck className="h-3.5 w-3.5" /> From an approved leave
+                {details.leaveDays != null && <span className="font-normal text-gray-600">· {String(details.leaveDays)} day{String(details.leaveDays) === '1' ? '' : 's'}</span>}
+              </p>
+              {typeof details.leaveReason === 'string' && details.leaveReason && (
+                <p className="whitespace-pre-wrap"><span className="text-gray-500">Reason: </span>{details.leaveReason}</p>
+              )}
+            </div>
           )}
 
           <div className="space-y-1.5">
@@ -451,9 +476,7 @@ export function EmployeeRecordsPanel({ employeeId, onCount }: {
               <TableCell><RecordTypeChip type={r.recordType} subtype={r.subtype} /></TableCell>
               <TableCell className="text-sm text-gray-700 whitespace-normal min-w-[180px]">
                 <span className="inline-flex items-center gap-1.5">
-                  {r.source === 'auto' && (
-                    <span title="Added automatically from an employee change"><Sparkles className="h-3.5 w-3.5 text-emerald-500 shrink-0" /></span>
-                  )}
+                  <RecordSourceMark source={r.source} />
                   {summarize(r.recordType, r.details) || <span className="text-gray-400">—</span>}
                 </span>
                 {r.restricted && <ShieldAlert className="inline h-3.5 w-3.5 ml-1 text-gray-400" aria-label="Medical details hidden" />}

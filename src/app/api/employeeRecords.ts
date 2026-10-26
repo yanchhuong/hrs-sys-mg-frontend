@@ -3,7 +3,7 @@ import { apiJson, apiVoid } from './client';
 /** V378 — Employee Records: Accident (a case) and Join Club / Promoted /
  *  Welfare / Ceremony (activities). See common/employeeRecordTypes.ts
  *  for each type's subtypes, statuses and detail fields. */
-export type RecordType = 'accident' | 'club' | 'promoted' | 'welfare' | 'ceremony';
+export type RecordType = 'accident' | 'club' | 'promoted' | 'welfare' | 'ceremony' | 'sick';
 
 export interface EmployeeRecord {
   id: string;
@@ -18,8 +18,10 @@ export interface EmployeeRecord {
   /** Per-type fields — keys are listed in employeeRecordTypes.ts. */
   details: Record<string, unknown>;
   notes: string | null;
-  /** 'auto' = a Promoted row made by a position / department change. */
-  source: 'manual' | 'auto';
+  /** 'auto' = a Promoted row made by a position / department change;
+   *  'leave' = made by approving a sick / accident / ceremony leave (V381). */
+  source: 'manual' | 'auto' | 'leave';
+  leaveRequestId: string | null;
   /** True when an Accident's medical fields were withheld from this viewer. */
   restricted: boolean;
   decidedById: string | null;
