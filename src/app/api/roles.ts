@@ -38,7 +38,9 @@ export type PermissionModule =
   // Receivables (V251 / V287 / V288)
   | 'payment_plan' | 'payment_collection' | 'property' | 'booking'
   // Approval + templates + commission + consignment
-  | 'approval' | 'invoice_template' | 'commission' | 'consignment';
+  | 'approval' | 'invoice_template' | 'commission' | 'consignment'
+  // Employee Records (V378)
+  | 'employee_records';
 
 /**
  * Permission actions split into two axes:

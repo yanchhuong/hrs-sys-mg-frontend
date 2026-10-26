@@ -3,6 +3,7 @@ import { mockEmployees, mockContracts } from '../../data/mockData';
 import { Contract, Employee } from '../../types/hrms';
 import * as employeesApi from '../../api/employees';
 import * as contractsApi from '../../api/contracts';
+import * as employeeRecordsApi from '../../api/employeeRecords';
 import * as departmentsApi from '../../api/departments';
 import * as settingsApi from '../../api/settings';
 import * as positionsApi from '../../api/positions';
@@ -45,7 +46,7 @@ import { TableBodySkeletonRows, TableRowsSkeleton } from '../common/LoadingSkele
 import { ListEmpty, ListError } from '../common/ListStates';
 import { Textarea } from '../ui/textarea';
 import { TONE_CLASS, statusBadgeClass } from '../../utils/statusTones';
-import { Eye, Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network } from 'lucide-react';
+import { Eye, Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network, ClipboardList } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -66,6 +67,8 @@ import * as hrBotApi from '../../api/hrTelegramBots';
 import * as beneficiaryApi from '../../api/paywayBeneficiary';
 import { exportEmployeesToExcel } from '../../utils/employeeBulkParser';
 import { AllDocumentsTab } from './AllDocumentsTab';
+import { EmployeeRecordsTab } from './EmployeeRecordsTab';
+import { EmployeeRecordsPanel } from '../common/EmployeeRecords';
 import { EmployeeIdCardDialog } from '../common/EmployeeIdCardDialog';
 import { EmployeePhoto } from '../common/EmployeePhoto';
 import { useProfileImage } from '../../hooks/useProfileImage';
@@ -568,7 +571,10 @@ export function Employees() {
   const { currentUser } = useAuth();
   // Underlined-button page-level tab state — mirrors the pattern
   // used by the agency's Sale & Expense page.
-  const [pageTab, setPageTab] = useState<'roster' | 'orgchart' | 'documents'>('roster');
+  const [pageTab, setPageTab] = useState<'roster' | 'orgchart' | 'records' | 'documents'>('roster');
+  // Records tab badge in the details drawer — the panel reports its
+  // count once loaded; reset when another employee opens.
+  const [recordCount, setRecordCount] = useState<number | null>(null);
   /** ID-card preview dialog — non-null = open for that employee. */
   const [idCardEmployee, setIdCardEmployee] = useState<typeof mockEmployees[0] | null>(null);
   /** Company profile — logo + name printed on the ID card header /
@@ -606,6 +612,7 @@ export function Employees() {
   const canCreateContract = canCreate('contracts');
   const canUpdateContract = canUpdate('contracts');
   const canManageRoster = canCreateEmp || canUpdateEmp;
+  const canViewRecords = canView('employee_records');
   // HR Telegram column visibility + per-action permissions. Mirrors
   // the Customer page split: 'view' gates the column itself, 'create'
   // gates Share-link, 'delete' gates Unlink, 'update' gates the gear.
@@ -810,6 +817,18 @@ export function Employees() {
   };
   const [selectedEmployee, setSelectedEmployee] = useState<typeof mockEmployees[0] | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // The Records tab body only mounts when opened, so the badge count is
+  // fetched here, per employee; the panel refreshes it after a change.
+  const recordsEmpId = selectedEmployee ? ((selectedEmployee as { apiId?: string }).apiId ?? selectedEmployee.id) : null;
+  useEffect(() => {
+    setRecordCount(null);
+    if (!recordsEmpId || !canViewRecords || USE_MOCKS) return;
+    let alive = true;
+    employeeRecordsApi.list({ employeeId: recordsEmpId, size: 1 })
+      .then(p => { if (alive) setRecordCount(p.totalElements); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [recordsEmpId, canViewRecords]);
   const [isEditing, setIsEditing] = useState(false);
   const [editedEmployee, setEditedEmployee] = useState<typeof mockEmployees[0] | null>(null);
 
@@ -1680,7 +1699,7 @@ export function Employees() {
           view that Managers use to hand out contact info; the table
           stays for bulk edits and Excel export; the org chart reads the
           same managerId the table's Managers column shows. */}
-      <Tabs value={pageTab} onValueChange={v => setPageTab(v as 'roster' | 'orgchart' | 'documents')} className="space-y-4">
+      <Tabs value={pageTab} onValueChange={v => setPageTab(v as 'roster' | 'orgchart' | 'records' | 'documents')} className="space-y-4">
         <TabsList>
           <TabsTrigger value="roster">
             <User className="h-3.5 w-3.5" />
@@ -1690,6 +1709,12 @@ export function Employees() {
             <Network className="h-3.5 w-3.5" />
             Org Chart
           </TabsTrigger>
+          {canViewRecords && (
+            <TabsTrigger value="records">
+              <ClipboardList className="h-3.5 w-3.5" />
+              Records
+            </TabsTrigger>
+          )}
           <TabsTrigger value="documents">
             <FileText className="h-3.5 w-3.5" />
             All Documents
@@ -2022,6 +2047,20 @@ export function Employees() {
           />
         </TabsContent>
 
+        {canViewRecords && (
+          <TabsContent value="records" className="mt-0">
+            <EmployeeRecordsTab
+              employees={employees
+                .filter(e => e.status === 'active')
+                .map(e => ({ id: (e as { apiId?: string }).apiId ?? e.id, name: e.name, empNo: e.id }))}
+              onOpenEmployee={empId => {
+                const emp = employees.find(e => ((e as { apiId?: string }).apiId ?? e.id) === empId);
+                if (emp) { setSelectedEmployee(emp); setSheetOpen(true); }
+              }}
+            />
+          </TabsContent>
+        )}
+
         <TabsContent value="documents" className="mt-0">
           <AllDocumentsTab />
         </TabsContent>
@@ -2177,7 +2216,7 @@ export function Employees() {
 
               {/* Tabs */}
               <Tabs defaultValue="profile" className="flex-1 flex flex-col min-h-0">
-                <TabsList className="mx-6 mt-3 shrink-0 grid grid-cols-5">
+                <TabsList className={`mx-6 mt-3 shrink-0 grid ${canViewRecords ? 'grid-cols-5' : 'grid-cols-4'}`}>
                   <TabsTrigger value="profile">
                     <User className="h-3.5 w-3.5 mr-1.5" />
                     Profile
@@ -2193,6 +2232,15 @@ export function Employees() {
                       {getEmployeeContracts(selectedEmployee).length}
                     </Badge>
                   </TabsTrigger>
+                  {canViewRecords && (
+                    <TabsTrigger value="records">
+                      <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+                      Records
+                      {recordCount != null && (
+                        <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-[10px]">{recordCount}</Badge>
+                      )}
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger value="documents">
                     <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />
                     Documents
@@ -3001,6 +3049,18 @@ export function Employees() {
                       );
                     })()}
                   </TabsContent>
+
+                  {/* Records Tab (V378) — accidents, clubs, promotions,
+                      welfare and ceremonies for this employee. */}
+                  {canViewRecords && (
+                    <TabsContent value="records" className="mt-0">
+                      <EmployeeRecordsPanel
+                        key={(selectedEmployee as { apiId?: string }).apiId ?? selectedEmployee.id}
+                        employeeId={(selectedEmployee as { apiId?: string }).apiId ?? selectedEmployee.id}
+                        onCount={setRecordCount}
+                      />
+                    </TabsContent>
+                  )}
 
                   {/* Documents Tab */}
                   <TabsContent value="documents" className="mt-0">

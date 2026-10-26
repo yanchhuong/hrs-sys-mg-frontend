@@ -137,6 +137,7 @@ interface ModuleDef {
 const MODULES: ModuleDef[] = [
   { key: 'dashboard',         label: 'Dashboard',         description: 'Home overview and widgets' },
   { key: 'employees',         label: 'Employees',         description: 'Employee master data' },
+  { key: 'employee_records',  label: 'Employee Records',  description: 'Accident, club, promotion, welfare and ceremony records. Update rights also see accident medical details.', parent: 'employees' },
   { key: 'announcements',     label: 'Announcements',     description: 'Company-wide bulletins published to Telegram + dashboard' },
 
   { key: 'time-tracking',     label: 'Time Tracking',     description: '',                                                            header: true },

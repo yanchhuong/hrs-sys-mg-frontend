@@ -40,6 +40,9 @@ const STATUS_TONE: Record<string, Tone> = {
   prepared: 'attention', in_review: 'attention',
   progress: 'info', open: 'info', issued: 'info', disbursed: 'info', in_progress: 'info',
   scheduled: 'info', confirmed: 'info',
+  // Employee Records (V378): an accident case under investigation is
+  // waiting on someone; a ceremony is simply on file.
+  investigating: 'attention', recorded: 'info',
   draft: 'neutral', void: 'neutral', cancelled: 'neutral', canceled: 'neutral',
   close: 'neutral', closed: 'neutral', inactive: 'neutral', expired: 'neutral',
   withdrawn: 'neutral', suspended: 'neutral',

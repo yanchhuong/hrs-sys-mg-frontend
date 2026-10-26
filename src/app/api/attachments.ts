@@ -1,6 +1,6 @@
 import { apiJson, apiFetch, apiVoid, API_BASE, getToken } from './client';
 
-export type AttachmentDocType = 'invoice' | 'bill' | 'receipt' | 'encounter' | 'hospital_logo';
+export type AttachmentDocType = 'invoice' | 'bill' | 'receipt' | 'encounter' | 'hospital_logo' | 'employee_records';
 
 export interface Attachment {
   id: string;
