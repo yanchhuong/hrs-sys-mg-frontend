@@ -82,6 +82,9 @@ export interface Employee {
    *  {@code doctor} lands the employee in the Doctor picker on
    *  Encounter + Appointment forms. Null = untagged. */
   clinicalRole?: ClinicalRole | null;
+  /** V376 — 'transfer' (bank / wallet, via the PayWay beneficiary) or
+   *  'cash'. Omitted / null on update leaves it unchanged. */
+  paymentMethod?: 'transfer' | 'cash' | null;
   /** Author + modifier audit. Display names resolved server-side. */
   createdAt?: string | null;
   createdById?: string | null;

@@ -88,6 +88,7 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
   return {
     id: e.empNo,
     apiId: e.id,
+    paymentMethod: e.paymentMethod ?? 'transfer',
     name: e.name,
     khmerName: e.khmerName ?? undefined,
     email: e.email,
@@ -3413,6 +3414,18 @@ export function Payroll() {
                           the disbursement step on this batch. */}
                       <TableCell className="text-center">
                         {(() => {
+                          // Cash-paid staff (V376) need no beneficiary —
+                          // say Cash, not a "No" that reads as a blocker.
+                          if (employee?.paymentMethod === 'cash') {
+                            return (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-700 ring-1 ring-slate-200"
+                                title="Paid in cash — no PayWay beneficiary needed"
+                              >
+                                Cash
+                              </span>
+                            );
+                          }
                           const ben = record.employeeId ? beneficiaryByEmpId.get(record.employeeId) : null;
                           const ready = ben?.status === 'active';
                           return ready ? (

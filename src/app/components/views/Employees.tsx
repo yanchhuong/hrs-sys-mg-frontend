@@ -45,7 +45,7 @@ import { TableBodySkeletonRows, TableRowsSkeleton } from '../common/LoadingSkele
 import { ListEmpty, ListError } from '../common/ListStates';
 import { Textarea } from '../ui/textarea';
 import { TONE_CLASS, statusBadgeClass } from '../../utils/statusTones';
-import { Eye, Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network } from 'lucide-react';
+import { Eye, Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network, CreditCard, Banknote } from 'lucide-react';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -512,6 +512,7 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     evaluationAllowance: e.evaluationAllowance ?? 0,
     // V70 — Cambodian Labour Law skill level; nullable until HR sets it.
     level: (e.level as Employee['level']) ?? undefined,
+    paymentMethod: e.paymentMethod ?? 'transfer',
     // Forward audit fields (createdAt/By/Name + updatedAt/By/Name) so
     // the Author/Modifier columns can read them. Cast to a dynamic
     // shape since the FE Employee type doesn't declare them yet.
@@ -2215,10 +2216,6 @@ export function Employees() {
                       {getEmployeeContracts(selectedEmployee).length}
                     </Badge>
                   </TabsTrigger>
-                  <TabsTrigger value="payout">
-                    <Wallet className="h-3.5 w-3.5 mr-1.5" />
-                    Payout
-                  </TabsTrigger>
                   <TabsTrigger value="documents">
                     <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />
                     Documents
@@ -2859,37 +2856,48 @@ export function Employees() {
                       </FieldRow>
                     </div>
 
-                    <SectionHeading>Banking</SectionHeading>
-                    <div className="grid grid-cols-2 gap-4">
-                      <FieldRow label="Bank Name" isEditing={isEditing}>
-                        {isEditing && editedEmployee ? (
-                          <select
-                            value={editedEmployee.bankName || ''}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, bankName: e.target.value })}
-                            className="w-full px-3 py-2 border rounded-md text-sm h-9"
-                          >
-                            <option value="">Select bank…</option>
-                            {['ABA', 'ACLEDA', 'Canadia', 'Chip Mong', 'Maybank', 'PPCB', 'Prince', 'SKB', 'Other'].map(b => (
-                              <option key={b} value={b}>{b}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <p>{selectedEmployee.bankName || '—'}</p>
-                        )}
-                      </FieldRow>
-                      <FieldRow label="Account Number" isEditing={isEditing}>
-                        {isEditing && editedEmployee ? (
-                          <Input
-                            value={editedEmployee.bankAccount || ''}
-                            onChange={(e) => setEditedEmployee({ ...editedEmployee, bankAccount: e.target.value })}
-                            className="h-9"
-                            maxLength={LEN.bankAccount}
-                            placeholder="000-123-456"
-                          />
-                        ) : (
-                          <p className="tabular-nums text-sm">{selectedEmployee.bankAccount || '—'}</p>
-                        )}
-                      </FieldRow>
+                    {/* Payment Method — replaces the old Banking fields (never
+                        saved) and the separate Payout tab, which held the same
+                        bank details twice. Transfer → the PayWay beneficiary
+                        below is the account; Cash needs none. */}
+                    <SectionHeading>Payment Method</SectionHeading>
+                    <div className="space-y-4">
+                      {isEditing && editedEmployee ? (
+                        <div className="inline-flex rounded-md border p-0.5 bg-gray-50" role="radiogroup" aria-label="Payment method">
+                          {([['transfer', 'Bank transfer'], ['cash', 'Cash']] as const).map(([v, label]) => {
+                            const on = (editedEmployee.paymentMethod ?? 'transfer') === v;
+                            return (
+                              <button
+                                key={v}
+                                type="button"
+                                role="radio"
+                                aria-checked={on}
+                                onClick={() => setEditedEmployee({ ...editedEmployee, paymentMethod: v })}
+                                className={`inline-flex items-center gap-1.5 px-3 h-8 rounded text-sm transition-colors ${on ? 'bg-white shadow-sm text-blue-700 font-medium' : 'text-gray-600 hover:text-gray-900'}`}
+                              >
+                                {v === 'transfer' ? <CreditCard className="h-3.5 w-3.5" /> : <Banknote className="h-3.5 w-3.5" />}
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <Badge variant="outline" className="gap-1.5">
+                          {(selectedEmployee.paymentMethod ?? 'transfer') === 'cash'
+                            ? <><Banknote className="h-3.5 w-3.5" /> Cash</>
+                            : <><CreditCard className="h-3.5 w-3.5" /> Bank transfer</>}
+                        </Badge>
+                      )}
+                      {((isEditing && editedEmployee ? editedEmployee.paymentMethod : selectedEmployee.paymentMethod) ?? 'transfer') === 'cash' ? (
+                        <p className="text-xs text-gray-500">Salary is paid in cash — no bank account needed.</p>
+                      ) : (
+                        <EmployeeBeneficiarySection
+                          employeeId={(selectedEmployee as any).apiId ?? selectedEmployee.id}
+                          employeeName={selectedEmployee.name}
+                          employeePhone={selectedEmployee.contactNumber}
+                          readOnly={!isEditing && !canManageRoster}
+                        />
+                      )}
                     </div>
                   </TabsContent>
 
@@ -3003,18 +3011,6 @@ export function Employees() {
                         </>
                       );
                     })()}
-                  </TabsContent>
-
-                  {/* Payout Tab (V168) — PayWay Beneficiary registration.
-                      Section auto-hides when the tenant has PayWay disabled
-                      in Employee Payout Settings. */}
-                  <TabsContent value="payout" className="mt-0 px-6 pb-6">
-                    <EmployeeBeneficiarySection
-                      employeeId={(selectedEmployee as any).apiId ?? selectedEmployee.id}
-                      employeeName={selectedEmployee.name}
-                      employeePhone={selectedEmployee.contactNumber}
-                      readOnly={!isEditing && !canManageRoster}
-                    />
                   </TabsContent>
 
                   {/* Documents Tab */}

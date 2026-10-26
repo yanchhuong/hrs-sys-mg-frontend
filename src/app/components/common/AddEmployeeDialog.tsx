@@ -6,7 +6,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { User, Briefcase, CreditCard, UserPlus, Info } from 'lucide-react';
+import { User, Briefcase, CreditCard, UserPlus, Info, Wallet, Banknote } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { toast } from 'sonner';
 import { notify } from '../../utils/notify';
@@ -20,6 +20,8 @@ import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as positionsApi from '../../api/positions';
 import * as usersApi from '../../api/users';
+import * as beneficiaryApi from '../../api/paywayBeneficiary';
+import * as payoutSettingsApi from '../../api/employeePayoutSettings';
 import { useTeamScope } from '../../hooks/useTeamScope';
 import { USE_MOCKS, ApiError as ApiClientError } from '../../api/client';
 import { SearchablePicker } from './SearchablePicker';
@@ -54,15 +56,24 @@ const blank: Partial<Employee> = {
   // before they save, which is why defaulting is safe here and not in
   // the spreadsheet import (see utils/idType → parseIdTypeCell).
   nationalityType: 'national_id',
-  bankName: '',
-  bankAccount: '',
+  paymentMethod: 'transfer',
 };
 
 export function AddEmployeeDialog({
   open, onOpenChange, onCreated,
   positions = [], departments = [], employees,
 }: Props) {
-  const [tab, setTab] = useState<'personal' | 'employment' | 'banking'>('personal');
+  const [tab, setTab] = useState<'personal' | 'employment' | 'payment'>('personal');
+  // Transfer's bank details. They are not employee columns: on create
+  // they are registered as the employee's PayWay beneficiary — the same
+  // record the details drawer's Payment Method section edits.
+  const [payBank, setPayBank] = useState<string>('ABA');
+  const [payAccount, setPayAccount] = useState('');
+  const [paywayEnabled, setPaywayEnabled] = useState(true);
+  useEffect(() => {
+    if (!open || USE_MOCKS) return;
+    payoutSettingsApi.get().then(st => setPaywayEnabled(st.paywayEnabled)).catch(() => setPaywayEnabled(true));
+  }, [open]);
   const [form, setForm] = useState<Partial<Employee>>(blank);
   const [submitting, setSubmitting] = useState(false);
   const [seatCapMessage, setSeatCapMessage] = useState<string | null>(null);
@@ -118,7 +129,10 @@ export function AddEmployeeDialog({
     }));
   };
 
-  const reset = () => { setForm(blank); setTab('personal'); setSubmitting(false); setLinkUserId(''); };
+  const reset = () => {
+    setForm(blank); setTab('personal'); setSubmitting(false); setLinkUserId('');
+    setPayBank('ABA'); setPayAccount('');
+  };
 
   // One read of the chosen ID type for the select, the Visa Expire
   // gate and the payload, so the control and what gets stored can't
@@ -218,7 +232,24 @@ export function AddEmployeeDialog({
         contractExpireDate: form.contractExpireDate || undefined,
         status: form.status || 'active',
         linkUserId: linkUserId || undefined,
+        paymentMethod: form.paymentMethod ?? 'transfer',
       } as employeesApi.CreateEmployeeRequest);
+      // Transfer with an account typed in → register it straight away, so
+      // the new hire is payout-ready without a second visit. A failure
+      // here must not undo the create: say so, and where to finish it.
+      if ((form.paymentMethod ?? 'transfer') === 'transfer' && paywayEnabled && payAccount.trim()) {
+        try {
+          await beneficiaryApi.submit({
+            employeeId: created.id,
+            fullName: form.name!.trim(),
+            bank: payBank,
+            accountNumber: payAccount.trim(),
+            phone: form.contactNumber?.trim() || undefined,
+          });
+        } catch (be) {
+          toast.warning(`Employee created, but the bank account was not registered: ${be instanceof Error ? be.message : 'unknown error'}. Finish it in Employee details → Payment Method.`);
+        }
+      }
       toast.success(linkUserId
         ? `Employee ${created.empNo} created and linked to ${form.email}`
         : `Employee ${created.empNo} created`);
@@ -278,7 +309,7 @@ export function AddEmployeeDialog({
           <TabsList className="grid grid-cols-3 max-w-md">
             <TabsTrigger value="personal"><User className="h-3.5 w-3.5 mr-1.5" />Personal</TabsTrigger>
             <TabsTrigger value="employment"><Briefcase className="h-3.5 w-3.5 mr-1.5" />Employment</TabsTrigger>
-            <TabsTrigger value="banking"><CreditCard className="h-3.5 w-3.5 mr-1.5" />Banking</TabsTrigger>
+            <TabsTrigger value="payment"><Wallet className="h-3.5 w-3.5 mr-1.5" />Payment</TabsTrigger>
           </TabsList>
 
           {/* Personal */}
@@ -615,40 +646,70 @@ export function AddEmployeeDialog({
             )}
           </TabsContent>
 
-          {/* Banking */}
-          <TabsContent value="banking" className="space-y-4 pt-4">
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Bank Name">
-                <select
-                  value={form.bankName ?? ''}
-                  onChange={(e) => patch({ bankName: e.target.value })}
-                  className="w-full h-9 px-3 border rounded-md text-sm"
-                >
-                  <option value="">Select bank…</option>
-                  {['ABA', 'ACLEDA', 'Canadia', 'Chip Mong', 'Maybank', 'PPCB', 'Prince', 'SKB', 'Other'].map(b => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Account Number">
-                <Input
-                  value={form.bankAccount ?? ''}
-                  onChange={(e) => patch({ bankAccount: e.target.value })}
-                  maxLength={LEN.bankAccount}
-                  placeholder="000-123-456"
-                />
-              </Field>
-            </div>
-            <div className="rounded-md bg-gray-50 border p-3 text-xs text-gray-600">
-              Payroll disbursements use these details. Employees can update their own from Settings after first login; changes trigger a Finance notification.
-            </div>
+          {/* Payment Method — Transfer (bank / wallet) or Cash */}
+          <TabsContent value="payment" className="space-y-4 pt-4">
+            <Field label="Payment Method">
+              <div className="inline-flex rounded-md border p-0.5 bg-gray-50" role="radiogroup" aria-label="Payment method">
+                {([['transfer', 'Bank transfer'], ['cash', 'Cash']] as const).map(([v, label]) => {
+                  const on = (form.paymentMethod ?? 'transfer') === v;
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => patch({ paymentMethod: v })}
+                      className={`inline-flex items-center gap-1.5 px-3 h-8 rounded text-sm transition-colors ${on ? 'bg-white shadow-sm text-blue-700 font-medium' : 'text-gray-600 hover:text-gray-900'}`}
+                    >
+                      {v === 'transfer' ? <CreditCard className="h-3.5 w-3.5" /> : <Banknote className="h-3.5 w-3.5" />}
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+            {(form.paymentMethod ?? 'transfer') === 'cash' ? (
+              <p className="text-xs text-gray-500">Salary is paid in cash — no bank account needed.</p>
+            ) : !paywayEnabled ? (
+              <div className="rounded-md bg-gray-50 border p-3 text-xs text-gray-600">
+                PayWay payout is turned off in Employee Payout Settings, so no bank account is registered here.
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Bank / wallet">
+                    <select
+                      value={payBank}
+                      onChange={(e) => setPayBank(e.target.value)}
+                      className="w-full h-9 px-3 border rounded-md text-sm"
+                    >
+                      {beneficiaryApi.BANK_OPTIONS.map(b => (
+                        <option key={b} value={b}>{b.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Account Number">
+                    <Input
+                      value={payAccount}
+                      onChange={(e) => setPayAccount(e.target.value)}
+                      maxLength={64}
+                      inputMode="numeric"
+                      placeholder="e.g. 001234567"
+                    />
+                  </Field>
+                </div>
+                <div className="rounded-md bg-gray-50 border p-3 text-xs text-gray-600">
+                  Registered as the employee's PayWay beneficiary when you create the employee. Leave the account blank to add it later from Employee details → Payment Method.
+                </div>
+              </>
+            )}
           </TabsContent>
         </Tabs>
 
         <DialogFooter className="px-6 py-4 border-t bg-gray-50 gap-2">
           <Button variant="outline" onClick={() => { reset(); onOpenChange(false); }} disabled={submitting}>Cancel</Button>
-          {tab !== 'banking' && (
-            <Button variant="outline" onClick={() => setTab(tab === 'personal' ? 'employment' : 'banking')} disabled={submitting}>
+          {tab !== 'payment' && (
+            <Button variant="outline" onClick={() => setTab(tab === 'personal' ? 'employment' : 'payment')} disabled={submitting}>
               Next
             </Button>
           )}

@@ -168,7 +168,12 @@ export interface Employee {
    *  'office', 'specialized', 'ns_cook', 'ns_labour'. Drives the
    *  probation-max auto-fill on the Add Contract dialog. */
   level?: 'office' | 'specialized' | 'ns_cook' | 'ns_labour';
-  // Banking
+  /** V376 — how salary is paid. 'transfer' uses the PayWay beneficiary
+   *  (bank / wallet + account) for the account; 'cash' needs none. */
+  paymentMethod?: 'transfer' | 'cash';
+  /** Spreadsheet-only: the bulk import / export still carries Bank and
+   *  Account columns, but the employee API has no such fields — the
+   *  account lives on the PayWay beneficiary. Not shown on any form. */
   bankName?: string;
   bankAccount?: string;
   // Attached documents (contracts, IDs, certificates)

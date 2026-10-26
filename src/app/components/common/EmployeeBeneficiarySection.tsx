@@ -90,7 +90,15 @@ export function EmployeeBeneficiarySection({
       .finally(() => setLoading(false));
   }, [employeeId, employeeName, employeePhone]);
 
-  if (!enabled) return null;
+  // Lives under Payment Method → Transfer, so say why there is no form
+  // rather than leave the section blank.
+  if (!enabled) {
+    return (
+      <div className="rounded-md border border-dashed bg-gray-50 px-4 py-3 text-xs text-gray-500">
+        PayWay payout is turned off in Employee Payout Settings, so no bank account is registered here.
+      </div>
+    );
+  }
   if (!employeeId) {
     return (
       <div className="rounded-md border border-dashed bg-gray-50 px-4 py-3 text-xs text-gray-500">
