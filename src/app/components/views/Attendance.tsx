@@ -9,6 +9,7 @@ import * as attendanceApi from '../../api/attendance';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as leaveApi from '../../api/leave';
+import * as alRemainApi from '../../api/alRemain';
 import * as overtimeApi from '../../api/overtime';
 import * as settingsApi from '../../api/settings';
 import { USE_MOCKS, isModuleDisabledError } from '../../api/client';
@@ -500,6 +501,17 @@ export function Attendance({ onNavigate }: Props = {}) {
   // column sees only the daily-filter window (today by default) and shows
   // 0 for every employee even when leaves are clearly approved.
   const [monthlyLeaves, setMonthlyLeaves] = useState<leaveApi.LeaveRequest[]>([]);
+  /* Attendance for the Monthly Summary's whole month. The summary used to
+   * read `attendance`, which is loaded for the DAILY From/To filter (today
+   * by default), so Present / Absent / Late only counted those days. */
+  const [monthlyAttendance, setMonthlyAttendance] = useState<AttendanceType[]>([]);
+  const [monthlyAttendanceLoading, setMonthlyAttendanceLoading] = useState(false);
+  /* Annual leave per employee for the displayed year, from the server's AL
+   * Remain calculation (entitlement + 1 day per 3 years of service, minus
+   * approved annual leave) — the same figures payroll and the mobile app
+   * use. Empty when the user can't read payroll; the local AL values are
+   * the fallback then. */
+  const [serverAL, setServerAL] = useState<Map<string, { total: number; remain: number }>>(new Map());
   const deptName = makeDeptName(deptList, '-');
 
   const loadAttendance = async () => {
@@ -600,6 +612,48 @@ export function Attendance({ onNavigate }: Props = {}) {
       setMonthlyLeaves(all.filter(r => r.status !== 'rejected'));
     } catch (err) {
       console.warn('Could not load monthly leaves', err);
+    }
+  };
+
+  /** Every attendance row in the displayed month (see monthlyAttendance). */
+  const loadMonthlyAttendance = async (target: Date) => {
+    if (USE_MOCKS) return;
+    setMonthlyAttendanceLoading(true);
+    try {
+      const rows = await attendanceApi.listRange({
+        from: format(startOfMonth(target), 'yyyy-MM-dd'),
+        to: format(endOfMonth(target), 'yyyy-MM-dd'),
+        size: 500,
+      });
+      let cutoff = 17 * 60;
+      try {
+        const { rule } = await fetchScanRule();
+        const m = /^(\d{1,2}):(\d{2})/.exec(rule.eveningOut);
+        if (m) cutoff = Number(m[1]) * 60 + Number(m[2]);
+      } catch { /* keep the default cutoff */ }
+      setMonthlyAttendance(rows.map(r => adaptApiAttendance(r, cutoff)));
+    } catch (err) {
+      console.warn('Could not load monthly attendance', err);
+    } finally {
+      setMonthlyAttendanceLoading(false);
+    }
+  };
+
+  /** Server AL totals for a year; silently empty without payroll access. */
+  const loadServerAL = async (year: number) => {
+    if (USE_MOCKS) return;
+    try {
+      const p = await alRemainApi.preview(`${year}-01`, `${year}-12`);
+      const map = new Map<string, { total: number; remain: number }>();
+      for (const it of p.items) {
+        map.set(it.employeeId, {
+          total: Number(it.annualAllocatedDays ?? 0) + Number(it.seniorityBonusDays ?? 0),
+          remain: Number(it.remainingDays ?? 0),
+        });
+      }
+      setServerAL(map);
+    } catch {
+      setServerAL(new Map());
     }
   };
 
@@ -747,8 +801,14 @@ export function Attendance({ onNavigate }: Props = {}) {
   useEffect(() => {
     if (USE_MOCKS) return;
     void loadMonthlyLeaves(monthDate);
+    void loadMonthlyAttendance(monthDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monthDate]);
+
+  useEffect(() => {
+    void loadServerAL(monthDate.getFullYear());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthDate.getFullYear()]);
 
   // Poll the fingerprint sync status (Node worker → backend pushes) every 30 s
   // and re-render the relative-time label every 15 s. Admin-only — non-admins
@@ -1369,7 +1429,7 @@ export function Attendance({ onNavigate }: Props = {}) {
     // month/scope change. Same `date|employeeId` convention as the
     // daily roster's byKey a few hundred lines up.
     const attendanceByDateEmp = new Map<string, AttendanceType>();
-    for (const a of attendance) attendanceByDateEmp.set(`${a.date}|${a.employeeId}`, a);
+    for (const a of (USE_MOCKS ? attendance : monthlyAttendance)) attendanceByDateEmp.set(`${a.date}|${a.employeeId}`, a);
 
     return employees
       .filter(e => e.status === 'active' && (isTenantWide || matchesScope((e as any).apiId ?? e.id, scopeMode, employees)))
@@ -1411,15 +1471,20 @@ export function Attendance({ onNavigate }: Props = {}) {
       const leaveRecords = leaveAgg.rows;
 
       // Prefer the stored per-year value; fall back to applying the rule live.
-      const totalAL = storedAL[emp.id]?.totalAL
+      // Server AL first (the same figures as payroll and the mobile app);
+      // the locally stored value, then the rule, when it isn't available.
+      const srv = serverAL.get(apiId ?? emp.id) ?? serverAL.get(emp.id);
+      const totalAL = srv?.total
+        ?? storedAL[emp.id]?.totalAL
         ?? daysForTenure(rule, tenureYears(emp.joinDate, ruleAsOf));
-      const remainAL = Math.max(0, totalAL - leaveCount);
+      // Remain is the YEAR's balance; it used to subtract only this month.
+      const remainAL = srv ? srv.remain : Math.max(0, totalAL - leaveCount);
 
       return { employee: emp, records: empRecords, presentCount, absentCount, lateCount, leaveCount, leaveRecords, totalAL, remainAL };
     });
     // alVersion invalidates when AL values/rule change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthDate, alVersion, attendance, employees, leaves, monthlyLeaves, isTenantWide, matchesScope, scopeMode, generalSettings, holidayDates]);
+  }, [monthDate, alVersion, attendance, monthlyAttendance, serverAL, employees, leaves, monthlyLeaves, isTenantWide, matchesScope, scopeMode, generalSettings, holidayDates]);
 
   // Top absent employees
   const topAbsent = useMemo(() => {
@@ -1902,7 +1967,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       // leaves too to keep the overlay in sync. Both the daily-scoped
       // and the monthly-scoped slices are reloaded so the Monthly
       // Summary's Leave column flips immediately.
-      await Promise.all([loadAttendance(), loadLeaves(), loadMonthlyLeaves(monthDate)]);
+      await Promise.all([loadAttendance(), loadLeaves(), loadMonthlyLeaves(monthDate), loadMonthlyAttendance(monthDate)]);
     } catch (err) {
       console.error('attendance save failed', err);
       toast.error(err instanceof Error ? err.message : 'Failed to save attendance');
@@ -2102,7 +2167,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                           // server auto-created for status=leave rows) show
                           // up without a manual refresh.
                           if (result.saved > 0) {
-                            await Promise.all([loadAttendance(), loadLeaves(), loadMonthlyLeaves(monthDate)]);
+                            await Promise.all([loadAttendance(), loadLeaves(), loadMonthlyLeaves(monthDate), loadMonthlyAttendance(monthDate)]);
                           }
                         } catch (e) {
                           toast.error(e instanceof Error ? e.message : 'Upload failed');
@@ -2735,14 +2800,19 @@ export function Attendance({ onNavigate }: Props = {}) {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredRows.length === 0 && (
+                    {/* The month's attendance is still on its way — counts
+                        would read 0 for everyone until it lands. */}
+                    {monthlyAttendanceLoading && monthlyAttendance.length === 0 && (
+                      <TableBodySkeletonRows columns={8} />
+                    )}
+                    {!(monthlyAttendanceLoading && monthlyAttendance.length === 0) && filteredRows.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
                           No employees match these filters.
                         </TableCell>
                       </TableRow>
                     )}
-                    {filteredRows
+                    {!(monthlyAttendanceLoading && monthlyAttendance.length === 0) && filteredRows
                       .map(data => (
                         <TableRow
                           key={data.employee.id}
