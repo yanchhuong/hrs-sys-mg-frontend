@@ -1,4 +1,4 @@
-import { apiJson, apiVoid } from './client';
+import { apiJson } from './client';
 
 export type LeaveStatus = 'pending' | 'approved' | 'rejected';
 export type LeaveType = string;
@@ -139,8 +139,4 @@ export async function reject(id: string, reason?: string): Promise<LeaveRequest>
     method: 'POST',
     json: { reason: reason ?? '' },
   });
-}
-
-export async function remove(id: string): Promise<void> {
-  return apiVoid(`/api/v1/leave-requests/${id}`, { method: 'DELETE' });
 }
