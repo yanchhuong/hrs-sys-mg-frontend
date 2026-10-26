@@ -30,7 +30,11 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     if (!own) return;
     // Inside a .list-table shell the shell is the scroller (both axes —
     // see styles/index.css), so pan that; elsewhere this wrapper.
-    const shell = own.closest('.list-table') as HTMLDivElement | null;
+    // The selector matches the CSS rule exactly, `:not` included: a
+    // .list-table-flow shell is overflow:visible, so it can report
+    // scrollWidth > clientWidth while its scrollLeft stays nailed to
+    // 0, and panning it would do nothing at all.
+    const shell = own.closest('.list-table:not(.list-table-flow)') as HTMLDivElement | null;
     const wrap = shell && shell.scrollWidth > shell.clientWidth + 1 ? shell : own;
     // Nothing to pan when the table already fits — skip and let the
     // click land normally so header clicks (sort etc) still work.
