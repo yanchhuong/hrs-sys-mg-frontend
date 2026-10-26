@@ -2712,7 +2712,7 @@ export function Payroll() {
           : periodBatches.reduce((sum, b) => sum + b.deductions, 0);
         const itemsHint = USE_MOCKS ? undefined : 'Summed from payslips of the last 12 months.';
         return (
-        <div className="stat-strip">
+        <div className="stat-strip stat-cols-4">
           <StatCard label="Total Payroll"    value={`$${formatMoney(totalPayroll)}`}    icon={Wallet}     tone="purple" />
           <StatCard label="Base Salaries"    value={`$${formatMoney(totalBase)}`}       icon={DollarSign} tone="green" hint={itemsHint} />
           <StatCard label="OT Payments"      value={`$${formatMoney(totalOt)}`}         icon={Clock}      tone="blue"  hint={itemsHint} />
@@ -2722,7 +2722,7 @@ export function Payroll() {
       })()}
 
       {isSelfPayslipView && currentEmployee && (
-        <div className="stat-strip">
+        <div className="stat-strip stat-cols-3">
           {/* Base Salary comes from the employee profile (the configured
               terms), not payroll history — the hint says so, so the
               card isn't mistaken for payment activity. Last Payment and
@@ -3196,7 +3196,7 @@ export function Payroll() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="stat-strip mb-6">
+            <div className="stat-strip stat-cols-4 mb-6">
               <StatCard label="Total Employees" value={`${selectedBatch.totalEmployees} person`}            icon={Package}    tone="purple" />
               <StatCard label="Net Salary"      value={`$${formatMoney(selectedBatch.netSalary)}`}      icon={Wallet}     tone="blue" />
               <StatCard label="Total Earnings"  value={`$${formatMoney(selectedBatch.totalEarnings)}`}  icon={DollarSign} tone="green" />
