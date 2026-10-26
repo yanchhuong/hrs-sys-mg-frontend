@@ -866,6 +866,15 @@ export function Attendance({ onNavigate }: Props = {}) {
     return m;
   }, [employees]);
 
+  // Minute clock, so today's absent deadline flips while the page stays
+  // open — without it a page opened at 09:50 kept everyone as
+  // "No Check-in" past the 10:00 deadline until a reload.
+  const [clockMinute, setClockMinute] = useState(() => Math.floor(Date.now() / 60_000));
+  useEffect(() => {
+    const id = window.setInterval(() => setClockMinute(Math.floor(Date.now() / 60_000)), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // Roster-driven rows: one row per active employee per day in the range.
   // A day with no attendance record shows a synthetic row marked `absent`
   // with empty punches, which the fingerprint import flow then fills in.
@@ -927,7 +936,7 @@ export function Attendance({ onNavigate }: Props = {}) {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const deadlineReachedToday = (() => {
       const [h, m] = generalSettings.absentDeadlineTime.split(':').map(Number);
-      const now = new Date();
+      const now = new Date(clockMinute * 60_000);
       const cutoff = new Date(now);
       cutoff.setHours(h || 0, m || 0, 0, 0);
       return now >= cutoff;
@@ -955,7 +964,7 @@ export function Attendance({ onNavigate }: Props = {}) {
           if ((isWeekend(day) || holidayDates.has(day)) && !leave) continue;
           // For today, hold off on flagging absent until the deadline has passed.
           const isToday = day === todayStr;
-          const beforeDeadline = isToday && !deadlineReachedToday;
+          const beforeDeadline = (isToday && !deadlineReachedToday) || day > todayStr;
           const syntheticStatus =
             generalSettings.autoMarkAbsent && !beforeDeadline ? 'absent' : 'no_checkin';
           row = {
@@ -973,6 +982,22 @@ export function Attendance({ onNavigate }: Props = {}) {
             status: syntheticStatus,
             notes: '',
           } satisfies AttendanceType;
+        }
+
+        // No punch at all on a working day, and no leave → Absent. A
+        // stored row counts too: fingerprint sync writes 'no_checkin'
+        // rows with every slot empty, which used to stay "No Check-in"
+        // and never reach the Absent count. The leave overlay below
+        // still wins. Today waits for the deadline (and for
+        // autoMarkAbsent), exactly like the synthetic row above; a
+        // future day is never absent yet.
+        const noPunch = !row.morningIn && !row.morningOut && !row.noonIn && !row.noonOut
+          && !row.checkIn && !row.checkOut;
+        if (rec && noPunch && !leave && row.status !== 'leave' && row.status !== 'exception'
+            && !isWeekend(day) && !holidayDates.has(day)) {
+          const pending = day > todayStr
+            || (day === todayStr && !(generalSettings.autoMarkAbsent && deadlineReachedToday));
+          row = { ...row, status: (pending ? 'no_checkin' : 'absent') as AttendanceStatus };
         }
 
         // Leave takes precedence over the attendance row's own status —
@@ -1011,7 +1036,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       }
     }
     return rows;
-  }, [employees, todayRecords, leaves, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode, generalSettings, holidayDates]);
+  }, [employees, todayRecords, leaves, dateFrom, dateTo, isTenantWide, matchesScope, scopeMode, generalSettings, holidayDates, clockMinute]);
 
   // Summary counts derived from the roster-driven rows so that employees
   // without any punch for the day are still counted (as absent).
@@ -1029,10 +1054,9 @@ export function Attendance({ onNavigate }: Props = {}) {
     const late = dailyRows.filter(r => r.status === 'late' || r.status === 'early_leave').length;
     const earlyLeave = dailyRows.filter(r => r.status === 'early_leave').length;
     // "No Check-in" / "No Check-out" are surfaced by field presence rather
-    // than the strict status enum, so an absent employee (all punch slots
-    // null) is counted under both — matches what an admin scanning the
-    // table sees: blank In columns → "no check-in". Counts overlap with
-    // Absent intentionally; these are filter views, not exclusive buckets.
+    // than the strict status enum — a punch missing on one side. A day
+    // with no punch at all is Absent and only counted there, so one
+    // no-show doesn't read as three problems.
     //
     // BOTH slots checked so a half-morning leave employee whose only
     // punch landed in noon_in still registers as checked in. Same
@@ -1042,7 +1066,7 @@ export function Attendance({ onNavigate }: Props = {}) {
     // Exception days are excluded alongside leave: the employee had
     // permission to be away from the scanner, so a missing punch there
     // isn't an exception to chase.
-    const offScanner = (st: string) => st === 'leave' || st === 'exception';
+    const offScanner = (st: string) => st === 'leave' || st === 'exception' || st === 'absent';
     const noCheckin  = dailyRows.filter(r => !hasAnyIn(r)  && !offScanner(r.status)).length;
     const noCheckout = dailyRows.filter(r => !hasAnyOut(r) && !offScanner(r.status)).length;
     const leave = dailyRows.filter(r => r.status === 'leave').length;
@@ -1064,10 +1088,10 @@ export function Attendance({ onNavigate }: Props = {}) {
         // employees only punch in the afternoon and would otherwise
         // wrongly appear in this bucket.
         records = records.filter(r =>
-          !r.morningIn && !r.noonIn && r.status !== 'leave' && r.status !== 'exception');
+          !r.morningIn && !r.noonIn && r.status !== 'leave' && r.status !== 'exception' && r.status !== 'absent');
       } else if (activeFilter === 'no_checkout') {
         records = records.filter(r =>
-          !r.morningOut && !r.noonOut && r.status !== 'leave' && r.status !== 'exception');
+          !r.morningOut && !r.noonOut && r.status !== 'leave' && r.status !== 'exception' && r.status !== 'absent');
       } else if (activeFilter === 'late') {
         // Merged bucket: the tab reads "Late & Early Leave", so it has
         // to select both server statuses, not just 'late'.
