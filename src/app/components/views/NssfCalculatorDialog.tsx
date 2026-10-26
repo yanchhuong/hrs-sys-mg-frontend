@@ -19,7 +19,7 @@ import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -264,7 +264,7 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
           {/* First preview still loading — skeleton instead of a blank pane. */}
           {loading && !preview && <TableRowsSkeleton rows={6} columns={6} />}
           {preview && (
-                  <Table>
+                  <ListTable className="max-h-[60vh]">
                     <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
                         <TableHead className="w-10">
@@ -344,7 +344,7 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
                         ));
                       })()}
                     </TableBody>
-                  </Table>
+                  </ListTable>
           )}
         </div>
 

@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -459,7 +459,7 @@ export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
               : 'No overrides match that search.'}
           </div>
         ) : (
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
@@ -533,7 +533,7 @@ export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
         )}
       </CardContent>
 

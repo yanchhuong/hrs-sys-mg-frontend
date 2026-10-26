@@ -24,7 +24,7 @@ import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
 import { Card, CardContent, CardHeader } from '../../ui/card';
 import {
-  Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
+  ListTable, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from '../../ui/table';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -511,13 +511,8 @@ export function Members() {
           ) : filtered.length === 0 ? (
             <ListEmpty noun="members" filtered={filtersActive && rows.length > 0} />
           ) : (
-            // v-list-table-invoice-shape — border+scroll wrapper +
-            // sticky header + Actions column width. Same shell the
-            // sale-side Invoices / Quotations tables use so all list
-            // pages read as one system.
-            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead className="w-[120px]">Member ID</TableHead>
                   <TableHead>Name</TableHead>
@@ -607,8 +602,7 @@ export function Members() {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
-            </div>
+            </ListTable>
           )}
           {pagination.totalPages > 1 && (
             <div className="px-1 py-0 border-t">

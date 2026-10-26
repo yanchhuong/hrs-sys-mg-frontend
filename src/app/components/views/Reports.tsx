@@ -10,8 +10,7 @@ import { StatCard, STAT_CARD_TONES } from '../common/StatCard';
 import { formatMoneyForCurrency, formatNumber } from '../../utils/format';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
-  ListTable,
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Clock, DollarSign, Download, FileText, Eye,
@@ -1499,7 +1498,7 @@ function AttendanceEmployeeDialog({
           </div>
 
           <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
-            <Table>
+            <ListTable className="max-h-96">
               <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Date</TableHead>
@@ -1528,7 +1527,7 @@ function AttendanceEmployeeDialog({
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ListTable>
           </div>
         </div>
       </DialogContent>
@@ -1765,7 +1764,7 @@ function PayrollDeptDialog({
           </div>
 
           <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
-            <Table>
+            <ListTable className="max-h-96">
               <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                 <TableRow>
                   <TableHead>Employee</TableHead>
@@ -1804,7 +1803,7 @@ function PayrollDeptDialog({
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
           </div>
         </div>
       </DialogContent>

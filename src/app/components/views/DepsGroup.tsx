@@ -14,7 +14,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -688,9 +688,8 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
           </div>
         </CardHeader>
         <CardContent>
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
@@ -815,8 +814,7 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
                 ))
               )}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
           <Pagination
             currentPage={depsPagination.currentPage}
             totalPages={depsPagination.totalPages}

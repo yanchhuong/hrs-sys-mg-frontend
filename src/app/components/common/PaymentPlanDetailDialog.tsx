@@ -8,7 +8,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '../ui/table';
+import { ListTable, Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '../ui/table';
 import { DateInput } from './DateInput';
 import { toast } from 'sonner';
 import { DollarSign, ReceiptText, RefreshCw, PlayCircle, Download } from 'lucide-react';
@@ -256,7 +256,7 @@ export function PaymentPlanDetailDialog({
                   every row. Non-monetary cells (dates, names, status)
                   render "—" in the footer. */}
               <div className="rounded-md border overflow-x-auto">
-                <Table className="text-xs [&_th]:px-2 [&_td]:px-2 [&_th]:py-2 [&_td]:py-2">
+                <ListTable className="max-h-[60vh]" tableClassName="text-xs [&_th]:px-2 [&_td]:px-2 [&_th]:py-2 [&_td]:py-2">
                   <TableHeader className="bg-gray-50">
                     <TableRow>
                       <TableHead className="w-10 text-xs">#</TableHead>
@@ -365,7 +365,7 @@ export function PaymentPlanDetailDialog({
                       </TableFooter>
                     );
                   })()}
-                </Table>
+                </ListTable>
               </div>
             </>
           )}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Percent, Wallet, ReceiptText, DollarSign, Settings as SettingsIcon } from 'lucide-react';
 import { StatCard } from '../common/StatCard';
@@ -271,13 +271,8 @@ function CommissionReport() {
           </div>
         </CardHeader>
         <CardContent>
-          {/* v-list-table-invoice-shape — border+scroll wrapper +
-              sticky header, same shell as Invoices / Vendors. The
-              empty state lives inside the table so the column headers
-              stay visible on an empty range. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead>Seller</TableHead>
                   <TableHead className="text-right">Invoices</TableHead>
@@ -366,8 +361,7 @@ function CommissionReport() {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
-          </div>
+            </ListTable>
         </CardContent>
       </Card>
 

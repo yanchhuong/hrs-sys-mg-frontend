@@ -36,7 +36,7 @@ import { Textarea } from '../../ui/textarea';
 import { Badge } from '../../ui/badge';
 import { Card, CardContent, CardHeader } from '../../ui/card';
 import {
-  Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
+  ListTable, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from '../../ui/table';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -862,11 +862,8 @@ export function ReadingTracking() {
           ) : filteredRows.length === 0 ? (
             <ListEmpty noun="activities" filtered={filtersActive && rows.length > 0} />
           ) : (
-            // v-list-table-invoice-shape — border+scroll wrapper +
-            // sticky header, same shell as Invoices / Quotations.
-            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead>Host</TableHead>
                   <TableHead>Type</TableHead>
@@ -972,8 +969,7 @@ export function ReadingTracking() {
                   );
                 })}
               </TableBody>
-            </Table>
-            </div>
+            </ListTable>
           )}
           {pagination.totalPages > 1 && (
             <div className="px-1 py-0 border-t">

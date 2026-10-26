@@ -7,7 +7,7 @@ import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import { Badge } from '../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -217,12 +217,8 @@ export function Offices({ embedded = false }: Props = {}) {
           {loading && rows.length === 0 ? (
             <TableRowsSkeleton rows={6} columns={5} />
           ) : (
-            // v-list-table-invoice-shape — border+scroll wrapper + sticky
-            // header, same shell as Invoices / Vendors. The empty state
-            // lives inside the table so the headers stay visible.
-            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Coordinates</TableHead>
@@ -289,8 +285,7 @@ export function Offices({ embedded = false }: Props = {}) {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
-            </div>
+            </ListTable>
           )}
         </CardContent>
       </Card>

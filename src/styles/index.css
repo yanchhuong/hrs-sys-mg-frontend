@@ -178,6 +178,21 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
   background: #fff;
   box-shadow: inset 0 -1px 0 0 rgb(229, 231, 235);
 }
+/* On paper there is no viewport to scroll, so a height cap would
+   simply cut the table off at whatever fitted on screen. Printing
+   gets the full list, and the header repeats on each page the way a
+   plain table's does. */
+@media print {
+  .list-table {
+    max-height: none;
+    overflow: visible;
+    border: 0;
+  }
+  .list-table thead {
+    position: static;
+    box-shadow: none;
+  }
+}
 
 /* KPI card row that shifts to horizontal-scroll on small screens
    instead of shrinking each card into a 2-col grid where big numbers

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -260,9 +260,8 @@ export function Approvals() {
         {/* Default padding, not p-0 — the bordered scroller needs the
             side gutter to read as an inset panel (see Items). */}
         <CardContent>
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead className="w-[140px]">Type</TableHead>
                 <TableHead>Summary</TableHead>
@@ -333,8 +332,7 @@ export function Approvals() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
           {filtered.length > 0 && (
             <div className="px-4 py-3 border-t">
               <Pagination
@@ -947,7 +945,7 @@ function QuotationPreview({ quotationId, formatDate }: PreviewProps & { quotatio
           silently clipped the rightmost Total column with no way to
           reach it. */}
       <div className="border rounded-md overflow-x-auto">
-        <Table>
+        <ListTable>
           <TableHeader>
             <TableRow>
               <TableHead>Item</TableHead>
@@ -970,7 +968,7 @@ function QuotationPreview({ quotationId, formatDate }: PreviewProps & { quotatio
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ListTable>
       </div>
 
       {/* Totals — right-aligned block */}
@@ -1057,7 +1055,7 @@ function VoucherPreview({ voucherId, formatDate }: PreviewProps & { voucherId: s
           silently clipped the rightmost Total column with no way to
           reach it. */}
       <div className="border rounded-md overflow-x-auto">
-        <Table>
+        <ListTable>
           <TableHeader>
             <TableRow>
               <TableHead>Item</TableHead>
@@ -1080,7 +1078,7 @@ function VoucherPreview({ voucherId, formatDate }: PreviewProps & { voucherId: s
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ListTable>
       </div>
 
       {/* Face value + Total. Voucher's total is always zero — the
@@ -1167,7 +1165,7 @@ function BillPreview({ billId, formatDate }: PreviewProps & { billId: string }) 
           silently clipped the rightmost Total column with no way to
           reach it. */}
       <div className="border rounded-md overflow-x-auto">
-        <Table>
+        <ListTable>
           <TableHeader>
             <TableRow>
               <TableHead>Item</TableHead>
@@ -1190,7 +1188,7 @@ function BillPreview({ billId, formatDate }: PreviewProps & { billId: string }) 
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ListTable>
       </div>
 
       <div className="flex justify-end">

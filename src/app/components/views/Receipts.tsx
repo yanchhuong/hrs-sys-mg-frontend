@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Plus, RefreshCw, Ban, Pencil, Eye, FileText, Settings, Trash2, Upload, FileSpreadsheet, Lock, Search,
@@ -310,9 +310,8 @@ export function Receipts() {
           ) : filtered.length === 0 ? (
             <ListEmpty noun="expenses" filtered={hasFilters} />
           ) : (
-            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead className="w-44">Expense No</TableHead>
                   <TableHead>Vendor</TableHead>
@@ -398,8 +397,7 @@ export function Receipts() {
                   );
                 })}
               </TableBody>
-            </Table>
-            </div>
+            </ListTable>
           )}
           {filtered.length > 0 && (
             <div className="px-1 py-0 border-t">
@@ -1262,7 +1260,7 @@ function ReceiptPaymentsPanel({
       ) : rows.length === 0 ? (
         <p className="text-xs text-gray-400 italic">No payments yet.</p>
       ) : (
-        <Table>
+        <ListTable className="max-h-[60vh]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-28">Date</TableHead>
@@ -1329,7 +1327,7 @@ function ReceiptPaymentsPanel({
               );
             })}
           </TableBody>
-        </Table>
+        </ListTable>
       )}
 
       <RecordReceiptPaymentDialog

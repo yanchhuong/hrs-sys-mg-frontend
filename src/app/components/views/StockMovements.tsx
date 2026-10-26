@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { usePagination } from '../../hooks/usePagination';
@@ -194,11 +194,8 @@ export function StockMovements() {
         {/* Default CardContent padding — matches the Items page so
             the leftmost column doesn't butt against the card edge. */}
         <CardContent>
-          {/* v-list-table-invoice-shape — border+scroll wrapper +
-              sticky header, same shell as Invoices / Vendors. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead className="w-[140px]">Date</TableHead>
                 <TableHead className="w-[120px]">Reference</TableHead>
@@ -269,8 +266,7 @@ export function StockMovements() {
                     );
                   })}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
           {/* p-0 Card body — pagination gets its own chrome row. */}
           {rows.length > 0 && (
             <div className="px-4 py-3 border-t">

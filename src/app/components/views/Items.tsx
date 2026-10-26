@@ -16,7 +16,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
@@ -1730,13 +1730,8 @@ export function Items() {
             <TableRowsSkeleton rows={8} columns={7} hasThumbnail />
           ) : (
             <>
-              {/* v-list-table-invoice-shape — border+scroll wrapper +
-                  sticky header, same shell as Invoices / Vendors. The
-                  empty state lives inside the table so the headers
-                  stay visible. */}
-              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-              <Table>
-                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+              <ListTable>
+                <TableHeader>
                   <TableRow>
                     <TableHead className="w-[120px]">Code</TableHead>
                     {barcodeFeatureOn && (
@@ -2067,8 +2062,7 @@ export function Items() {
                     );
                   })}
                 </TableBody>
-              </Table>
-              </div>
+              </ListTable>
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}

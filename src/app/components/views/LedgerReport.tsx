@@ -7,7 +7,7 @@ import { DateInput } from '../common/DateInput';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Users, UserRound } from 'lucide-react';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
@@ -335,7 +335,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
    *  Customers tab and the Purchase-side single card render the
    *  same per-party summary without JSX drift. */
   const renderCustomerTable = () => (
-    <Table>
+    <ListTable>
       <TableHeader>
         <TableRow>
           <TableHead>{labels.party}</TableHead>
@@ -398,7 +398,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
           );
         })}
       </TableBody>
-    </Table>
+    </ListTable>
   );
 
   return (
@@ -440,7 +440,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
           <StatCardsSkeleton cards={splitCols === 2 ? 5 : splitCols === 1 ? 4 : 3} />
           <Card>
             <CardContent className="pt-4">
-              <Table>
+              <ListTable>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{labels.party}</TableHead>
@@ -454,7 +454,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                 <TableBody>
                   <TableBodySkeletonRows rows={6} columns={6} />
                 </TableBody>
-              </Table>
+              </ListTable>
             </CardContent>
           </Card>
         </>
@@ -555,7 +555,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                     No seller data in this period.
                   </p>
                 ) : (
-                  <Table>
+                  <ListTable>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Seller</TableHead>
@@ -598,7 +598,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                         </TableRow>
                       ))}
                     </TableBody>
-                  </Table>
+                  </ListTable>
                 )}
               </CardContent>
             </Card>
@@ -672,7 +672,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-28">Date</TableHead>
@@ -774,7 +774,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                   );
                 })()}
               </TableBody>
-            </Table>
+            </ListTable>
           </CardContent>
         </Card>
       ))}

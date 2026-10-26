@@ -7,7 +7,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Plus, RefreshCw, Eye, Trash2, Stethoscope, Search, Settings,
@@ -264,9 +264,8 @@ export function Encounters() {
               layout communicates schema at a glance. Empty-state /
               loading rows span every column via colSpan so the
               body still parses as a real table. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead className="w-[140px]">Encounter No.</TableHead>
                 <TableHead className="w-[110px]">Start date</TableHead>
@@ -368,8 +367,7 @@ export function Encounters() {
                 })
               )}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
           {filtered.length > 0 && (
             <div className="px-1 py-0 border-t">
               <Pagination

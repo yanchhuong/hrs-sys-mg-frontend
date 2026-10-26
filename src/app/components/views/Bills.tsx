@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
+  ListTable,
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -738,9 +739,8 @@ export function Bills() {
               {/* Scrollable container — vertical + horizontal overflow
                   stays inside the table area so the page never
                   side-scrolls and the column labels stay pinned. */}
-              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-              <Table>
-                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+              <ListTable>
+                <TableHeader>
                   <TableRow>
                     <TableHead className="w-[160px]">Bill No.</TableHead>
                     <TableHead className="w-[130px]">Type</TableHead>
@@ -946,8 +946,7 @@ export function Bills() {
                     ))}
                   </TableFooter>
                 )}
-              </Table>
-              </div>
+              </ListTable>
               {groupedRows.length > 0 && (
                 <div className="px-1 py-0 border-t">
                   <Pagination

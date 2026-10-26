@@ -5,7 +5,7 @@ import {
 } from '../ui/dialog';
 import { Button } from '../ui/button';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -215,7 +215,7 @@ function SchedulesSection({ canWrite, canUpdate, canDelete }: {
       ) : rows.length === 0 ? (
         <p className="text-sm text-gray-500 py-6 text-center">No schedules yet.</p>
       ) : (
-        <Table>
+        <ListTable className="max-h-[60vh]">
           <TableHeader>
             <TableRow>
               <TableHead>Course</TableHead>
@@ -262,7 +262,7 @@ function SchedulesSection({ canWrite, canUpdate, canDelete }: {
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ListTable>
       )}
 
       <AddCourseScheduleDialog
@@ -404,7 +404,7 @@ function TeachersSection() {
           No teachers yet — click <b>Add Teacher</b> to tag your first.
         </div>
       ) : (
-        <Table>
+        <ListTable className="max-h-[60vh]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[120px]">Emp No</TableHead>
@@ -437,7 +437,7 @@ function TeachersSection() {
               );
             })}
           </TableBody>
-        </Table>
+        </ListTable>
       )}
 
       <AddTeacherDialog

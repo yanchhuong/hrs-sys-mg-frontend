@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { RefreshCw, Settings as SettingsIcon } from 'lucide-react';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Pagination } from '../common/Pagination';
 import { ListError } from '../common/ListStates';
@@ -116,9 +116,8 @@ export function TaxDeclarationsView() {
             </p>
           ) : (
             <>
-              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+              <ListTable>
+                  <TableHeader>
                     <TableRow>
                       <TableHead>Obligation</TableHead>
                       <TableHead>Period</TableHead>
@@ -152,8 +151,7 @@ export function TaxDeclarationsView() {
                       </TableRow>
                     ))}
                   </TableBody>
-                </Table>
-              </div>
+                </ListTable>
               {rows.length > 15 && (
                 <div className="mt-4">
                   <Pagination

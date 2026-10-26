@@ -26,8 +26,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  ListTable,
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -1374,7 +1373,7 @@ export function Announcements() {
                     <TelegramStatusBadge status={detail.telegramSentStatus} sendTelegram={detail.sendTelegram} />
                   </div>
                   <div className="border rounded-md max-h-[300px] overflow-y-auto">
-                    <Table>
+                    <ListTable className="max-h-[60vh]">
                       <TableHeader>
                         <TableRow>
                           <TableHead>Recipient</TableHead>
@@ -1421,7 +1420,7 @@ export function Announcements() {
                           </TableRow>
                         ))}
                       </TableBody>
-                    </Table>
+                    </ListTable>
                   </div>
                 </div>
               ) : (

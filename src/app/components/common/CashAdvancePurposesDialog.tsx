@@ -7,7 +7,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -141,7 +141,7 @@ export function CashAdvancePurposesDialog({
 
         {/* Existing rows */}
         <div className="rounded-md border max-h-[50vh] overflow-y-auto">
-          <Table>
+          <ListTable className="max-h-[60vh]">
             <TableHeader>
               <TableRow>
                 <TableHead>Label</TableHead>
@@ -171,7 +171,7 @@ export function CashAdvancePurposesDialog({
                 />
               ))}
             </TableBody>
-          </Table>
+          </ListTable>
         </div>
 
         <DialogFooter>

@@ -11,7 +11,6 @@ import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../common/ListStates';
 import {
   ListTable,
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -613,7 +612,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
 
           <div className="overflow-y-auto flex-1 min-h-0">
             {loadingSystem && systemHolidays.length === 0 && (
-              <Table><TableBody><TableBodySkeletonRows columns={6} rows={4} /></TableBody></Table>
+              <ListTable className="max-h-[60vh]"><TableBody><TableBodySkeletonRows columns={6} rows={4} /></TableBody></ListTable>
             )}
             {!loadingSystem && systemHolidays.length === 0 && (
               <div className="text-sm text-gray-600 px-6 py-10 text-center">
@@ -633,7 +632,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
               </div>
             )}
             {!loadingSystem && availableSystemHolidays.length > 0 && (
-              <Table>
+              <ListTable className="max-h-[60vh]">
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[120px]">Source date</TableHead>
@@ -667,7 +666,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </ListTable>
             )}
           </div>
           {/* No footer: copying is done per-row inside the table above,

@@ -8,7 +8,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Loader2, Save, CheckCircle2 } from 'lucide-react';
 import * as sessionsApi from '../../api/sessions';
@@ -188,7 +188,7 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
                 No students enrolled in this schedule yet.
               </p>
             ) : (
-              <Table>
+              <ListTable className="max-h-[60vh]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Student</TableHead>
@@ -245,7 +245,7 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </ListTable>
             )}
           </div>
         ) : (

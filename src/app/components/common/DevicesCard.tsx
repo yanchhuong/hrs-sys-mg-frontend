@@ -8,7 +8,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -371,7 +371,7 @@ export function DevicesCard() {
             No devices registered yet. Click <span className="font-medium">Add Device</span> to configure one.
           </div>
         ) : (
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -543,7 +543,7 @@ export function DevicesCard() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
         )}
       </CardContent>
 

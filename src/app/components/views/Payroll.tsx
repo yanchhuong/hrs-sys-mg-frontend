@@ -2252,9 +2252,9 @@ export function Payroll() {
                         )}
 
                         {previewData.employees.length > 0 && (
-                          <div className="border rounded-md overflow-auto max-h-[320px]">
+                          <div className="list-table max-h-[320px]">
                             <table className="w-full text-sm">
-                              <thead className="sticky top-0 bg-gray-100 z-10">
+                              <thead>
                                 <tr>
                                   <th className="text-center px-2 py-2 font-medium text-gray-700 w-10">#</th>
                                   <th className="sticky left-[40px] bg-gray-100 text-left px-3 py-2 font-medium text-gray-700 whitespace-nowrap z-20">Emp No.</th>
@@ -2575,7 +2575,7 @@ export function Payroll() {
                     <div className="flex-1 overflow-auto border rounded-lg min-h-0 bg-white">
                       <div className="min-w-max">
                         <table className="w-full">
-                          <thead className="sticky top-0 bg-gray-100 z-10">
+                          <thead>
                             <tr className="border-b-2 border-gray-300">
                               <th className="px-3 py-3 text-center font-semibold text-sm whitespace-nowrap bg-gray-100 w-12 sticky left-0 z-20">Status</th>
                               <th className="px-4 py-3 text-left font-semibold text-sm whitespace-nowrap border-r bg-gray-100 sticky left-[48px] z-20">Emp No.</th>

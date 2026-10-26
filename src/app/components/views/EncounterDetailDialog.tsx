@@ -11,7 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Pill, Stethoscope, FlaskConical, Scan, Pencil, Printer, Plus, Ban,
@@ -359,7 +359,7 @@ export function EncounterDetailDialog({
             {SECTIONS.some(s => (itemsByCategory[s.key] ?? []).length > 0) && (
               <Card>
                 <CardContent className="pt-4">
-                  <Table>
+                  <ListTable>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Item</TableHead>
@@ -404,7 +404,7 @@ export function EncounterDetailDialog({
                         ];
                       })}
                     </TableBody>
-                  </Table>
+                  </ListTable>
                 </CardContent>
               </Card>
             )}
@@ -601,7 +601,7 @@ function PaymentsBlock({ encounter, payments, onChanged, fmtMoney, formatDate, r
       {payments.length === 0 ? (
         <div className="text-sm text-gray-500 py-3">No payments recorded yet.</div>
       ) : (
-        <Table>
+        <ListTable>
           <TableHeader>
             <TableRow>
               <TableHead className="w-[110px]">Date</TableHead>
@@ -622,7 +622,7 @@ function PaymentsBlock({ encounter, payments, onChanged, fmtMoney, formatDate, r
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ListTable>
       )}
     </div>
   );

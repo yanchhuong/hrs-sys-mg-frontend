@@ -23,7 +23,7 @@ import { Card, CardContent } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -478,9 +478,8 @@ to $500/mo, not $167.`}
                   // Height cap so the sticky header below has a scrolling
                   // ancestor to stick to — overflow-x-auto alone never
                   // scrolls vertically, so the header scrolled away.
-                  <div className="border rounded-md overflow-auto max-h-[60vh]">
-                    <Table>
-                      <TableHeader className="sticky top-0 z-10 bg-white shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+                  <ListTable className="max-h-[60vh]">
+                      <TableHeader>
                         <TableRow>
                           <TableHead className="w-10"></TableHead>
                           <TableHead>Employee</TableHead>
@@ -560,8 +559,7 @@ to $500/mo, not $167.`}
                           });
                         })()}
                       </TableBody>
-                    </Table>
-                  </div>
+                    </ListTable>
                 );
               })()}
 

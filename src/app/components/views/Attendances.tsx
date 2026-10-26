@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
+  ListTable,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Eye, RefreshCw, Plus, Download, Search } from 'lucide-react';
@@ -276,16 +277,16 @@ export function Attendances() {
             {loading && rows.length === 0 ? (
               <TableRowsSkeleton rows={8} columns={6} />
             ) : loadError && rows.length === 0 ? (
-              <Table>
+              <ListTable>
                 {sessionTableHeader}
                 <TableBody>
                   <ListError message={loadError} onRetry={() => void load()} colSpan={8} />
                 </TableBody>
-              </Table>
+              </ListTable>
             ) : visibleRows.length === 0 ? (
               /* Empty state lives inside a table so the column headers
                  stay visible, same as the other list pages. */
-              <Table>
+              <ListTable>
                 {sessionTableHeader}
                 <TableBody>
                   <ListEmpty noun="sessions" filtered={filtersSet} colSpan={8}>
@@ -296,9 +297,14 @@ export function Attendances() {
                     )}
                   </ListEmpty>
                 </TableBody>
-              </Table>
+              </ListTable>
             ) : (
-              <div className="space-y-4">
+              /* One box around every day-group rather than one per
+                 group: the shell's sticky rule reaches each day's
+                 header, so as you scroll, the current day stays
+                 pinned and the next pushes it up. N bordered boxes
+                 each with their own pinned header would not. */
+              <div className="list-table space-y-4">
                 {grouped.map(([date, dayRows]) => (
                   <div key={date}>
                     <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">

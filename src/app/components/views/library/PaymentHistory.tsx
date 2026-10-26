@@ -23,7 +23,7 @@ import { ListEmpty, ListError } from '../../common/ListStates';
 import { statusBadgeClass, TONE_CLASS } from '../../../utils/statusTones';
 import { formatMoneyForCurrency } from '../../../utils/format';
 import {
-  Table, TableHeader, TableRow, TableHead, TableBody, TableCell,
+  ListTable, TableHeader, TableRow, TableHead, TableBody, TableCell,
 } from '../../ui/table';
 import * as library from '../../../api/library';
 import { useDateFormat } from '../../../context/DateFormatContext';
@@ -194,11 +194,8 @@ export function PaymentHistory() {
           ) : filtered.length === 0 ? (
             <ListEmpty noun="membership payments" filtered={filtersActive && rows.length > 0} />
           ) : (
-            // v-list-table-invoice-shape — border+scroll wrapper +
-            // sticky header, same shell as Invoices / Quotations.
-            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Member</TableHead>
@@ -262,8 +259,7 @@ export function PaymentHistory() {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
-            </div>
+            </ListTable>
           )}
           {pagination.totalPages > 1 && (
             <div className="px-1 py-0 border-t">

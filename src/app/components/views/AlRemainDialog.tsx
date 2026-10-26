@@ -19,7 +19,7 @@ import {
 } from '../ui/select';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -262,7 +262,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
             </div>
           )}
           {preview && (
-                  <Table>
+                  <ListTable className="max-h-[60vh]">
                     <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
                         <TableHead className="w-10">
@@ -343,7 +343,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
                         </TableRow>
                       ))}
                     </TableBody>
-                  </Table>
+                  </ListTable>
           )}
         </div>
 

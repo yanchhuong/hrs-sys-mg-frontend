@@ -10,7 +10,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Plus, Pencil, Trash2, Loader2, CalendarClock, Route } from 'lucide-react';
 import * as bookingSchedulesApi from '../../api/bookingSchedules';
@@ -246,7 +246,7 @@ export function BookingSchedulesDialog({
                 </div>
 
                 <div className="rounded-md border overflow-hidden">
-                  <Table>
+                  <ListTable className="max-h-[60vh]">
                     <TableHeader className="bg-gray-50">
                       <TableRow>
                         <TableHead>Property</TableHead>
@@ -308,7 +308,7 @@ export function BookingSchedulesDialog({
                         </TableRow>
                       ))}
                     </TableBody>
-                  </Table>
+                  </ListTable>
                 </div>
               </>
             )}
@@ -344,7 +344,7 @@ export function BookingSchedulesDialog({
                 </div>
 
                 <div className="rounded-md border overflow-hidden">
-                  <Table>
+                  <ListTable className="max-h-[60vh]">
                     <TableHeader className="bg-gray-50">
                       <TableRow>
                         <TableHead>Schedule</TableHead>
@@ -447,7 +447,7 @@ export function BookingSchedulesDialog({
                         );
                       })}
                     </TableBody>
-                  </Table>
+                  </ListTable>
                 </div>
               </>
             )}

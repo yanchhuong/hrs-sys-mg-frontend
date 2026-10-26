@@ -4,7 +4,7 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Label } from '../ui/label';
 import { DateInput } from '../common/DateInput';
@@ -179,11 +179,8 @@ export function PaymentCollections() {
           </div>
         </CardHeader>
         <CardContent>
-          {/* v-list-table-invoice-shape — border+scroll wrapper +
-              sticky header, same shell as Invoices / Vendors. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead className="w-40">Date &amp; Time</TableHead>
                 <TableHead className="w-44">Reference No.</TableHead>
@@ -271,8 +268,7 @@ export function PaymentCollections() {
                 </TableRow>
               )}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
           <Pagination
             currentPage={pagination.currentPage}
             totalPages={pagination.totalPages}

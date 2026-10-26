@@ -15,7 +15,7 @@ import { Badge } from '../ui/badge';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -1703,11 +1703,8 @@ export function Employees() {
           {rosterFilterStrip}
         </CardHeader>
         <CardContent>
-          {/* v-list-table-invoice-shape — border+scroll wrapper + sticky
-              header, same shell as Invoices / Vendors. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 {canViewHrTelegram && (
                   <TableHead className="w-[200px]">Link</TableHead>
@@ -1984,8 +1981,7 @@ export function Employees() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
           <Pagination
             currentPage={employeePagination.currentPage}
             totalPages={employeePagination.totalPages}
@@ -2932,8 +2928,7 @@ export function Employees() {
                               </p>
                             </div>
                           </div>
-                          <div className="border rounded-lg overflow-hidden">
-                            <Table>
+                                                      <ListTable className="max-h-[60vh]">
                               <TableHeader>
                                 <TableRow className="bg-gray-50">
                                   <TableHead className="text-xs py-2">Type</TableHead>
@@ -3003,8 +2998,8 @@ export function Employees() {
                                   </TableRow>
                                 ))}
                               </TableBody>
-                            </Table>
-                          </div>
+                            </ListTable>
+                          
                         </>
                       );
                     })()}

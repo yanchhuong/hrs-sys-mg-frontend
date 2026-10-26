@@ -6,7 +6,7 @@ import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { Textarea } from '../ui/textarea';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -299,12 +299,8 @@ export function Appointments() {
           </div>
         </CardHeader>
         <CardContent>
-          {/* v-list-table-invoice-shape — border+scroll wrapper + sticky
-              header, same shell as Items / Invoices. Default CardContent
-              padding (not p-0) so the panel sits inset from the card. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead className="w-[70px]">Queue #</TableHead>
                 <TableHead className="w-[150px]">Scheduled</TableHead>
@@ -444,8 +440,7 @@ export function Appointments() {
                 })
               )}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
           {filtered.length > 0 && (
             <div className="px-1 py-0 border-t">
               <Pagination

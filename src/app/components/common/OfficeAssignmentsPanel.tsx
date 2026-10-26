@@ -4,7 +4,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Info, Search, Loader2, MapPin, RefreshCw } from 'lucide-react';
@@ -202,7 +202,7 @@ export function OfficeAssignmentsPanel({ open }: Props) {
           </div>
         ) : (
           <div className="max-h-[20rem] overflow-y-auto">
-            <Table>
+            <ListTable>
               {/* Caps visible rows at ~5 with internal scroll. Sticky
                   header keeps column labels in view while scrolling. */}
               <TableHeader className="sticky top-0 bg-white z-10 shadow-[0_1px_0_0_rgb(0_0_0_/_0.05)]">
@@ -258,7 +258,7 @@ export function OfficeAssignmentsPanel({ open }: Props) {
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
           </div>
         )}
       </div>

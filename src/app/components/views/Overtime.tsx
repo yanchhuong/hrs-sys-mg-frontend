@@ -26,7 +26,7 @@ import { Textarea } from '../ui/textarea';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -1094,11 +1094,8 @@ export function Overtime() {
         <CardContent>
           {viewMode === 'by-request' ? (
           <>
-          {/* v-list-table-invoice-shape — border+scroll wrapper +
-              sticky header, same shell as Invoices / Vendors. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead>Dept/Group</TableHead>
@@ -1323,8 +1320,7 @@ export function Overtime() {
                 );
               })}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
           <Pagination
             currentPage={overtimePagination.currentPage}
             totalPages={overtimePagination.totalPages}
@@ -1336,11 +1332,8 @@ export function Overtime() {
           </>
           ) : (
           <>
-          {/* v-list-table-invoice-shape — border+scroll wrapper +
-              sticky header, same shell as Invoices / Vendors. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
                 <TableHead className="text-right">Workday OT (×{otRates.weekday})</TableHead>
@@ -1395,8 +1388,7 @@ export function Overtime() {
                 );
               })()}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
           <Pagination
             currentPage={byEmployeePagination.currentPage}
             totalPages={byEmployeePagination.totalPages}

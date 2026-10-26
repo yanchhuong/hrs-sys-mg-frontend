@@ -12,7 +12,7 @@ import {
 } from '../ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Plus, Trash2, RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react';
 import {
@@ -113,7 +113,7 @@ export function AnnualLeaveSetup({ open, onOpenChange, defaultYear, employees, o
             {/* Rule tab */}
             <TabsContent value="rule" className="space-y-4">
               <div className="rounded-md border">
-                <Table>
+                <ListTable className="max-h-[60vh]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[30%]">Min years</TableHead>
@@ -173,7 +173,7 @@ export function AnnualLeaveSetup({ open, onOpenChange, defaultYear, employees, o
                       </TableRow>
                     ))}
                   </TableBody>
-                </Table>
+                </ListTable>
               </div>
 
               <div className="flex items-center justify-between gap-2 flex-wrap">

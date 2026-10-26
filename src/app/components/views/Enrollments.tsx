@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -485,12 +485,8 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
           </div>
         </CardHeader>
         <CardContent>
-          {/* v-list-table-invoice-shape — the table always renders so the
-              column headers stay visible; loading and empty states are
-              in-table rows spanning every column. */}
-              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-              <Table>
-                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+              <ListTable>
+                <TableHeader>
                   <TableRow>
                     <TableHead className="w-[90px]">No.</TableHead>
                     <TableHead>Student</TableHead>
@@ -603,8 +599,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                     );
                   })}
                 </TableBody>
-              </Table>
-              </div>
+              </ListTable>
               <Pagination
                 currentPage={pagination.currentPage}
                 totalPages={pagination.totalPages}

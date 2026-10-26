@@ -26,7 +26,7 @@ import {
 } from '../ui/select';
 
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -1845,11 +1845,8 @@ export function UserManagement() {
               </div>
             </CardHeader>
             <CardContent>
-              {/* v-list-table-invoice-shape — border+scroll wrapper +
-                  sticky header, same shell as Invoices / Vendors. */}
-              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-              <Table>
-                <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+              <ListTable>
+                <TableHeader>
                   <TableRow>
                     <TableHead>Display Name</TableHead>
                     <TableHead>User ID</TableHead>
@@ -1993,8 +1990,7 @@ export function UserManagement() {
                     );
                   })}
                 </TableBody>
-              </Table>
-              </div>
+              </ListTable>
               <Pagination
                 currentPage={usersPagination.currentPage}
                 totalPages={usersPagination.totalPages}
@@ -2129,7 +2125,7 @@ export function UserManagement() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="overflow-x-auto">
-                <Table>
+                <ListTable>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[200px]">Module</TableHead>
@@ -2173,7 +2169,7 @@ export function UserManagement() {
                       />
                     ))}
                   </TableBody>
-                </Table>
+                </ListTable>
               </div>
             </CardContent>
           </Card>

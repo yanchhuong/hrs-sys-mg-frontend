@@ -8,7 +8,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Card, CardContent } from '../ui/card';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Loader2, Upload, Trash2, Image as ImageIcon, Building2, Hash, Plus, Pencil, Check, X, Star,
@@ -502,7 +502,7 @@ function BranchList({ branches, loading, onRefresh }: {
             No branches yet — click Add branch to register the first location.
           </div>
         ) : (
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[80px] text-center">Default</TableHead>
@@ -584,7 +584,7 @@ function BranchList({ branches, loading, onRefresh }: {
                 )
               ))}
             </TableBody>
-          </Table>
+          </ListTable>
         )}
       </CardContent>
     </Card>

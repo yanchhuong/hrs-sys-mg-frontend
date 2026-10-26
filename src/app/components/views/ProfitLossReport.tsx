@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { DateInput } from '../common/DateInput';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { format, startOfYear, endOfMonth } from 'date-fns';
 import { toast } from 'sonner';
@@ -195,7 +195,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
               </div>
             </CardHeader>
             <CardContent className="pt-0">
-              <Table>
+              <ListTable>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-32">Month</TableHead>
@@ -208,7 +208,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
                 <TableBody>
                   <TableBodySkeletonRows rows={6} columns={5} />
                 </TableBody>
-              </Table>
+              </ListTable>
             </CardContent>
           </Card>
         </>
@@ -266,7 +266,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
             <CardTitle className="text-base">Monthly Breakdown</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-32">Month</TableHead>
@@ -323,7 +323,7 @@ export function ProfitLossReport({ onNavigate }: { onNavigate?: (view: string) =
                   </TableCell>
                 </TableRow>
               </TableBody>
-            </Table>
+            </ListTable>
           </CardContent>
         </Card>
       )}
@@ -433,7 +433,7 @@ function ProfitLossLineTable({ lines, sideLabel, side, signedMoney, onOpenDoc }:
   void side;
   const { formatDate } = useDateFormat();
   return (
-    <Table>
+    <ListTable>
       <TableHeader>
         <TableRow>
           <TableHead className="w-28">Date</TableHead>
@@ -470,7 +470,7 @@ function ProfitLossLineTable({ lines, sideLabel, side, signedMoney, onOpenDoc }:
           </TableRow>
         ))}
       </TableBody>
-    </Table>
+    </ListTable>
   );
 }
 

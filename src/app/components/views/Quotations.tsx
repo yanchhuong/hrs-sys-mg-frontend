@@ -18,6 +18,7 @@ import {
 } from '../ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import {
+  ListTable,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -397,9 +398,8 @@ export function Quotations() {
           ) : filtered.length === 0 ? (
             <ListEmpty noun="quotations" filtered={hasFilters} />
           ) : (
-            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead className="w-44">Quote No</TableHead>
                   <TableHead>Customer</TableHead>
@@ -468,8 +468,7 @@ export function Quotations() {
                   );
                 })}
               </TableBody>
-            </Table>
-            </div>
+            </ListTable>
           )}
           {filtered.length > 0 && (
             <div className="px-1 py-0 border-t">

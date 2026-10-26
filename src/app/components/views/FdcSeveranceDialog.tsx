@@ -21,7 +21,7 @@ import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../common/ListStates';
 import { Label } from '../ui/label';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -273,15 +273,15 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
         {/* Table — only this scrolls. */}
         <div className="flex-1 min-h-0 overflow-auto">
           {!preview && loading && (
-            <Table>
+            <ListTable className="max-h-[60vh]">
               <TableBody><TableBodySkeletonRows columns={10} /></TableBody>
-            </Table>
+            </ListTable>
           )}
           {!preview && !loading && loadError && (
             <ListError message={loadError} onRetry={() => void handleRecalc()} />
           )}
           {preview && (
-                  <Table>
+                  <ListTable className="max-h-[60vh]">
                     <TableHeader className="sticky top-0 bg-white z-10">
                       <TableRow>
                         <TableHead className="w-10">
@@ -394,7 +394,7 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
                         </TableRow>
                       ))}
                     </TableBody>
-                  </Table>
+                  </ListTable>
           )}
         </div>
 

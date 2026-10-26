@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Card, CardContent } from '../ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -495,9 +495,8 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
               binds to the nearest scrolling ancestor, so without a
               scroller of its own the header below never actually
               stuck — it just clipped. */}
-          <div className="border rounded-md overflow-auto max-h-[60vh]">
-            <Table>
-              <TableHeader className="sticky top-0 z-10 bg-white shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable className="max-h-[60vh]">
+              <TableHeader>
                 <TableRow>
                   <TableHead className="w-44">Employee</TableHead>
                   <TableHead className="text-right">Basic</TableHead>
@@ -604,8 +603,7 @@ taxUsd     = taxKhr ÷ khrPerUsd`}
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
-          </div>
+            </ListTable>
 
           {/* Summary footer */}
           {rows.length > 0 && (

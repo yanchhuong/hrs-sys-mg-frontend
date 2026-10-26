@@ -185,17 +185,21 @@ function TableCaption({
  * layout is not a list — those keep a bare {@link Table}, since a
  * viewport-height scroll box makes no sense in a modal.
  *
- * `className` is appended, so a screen with taller chrome above the
- * table can pass its own height: `<ListTable className="max-h-[60vh]">`.
+ * `className` lands on the box, so a screen with taller chrome above
+ * the table can pass its own height:
+ * `<ListTable className="max-h-[60vh]">`. `tableClassName` lands on
+ * the `<table>` instead — that is where cell-level utilities such as
+ * `text-xs [&_td]:px-2` have to go to reach the rows.
  */
 function ListTable({
   className,
+  tableClassName,
   children,
   ...props
-}: React.ComponentProps<"div">) {
+}: React.ComponentProps<"div"> & { tableClassName?: string }) {
   return (
     <div className={cn("list-table", className)} {...props}>
-      <Table>{children}</Table>
+      <Table className={tableClassName}>{children}</Table>
     </div>
   );
 }

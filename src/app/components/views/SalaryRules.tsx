@@ -12,7 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -333,11 +333,8 @@ export function SalaryRules({ embedded = false }: Props = {}) {
           </div>
         </CardHeader>
         <CardContent>
-          {/* v-list-table-invoice-shape — border+scroll wrapper +
-              sticky header, same shell as Invoices / Vendors. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Experience</TableHead>
@@ -396,8 +393,7 @@ export function SalaryRules({ embedded = false }: Props = {}) {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
 
           {filtered.length > 10 && (
             <div className="mt-4">

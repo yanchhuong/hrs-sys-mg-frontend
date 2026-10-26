@@ -15,8 +15,7 @@ import { Badge } from '../ui/badge';
 import { Textarea } from '../ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
-  ListTable,
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -1447,7 +1446,7 @@ function ConsignmentDialog({
             </Button>
           </div>
           <div className="border rounded-md overflow-x-auto">
-            <Table>
+            <ListTable className="max-h-[60vh]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Item <span className="text-red-500">*</span></TableHead>
@@ -1730,7 +1729,7 @@ function ConsignmentDialog({
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
           </div>
         </div>
 
@@ -2670,7 +2669,7 @@ function SettlementDialog({
             <div className="space-y-1 mt-4">
               <Label className="text-xs">Line items in this consignment</Label>
               <div className="border rounded-md overflow-x-auto">
-                <Table>
+                <ListTable className="max-h-[60vh]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-8">#</TableHead>
@@ -2757,7 +2756,7 @@ function SettlementDialog({
                       <TableCell className="text-right tabular-nums text-xs font-bold text-emerald-700">{formatUSD(sumComm)}</TableCell>
                     </TableRow>
                   </TableBody>
-                </Table>
+                </ListTable>
               </div>
               <div className="flex items-center justify-end">
                 <Button

@@ -12,8 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  ListTable,
-  Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { SearchablePicker } from '../common/SearchablePicker';
@@ -902,7 +901,7 @@ function CashAdvanceDetailDialog({
             <span className="text-xs text-gray-500">{advance.expenses.length} receipt(s)</span>
           </div>
           <div className="rounded-md border overflow-hidden">
-            <Table>
+            <ListTable className="max-h-[60vh]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[100px]">Date</TableHead>
@@ -977,7 +976,7 @@ function CashAdvanceDetailDialog({
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
           </div>
 
           {/* Add-receipt inline row — field order matches the table

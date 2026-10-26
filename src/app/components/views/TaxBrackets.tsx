@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { useConfirm } from '../../context/ConfirmContext';
 import { ListError } from '../common/ListStates';
@@ -311,11 +311,8 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
           </div>
         </CardHeader>
         <CardContent>
-          {/* v-list-table-invoice-shape — border+scroll wrapper +
-              sticky header, same shell as Invoices / Vendors. */}
-          <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead className="w-12">#</TableHead>
                 <TableHead>From (KHR)</TableHead>
@@ -401,8 +398,7 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
                 );
               })}
             </TableBody>
-          </Table>
-          </div>
+          </ListTable>
 
           <div className="flex items-center justify-end mt-4 gap-2">
             <Button variant="outline" size="sm" onClick={load} disabled={loading || saving}>

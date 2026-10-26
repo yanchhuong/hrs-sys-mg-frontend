@@ -6,7 +6,7 @@ import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Card, CardContent } from '../ui/card';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Users, Loader2, Stethoscope, CircleDollarSign, User, Info, Plus, Trash2,
@@ -209,7 +209,7 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
                       No clinical staff yet — click <b>Add Staff</b> to tag your first doctor.
                     </div>
                   ) : (
-                    <Table>
+                    <ListTable>
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-[120px]">Emp No</TableHead>
@@ -262,7 +262,7 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
                           );
                         })}
                       </TableBody>
-                    </Table>
+                    </ListTable>
                   )}
                 </CardContent>
               </Card>

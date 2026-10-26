@@ -22,7 +22,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -2342,9 +2342,9 @@ export function Attendance({ onNavigate }: Props = {}) {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
+              <div className="list-table">
               {dailyViewMode === 'roster' ? (
-              <Table>
+              <ListTable>
                 <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                   <TableRow>
                     <TableHead>Employee</TableHead>
@@ -2607,7 +2607,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                     })
                   )}
                 </TableBody>
-              </Table>
+              </ListTable>
               ) : (
                 /* Scan History — flat per-tap event log. Each row is a
                    single fingerprint scan attached to the (employee, date)
@@ -2615,7 +2615,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                    ("who tapped which device when") and for verifying the
                    sync caught a punch the roster column would mask if a
                    later scan overwrote it. */
-                <Table>
+                <ListTable>
                   <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
                     <TableRow>
                       <TableHead>Employee</TableHead>
@@ -2690,7 +2690,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                       })
                     )}
                   </TableBody>
-                </Table>
+                </ListTable>
               )}
               </div>
               <Pagination
@@ -2785,9 +2785,8 @@ export function Attendance({ onNavigate }: Props = {}) {
                 {(() => {
                   const filteredRows = monthlyFilteredRows;
                   return (
-                <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+                <ListTable>
+                  <TableHeader>
                     <TableRow>
                       <TableHead>Employee</TableHead>
                       <TableHead className="text-center">Total AL</TableHead>
@@ -2868,8 +2867,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                         </TableRow>
                       ))}
                   </TableBody>
-                </Table>
-                </div>
+                </ListTable>
                   );
                 })()}
               </CardContent>

@@ -16,7 +16,7 @@ import {
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -565,9 +565,8 @@ export function Exception() {
             side gutter to read as an inset panel (see Items). */}
         <CardContent>
           {mode === 'employee' ? (
-            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead>Employee</TableHead>
                   <TableHead>Dept/Group</TableHead>
@@ -654,12 +653,10 @@ export function Exception() {
                   );
                 })}
               </TableBody>
-            </Table>
-            </div>
+            </ListTable>
           ) : (
-            <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_0_rgb(229,231,235)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead>Employee</TableHead>
                   <TableHead>Dept/Group</TableHead>
@@ -743,8 +740,7 @@ export function Exception() {
                   );
                 })}
               </TableBody>
-            </Table>
-            </div>
+            </ListTable>
           )}
           {/* Pagination gets its own padded chrome since CardContent
               is p-0. Matches Increase / Deduction / Movement layout. */}
