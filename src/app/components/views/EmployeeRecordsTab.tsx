@@ -125,7 +125,7 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Employee</TableHead>
-              <TableHead>Record</TableHead>
+              <TableHead>Type</TableHead>
               <TableHead>Details</TableHead>
               <TableHead className="text-right">Amount</TableHead>
               <TableHead>Status</TableHead>

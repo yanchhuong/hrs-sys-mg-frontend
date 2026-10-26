@@ -63,6 +63,7 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
       { value: 'social', label: 'Social' },
       { value: 'volunteer', label: 'Volunteer' },
       { value: 'interest', label: 'Interest' },
+      { value: 'ability', label: 'Ability' },
       { value: 'other', label: 'Other' },
     ],
     fields: [
@@ -71,7 +72,7 @@ export const RECORD_TYPES: Record<RecordType, RecordTypeMeta> = {
         { value: 'member', label: 'Member' }, { value: 'leader', label: 'Leader' },
       ] },
       { key: 'joinDate', label: 'Join date', kind: 'date' },
-      { key: 'leaveDate', label: 'Leave date', kind: 'date' },
+      { key: 'expireDate', label: 'Expire date', kind: 'date' },
     ],
     amountLabel: 'Fee / company subsidy ($)',
     approvalHint: 'Needs approval only when the company pays a subsidy (amount above 0).',

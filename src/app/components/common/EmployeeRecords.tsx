@@ -456,7 +456,7 @@ export function EmployeeRecordsPanel({ employeeId, onCount }: {
         <TableHeader>
           <TableRow>
             <TableHead>Date</TableHead>
-            <TableHead>Record</TableHead>
+            <TableHead>Type</TableHead>
             <TableHead>Details</TableHead>
             <TableHead className="text-right">Amount</TableHead>
             <TableHead>Status</TableHead>
