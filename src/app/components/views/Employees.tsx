@@ -562,7 +562,7 @@ export function Employees() {
   const { currentUser } = useAuth();
   // Underlined-button page-level tab state — mirrors the pattern
   // used by the agency's Sale & Expense page.
-  const [pageTab, setPageTab] = useState<'roster' | 'orgchart' | 'cards' | 'documents'>('roster');
+  const [pageTab, setPageTab] = useState<'roster' | 'orgchart' | 'documents'>('roster');
   /** ID-card preview dialog — non-null = open for that employee. */
   const [idCardEmployee, setIdCardEmployee] = useState<typeof mockEmployees[0] | null>(null);
   /** Company profile — logo + name printed on the ID card header /
@@ -1439,10 +1439,7 @@ export function Employees() {
     setDateFilter({ start: null, end: null });
   };
 
-  // ONE filter strip shared by the Employees and Cards tabs. The Cards
-  // grid pages through the same filtered list, so its filters must be
-  // visible there too — otherwise status / department / join-date
-  // narrow the cards with nothing on screen saying so.
+  // The roster's filter strip.
   const filterSelectCls =
     'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
   const rosterFilterStrip = (
@@ -1677,7 +1674,7 @@ export function Employees() {
           view that Managers use to hand out contact info; the table
           stays for bulk edits and Excel export; the org chart reads the
           same managerId the table's Managers column shows. */}
-      <Tabs value={pageTab} onValueChange={v => setPageTab(v as 'roster' | 'orgchart' | 'cards' | 'documents')} className="space-y-4">
+      <Tabs value={pageTab} onValueChange={v => setPageTab(v as 'roster' | 'orgchart' | 'documents')} className="space-y-4">
         <TabsList>
           <TabsTrigger value="roster">
             <User className="h-3.5 w-3.5" />
@@ -1686,10 +1683,6 @@ export function Employees() {
           <TabsTrigger value="orgchart">
             <Network className="h-3.5 w-3.5" />
             Org Chart
-          </TabsTrigger>
-          <TabsTrigger value="cards">
-            <IdCard className="h-3.5 w-3.5" />
-            Cards
           </TabsTrigger>
           <TabsTrigger value="documents">
             <FileText className="h-3.5 w-3.5" />
@@ -1791,6 +1784,22 @@ export function Employees() {
                       subtitle={employee.id}
                       payable={
                         beneficiaryByApiId.get((employee as { apiId?: string }).apiId ?? employee.id)?.status === 'active'
+                      }
+                      subtitleAction={
+                        // The ID card, one click from the roster — this
+                        // replaced the separate Cards tab. Stops the
+                        // cell's own click / Enter, which open the
+                        // details sheet.
+                        <button
+                          type="button"
+                          title="View ID card"
+                          aria-label={`View ${employee.name}'s ID card`}
+                          onClick={ev => { ev.stopPropagation(); setIdCardEmployee(employee); }}
+                          onKeyDown={ev => ev.stopPropagation()}
+                          className="inline-flex items-center justify-center h-5 w-5 rounded text-blue-500 hover:text-blue-700 hover:bg-blue-100 shrink-0"
+                        >
+                          <IdCard className="h-3.5 w-3.5" />
+                        </button>
                       }
                     />
                   </TableCell>
@@ -2005,44 +2014,6 @@ export function Employees() {
             onReassign={handleReassignManager}
             positions={positions}
           />
-        </TabsContent>
-
-        <TabsContent value="cards" className="mt-0">
-          {/* v-cards-tab-unified — search + grid + pagination live in
-              ONE Card. Reuses the roster employeePagination so page
-              index syncs across the Employees / Cards tabs, matching
-              the "one page-size across every list surface" rule. */}
-          <Card>
-            <CardContent className="pt-4 space-y-4">
-              {rosterFilterStrip}
-              {employeePagination.paginatedItems.length === 0 && (
-                employeesLoading && employees.length === 0 ? (
-                  <TableRowsSkeleton rows={4} columns={4} hasThumbnail />
-                ) : employeesError && employees.length === 0 ? (
-                  <ListError message={employeesError} onRetry={() => { void loadEmployees(); }} />
-                ) : (
-                  <ListEmpty noun="employees" filtered={filtersActive} />
-                )
-              )}
-              <EmployeeCardsGrid
-                employees={employeePagination.paginatedItems}
-                onOpenIdCard={setIdCardEmployee}
-                deptName={deptName}
-              />
-            </CardContent>
-            {/* Pagination bar — same shared component every list page
-                uses. Slides horizontally on mobile, renders the
-                compact "1 to 10 / N" label. Auto-hides when the whole
-                filter fits on one page. */}
-            <Pagination
-              currentPage={employeePagination.currentPage}
-              totalPages={employeePagination.totalPages}
-              onPageChange={employeePagination.goToPage}
-              startIndex={employeePagination.startIndex}
-              endIndex={employeePagination.endIndex}
-              totalItems={employeePagination.totalItems}
-            />
-          </Card>
         </TabsContent>
 
         <TabsContent value="documents" className="mt-0">
@@ -3078,7 +3049,8 @@ export function Employees() {
         </SheetContent>
       </Sheet>
 
-      {/* ID-card preview + print — opened from the Cards tab. */}
+      {/* ID-card preview + print — opened from the card icon beside each
+          employee number on the roster. */}
       <EmployeeIdCardDialog
         employee={idCardEmployee}
         deptName={deptName}
@@ -3538,133 +3510,6 @@ function EmployeeTelegramCell({
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Business-card grid — a scannable at-a-glance view driven by the same
-// filtered employee list the roster table uses. Managers hand this
-// tab to reception or a floor lead who needs to look up a face + a
-// phone number without the density of the full table.
-// ---------------------------------------------------------------------------
-function EmployeeCardsGrid({
-  employees,
-  onOpenIdCard,
-  deptName,
-}: {
-  employees: import('../../types/hrms').Employee[];
-  /** Opens the printable ID-card preview — driven by the card tap
-   *  and the ⋯ button. */
-  onOpenIdCard: (emp: import('../../types/hrms').Employee) => void;
-  /** Resolve emp.department (which is a UUID in live mode) to its
-   *  display name. See {@link import('../../utils/deptName').makeDeptName}. */
-  deptName: (idOrName: string | undefined) => string;
-}) {
-  const { formatDate } = useDateFormat();
-
-  if (employees.length === 0) {
-    // v-cards-tab-unified — grid now renders inside the search Card,
-    // so the empty state is a plain centered line (the enclosing
-    // CardContent already supplies the border + padding).
-    return (
-      <div className="py-12 text-center text-sm text-gray-500">
-        No employees match the current filter.
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-      {employees.map(emp => {
-        const statusTone = emp.status === 'active' ? 'bg-emerald-500' : 'bg-gray-400';
-        const statusLabel = emp.status === 'active' ? 'Active' : 'Inactive';
-        return (
-          <Card
-            key={emp.id}
-            className="hover:shadow-md hover:border-blue-300 transition-shadow cursor-pointer"
-            onClick={() => onOpenIdCard(emp)}
-          >
-            <CardContent className="p-4 space-y-3">
-              {/* Top row: photo + identity */}
-              <div className="flex items-start gap-3">
-                <EmployeePhoto
-                  employeeApiId={(emp as any).apiId ?? emp.id}
-                  fallbackDataUrl={emp.profileImage}
-                  alt=""
-                  className="h-14 w-14 rounded-full object-cover border border-gray-200 shrink-0"
-                  iconClassName="h-6 w-6"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-gray-900 truncate" title={emp.name}>
-                    {emp.name}
-                  </div>
-                  <div className="text-xs text-gray-500 font-mono">
-                    {emp.empNo || emp.id}
-                  </div>
-                  <div className="text-xs text-gray-700 truncate mt-0.5" title={emp.position}>
-                    {emp.position || '—'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Meta rows */}
-              <div className="space-y-1 text-xs text-gray-700">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Building2 className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                  <span className="text-gray-500 shrink-0">Department:</span>
-                  <span className="truncate">{deptName(emp.department)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                  <span className="text-gray-500 shrink-0">Join Date:</span>
-                  <span>{emp.joinDate ? formatDate(emp.joinDate) : '—'}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
-                    <span className={`h-2 w-2 rounded-full ${statusTone}`} />
-                  </span>
-                  <span className="text-gray-500 shrink-0">Status:</span>
-                  <span>{statusLabel}</span>
-                </div>
-              </div>
-
-              {/* Contact rows — only shown when populated so a sparse
-                  card doesn't render a row of em-dashes. */}
-              {(emp.email || emp.contactNumber) && (
-                <div className="space-y-1 text-xs text-gray-700 pt-1 border-t border-gray-100">
-                  {emp.email && (
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Mail className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                      <a
-                        href={`mailto:${emp.email}`}
-                        onClick={e => e.stopPropagation()}
-                        className="truncate text-blue-600 hover:underline"
-                        title={emp.email}
-                      >
-                        {emp.email}
-                      </a>
-                    </div>
-                  )}
-                  {emp.contactNumber && (
-                    <div className="flex items-center gap-2">
-                      <Phone className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                      <a
-                        href={`tel:${emp.contactNumber}`}
-                        onClick={e => e.stopPropagation()}
-                        className="text-blue-600 hover:underline"
-                      >
-                        {emp.contactNumber}
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
   );
 }
 

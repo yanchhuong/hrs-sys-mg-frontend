@@ -14,6 +14,9 @@ interface EmployeeCellProps {
    *  PayWay beneficiary registration, so payroll can disburse to
    *  them directly. */
   payable?: boolean;
+  /** Rendered inline right after the subtitle — e.g. the Employees
+   *  roster's "View ID card" icon beside the employee number. */
+  subtitleAction?: React.ReactNode;
 }
 
 /**
@@ -31,7 +34,7 @@ interface EmployeeCellProps {
  * endpoint via {@link useProfileImage}, which shares one fetch per
  * employee across every avatar on screen.
  */
-export function EmployeeCell({ employee, subtitle, size = 'sm', nameOnly, payable }: EmployeeCellProps) {
+export function EmployeeCell({ employee, subtitle, size = 'sm', nameOnly, payable, subtitleAction }: EmployeeCellProps) {
   if (!employee) {
     return <span className="text-gray-400 text-sm">—</span>;
   }
@@ -45,12 +48,13 @@ export function EmployeeCell({ employee, subtitle, size = 'sm', nameOnly, payabl
       size={size}
       nameOnly={nameOnly}
       payable={payable}
+      subtitleAction={subtitleAction}
     />
   );
 }
 
 function EmployeeCellBody({
-  employee, subtitle, size = 'sm', nameOnly, payable,
+  employee, subtitle, size = 'sm', nameOnly, payable, subtitleAction,
 }: EmployeeCellProps & { employee: NonNullable<EmployeeCellProps['employee']> }) {
   const photo = useProfileImage(employee.apiId, employee.profileImage);
   const dim = size === 'sm' ? 'h-8 w-8' : 'h-10 w-10';
@@ -75,7 +79,12 @@ function EmployeeCellBody({
       </Avatar>
       <div className="min-w-0">
         <p className="text-sm font-medium truncate">{employee.name}</p>
-        {!nameOnly && sub && <p className="text-xs text-gray-400 truncate">{sub}</p>}
+        {!nameOnly && sub && (subtitleAction ? (
+          <div className="flex items-center gap-1 min-w-0">
+            <p className="text-xs text-gray-400 truncate">{sub}</p>
+            {subtitleAction}
+          </div>
+        ) : <p className="text-xs text-gray-400 truncate">{sub}</p>)}
       </div>
     </div>
   );
