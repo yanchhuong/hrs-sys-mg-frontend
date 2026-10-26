@@ -186,6 +186,15 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
 
    Two classes deep so it beats the base rule above regardless of
    where Tailwind's utilities land in the cascade. */
+/* <Table> wraps its <table> in an overflow-x-auto div. Any overflow
+   value makes an element a scroll container, and `position: sticky`
+   pins to the NEAREST one — so the header (and a sticky tfoot such as
+   Transactions' TOTAL) pinned to that inner div, which never scrolls
+   vertically, and scrolled away with the rows. Inside the shell the
+   shell scrolls both axes, so the inner div steps aside. */
+.list-table:not(.list-table-flow) > [data-slot="table-container"] {
+  overflow: visible;
+}
 .list-table.list-table-flow {
   max-height: none;
   overflow: visible;

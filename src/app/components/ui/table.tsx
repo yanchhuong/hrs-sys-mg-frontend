@@ -26,8 +26,12 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     const th = target.closest('th');
     if (!th) return;
     if (target.closest('button, a, input, select, textarea, [role="button"]')) return;
-    const wrap = wrapRef.current;
-    if (!wrap) return;
+    const own = wrapRef.current;
+    if (!own) return;
+    // Inside a .list-table shell the shell is the scroller (both axes —
+    // see styles/index.css), so pan that; elsewhere this wrapper.
+    const shell = own.closest('.list-table') as HTMLDivElement | null;
+    const wrap = shell && shell.scrollWidth > shell.clientWidth + 1 ? shell : own;
     // Nothing to pan when the table already fits — skip and let the
     // click land normally so header clicks (sort etc) still work.
     if (wrap.scrollWidth <= wrap.clientWidth + 1) return;
