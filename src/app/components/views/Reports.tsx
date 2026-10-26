@@ -10,6 +10,7 @@ import { StatCard, STAT_CARD_TONES } from '../common/StatCard';
 import { formatMoneyForCurrency, formatNumber } from '../../utils/format';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
+  ListTable,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
@@ -1045,7 +1046,7 @@ function PayrollReport({
           {byDept.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-6">No records in the selected range</p>
           ) : (
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead>Department</TableHead>
@@ -1081,7 +1082,7 @@ function PayrollReport({
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ListTable>
           )}
         </CardContent>
       </Card>
@@ -1318,7 +1319,7 @@ function AttendanceDetailTable({
           </p>
         ) : (
           <>
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">#</TableHead>
@@ -1429,7 +1430,7 @@ function AttendanceDetailTable({
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
             {sorted.length > 25 && (
               <div className="mt-4">
                 <Pagination
@@ -1631,7 +1632,7 @@ function PayrollDetailTable({
         ) : (
           <>
             <div className="overflow-x-auto">
-              <Table>
+              <ListTable>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="sticky left-0 bg-white z-10">Employee</TableHead>
@@ -1699,7 +1700,7 @@ function PayrollDetailTable({
                     );
                   })}
                 </TableBody>
-              </Table>
+              </ListTable>
             </div>
             {sorted.length > 25 && (
               <div className="mt-4">
@@ -1946,7 +1947,7 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
             <p className="text-sm text-gray-400 text-center py-6">No employees in the selected scope</p>
           ) : (
             <>
-              <Table>
+              <ListTable>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Employee</TableHead>
@@ -1978,7 +1979,7 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </ListTable>
               {filtered.length > 25 && (
                 <div className="mt-4">
                   <Pagination

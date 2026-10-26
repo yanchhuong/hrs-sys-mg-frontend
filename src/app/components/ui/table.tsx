@@ -171,7 +171,37 @@ function TableCaption({
   );
 }
 
+/**
+ * ListTable — the shell every list page's table sits in.
+ *
+ * A bordered box that scrolls its own rows with the column headers
+ * pinned to the top, so they stay readable on a long list instead of
+ * scrolling off with the page. See `.list-table` in styles/index.css
+ * for the rules, including the sticky header, which is applied by
+ * descendant selector so a call site cannot forget it.
+ *
+ * Use this for a list of records. A table inside a dialog, a
+ * calculator breakdown, an invoice line-item editor or a print
+ * layout is not a list — those keep a bare {@link Table}, since a
+ * viewport-height scroll box makes no sense in a modal.
+ *
+ * `className` is appended, so a screen with taller chrome above the
+ * table can pass its own height: `<ListTable className="max-h-[60vh]">`.
+ */
+function ListTable({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"div">) {
+  return (
+    <div className={cn("list-table", className)} {...props}>
+      <Table>{children}</Table>
+    </div>
+  );
+}
+
 export {
+  ListTable,
   Table,
   TableHeader,
   TableBody,

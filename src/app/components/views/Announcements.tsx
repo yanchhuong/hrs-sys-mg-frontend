@@ -26,6 +26,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
+  ListTable,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
@@ -627,7 +628,7 @@ export function Announcements() {
           </div>
         </div>
         <CardContent className="p-0">
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead>Title</TableHead>
@@ -688,7 +689,7 @@ export function Announcements() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ListTable>
           {filteredRows.length > 0 && (
             <div className="px-4 py-3 border-t">
               <Pagination

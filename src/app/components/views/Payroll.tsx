@@ -27,7 +27,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Checkbox } from '../ui/checkbox';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -2845,7 +2845,7 @@ export function Payroll() {
             </div>
           </CardHeader>
           <CardContent>
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead>Status</TableHead>
@@ -2992,7 +2992,7 @@ export function Payroll() {
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
           </CardContent>
         </Card>
         );
@@ -3004,7 +3004,7 @@ export function Payroll() {
             <CardTitle>My Payroll Records</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead>Month/Year</TableHead>
@@ -3072,7 +3072,7 @@ export function Payroll() {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </ListTable>
             {payrollRecords.length === 0 && (
               <div className="text-center py-12">
                 <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
@@ -3350,7 +3350,7 @@ export function Payroll() {
                     })()}
                   </div>
                   )}
-                  <Table>
+                  <ListTable>
                     <TableHeader>
                       <TableRow>
                         {dispatchEnabled && (
@@ -3564,7 +3564,7 @@ export function Payroll() {
                   );
                       })}
                     </TableBody>
-                  </Table>
+                  </ListTable>
                 </>
               );
             })()}

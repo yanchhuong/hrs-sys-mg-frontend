@@ -4,7 +4,7 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Badge } from '../../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
@@ -352,7 +352,7 @@ export function ActivityLog() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[60px]">Severity</TableHead>
@@ -439,7 +439,7 @@ export function ActivityLog() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
           <Pagination
             currentPage={pager.currentPage}
             totalPages={pager.totalPages}

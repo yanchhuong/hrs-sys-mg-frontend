@@ -7,7 +7,7 @@ import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
 import { Switch } from '../../ui/switch';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -1221,7 +1221,7 @@ export function Companies() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead>
@@ -1463,7 +1463,7 @@ export function Companies() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
           <Pagination
             currentPage={pager.currentPage}
             totalPages={pager.totalPages}

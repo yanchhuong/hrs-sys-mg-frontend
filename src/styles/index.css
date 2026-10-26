@@ -139,6 +139,46 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
   }
 }
 
+/* The one list-table shell — `v-list-table-invoice-shape`, the shape
+   Invoices / Employees / Customers / Items already use.
+
+   A bordered, rounded box that scrolls its own rows, with the column
+   headers pinned to the top of it so they stay readable on a long
+   list. Rows scroll under the header rather than the whole page
+   scrolling the header away.
+
+   This lived as two copy-pasted strings — the wrapper classes in 37
+   places and the sticky-header classes in 40 — which is how seven
+   near-miss variants appeared (no shadow, a different shadow, a gray
+   header, reordered classes) and how the other half of the app ended
+   up with no shell at all. Both halves now resolve here, and the
+   header is styled by descendant selector so a call site cannot
+   forget it.
+
+   Apply: `<ListTable>…TableHeader + TableBody…</ListTable>`, or
+   `<div className="list-table"><Table>…</Table></div>` by hand.
+
+   `max-h` is the viewport minus the page chrome above the table. A
+   screen with a taller header passes its own, e.g.
+   `<ListTable className="max-h-[60vh]">`. */
+.list-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: auto;
+  max-height: calc(100vh - 280px);
+}
+/* Pins the header inside the box above. `thead` rather than a class
+   so every table in the shell gets it; the background is opaque
+   because body rows pass underneath, and the inset shadow draws the
+   divider a border-bottom cannot (borders scroll with the cell). */
+.list-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff;
+  box-shadow: inset 0 -1px 0 0 rgb(229, 231, 235);
+}
+
 /* KPI card row that shifts to horizontal-scroll on small screens
    instead of shrinking each card into a 2-col grid where big numbers
    crop out of their box (Sale Ledger / Profit & Loss issue). Callers

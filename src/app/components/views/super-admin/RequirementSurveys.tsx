@@ -15,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import {
   Search, RefreshCw, Eye, UserPlus, Trash2, ArrowRightCircle, FileText, Loader2, Clock,
@@ -220,7 +220,7 @@ export function RequirementSurveys() {
         </CardHeader>
 
         <CardContent className="pt-0">
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[130px]">Survey No.</TableHead>
@@ -305,7 +305,7 @@ export function RequirementSurveys() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
           <Pagination
             currentPage={pager.currentPage}
             totalPages={pager.totalPages}

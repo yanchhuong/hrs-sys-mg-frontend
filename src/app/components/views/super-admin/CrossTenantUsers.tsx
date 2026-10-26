@@ -5,7 +5,7 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Badge } from '../../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -524,7 +524,7 @@ export function CrossTenantUsers() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 {/* Sortable columns — click the header to cycle
@@ -658,7 +658,7 @@ export function CrossTenantUsers() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
           <Pagination
             currentPage={pager.currentPage}
             totalPages={pager.totalPages}

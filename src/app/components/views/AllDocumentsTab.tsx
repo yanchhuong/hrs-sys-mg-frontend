@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { Label } from '../ui/label';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -233,7 +233,7 @@ export function AllDocumentsTab() {
           </div>
 
           <div className="rounded-md border">
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <SortHeader k="employeeName">Employee</SortHeader>
@@ -335,7 +335,7 @@ export function AllDocumentsTab() {
                   })
                 )}
               </TableBody>
-            </Table>
+            </ListTable>
           </div>
 
           <Pagination

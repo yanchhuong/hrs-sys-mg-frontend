@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Percent, Loader2, Plus, RefreshCw, Trash2, Edit3, X } from 'lucide-react';
 import { commission } from '../../api/commission';
@@ -125,7 +125,7 @@ export function CommissionSettings() {
           ) : rows.length === 0 ? (
             <ListEmpty noun="commission plans" />
           ) : (
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -180,7 +180,7 @@ export function CommissionSettings() {
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
           )}
         </CardContent>
       </Card>

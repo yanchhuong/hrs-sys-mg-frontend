@@ -22,7 +22,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -214,7 +214,7 @@ function CategoryTable({
           <span>{title}</span>
           <Badge variant="outline" className="text-[11px]">{rows.length}</Badge>
         </div>
-        <Table>
+        <ListTable>
           <TableHeader>
             <TableRow>
               <TableHead>Label</TableHead>
@@ -262,7 +262,7 @@ function CategoryTable({
               </TableRow>
             ))}
           </TableBody>
-        </Table>
+        </ListTable>
       </CardContent>
     </Card>
   );

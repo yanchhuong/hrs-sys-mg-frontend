@@ -7,7 +7,7 @@ import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -323,7 +323,7 @@ export function SyncMonitor() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead>Site</TableHead>
@@ -424,7 +424,7 @@ export function SyncMonitor() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
         </CardContent>
       </Card>
 

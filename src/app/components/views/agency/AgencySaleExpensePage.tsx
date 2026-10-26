@@ -26,7 +26,7 @@ import { inRange } from '../../common/DateRangeFilter';
 import { DateInput } from '../../common/DateInput';
 import { Label } from '../../ui/label';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../../common/ListStates';
@@ -373,7 +373,7 @@ export function AgencySaleExpensePage() {
               <ListEmpty noun="documents" filtered={docsFiltered} />
             ) : (<>
               <div className="overflow-x-auto">
-                <Table>
+                <ListTable>
                   <TableHeader className="bg-gray-50">
                     <TableRow>
                       <TableHead className="text-left px-4">Issue date</TableHead>
@@ -456,7 +456,7 @@ export function AgencySaleExpensePage() {
                       );
                     })}
                   </TableBody>
-                </Table>
+                </ListTable>
               </div>
               <div className="px-4 border-t">
                 <Pagination

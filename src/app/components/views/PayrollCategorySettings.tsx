@@ -49,7 +49,7 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -556,7 +556,7 @@ export function PayrollCategorySettings() {
           )}
         </CardHeader>
         <CardContent>
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[80px]">{t('payrollCat.col.order')}</TableHead>
@@ -743,7 +743,7 @@ export function PayrollCategorySettings() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
         </CardContent>
       </Card>
     );

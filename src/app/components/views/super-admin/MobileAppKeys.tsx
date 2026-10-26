@@ -22,7 +22,7 @@ import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
 import { Textarea } from '../../ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
+import { ListTable, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';
@@ -254,7 +254,7 @@ export function MobileAppKeys() {
 
           <Card>
             <CardContent className="p-0">
-              <Table>
+              <ListTable>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Scope</TableHead>
@@ -318,7 +318,7 @@ export function MobileAppKeys() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </ListTable>
             </CardContent>
           </Card>
         </TabsContent>
@@ -366,7 +366,7 @@ export function MobileAppKeys() {
 
           <Card>
             <CardContent className="p-0">
-              <Table>
+              <ListTable>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Domain</TableHead>
@@ -399,7 +399,7 @@ export function MobileAppKeys() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </ListTable>
             </CardContent>
           </Card>
         </TabsContent>

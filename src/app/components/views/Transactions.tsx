@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
-  Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
@@ -333,8 +333,8 @@ export function Transactions() {
               would overflow. Header + footer stay sticky inside this
               container. */}
           <div className="overflow-auto max-h-[calc(100vh-22rem)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[0_1px_0_rgba(0,0,0,0.06)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead className="w-[110px]">Date</TableHead>
                   <TableHead className="w-[110px]">Source</TableHead>
@@ -429,7 +429,7 @@ export function Transactions() {
                   ))}
                 </TableFooter>
               )}
-            </Table>
+            </ListTable>
           </div>
 
           {/* Match Bills + StockMovements: pagination lives in its

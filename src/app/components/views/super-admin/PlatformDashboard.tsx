@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import {
   Building2, UsersRound, DollarSign, Activity, AlertTriangle, CheckCircle,
@@ -451,7 +451,7 @@ export function PlatformDashboard() {
           <CardTitle className="text-base">All Tenants</CardTitle>
         </CardHeader>
         <CardContent>
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead>Company</TableHead>
@@ -504,7 +504,7 @@ export function PlatformDashboard() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </ListTable>
         </CardContent>
       </Card>
     </div>

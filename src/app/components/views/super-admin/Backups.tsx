@@ -7,7 +7,7 @@ import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
 import { Switch } from '../../ui/switch';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
@@ -526,7 +526,7 @@ export function Backups() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">Status</TableHead>
@@ -641,7 +641,7 @@ export function Backups() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
           <Pagination
             currentPage={pager.currentPage}
             totalPages={pager.totalPages}
@@ -665,7 +665,7 @@ export function Backups() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead>Tenant</TableHead>
@@ -728,7 +728,7 @@ export function Backups() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
         </CardContent>
       </Card>
 

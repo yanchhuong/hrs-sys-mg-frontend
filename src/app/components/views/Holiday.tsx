@@ -10,6 +10,7 @@ import { DateInput } from '../common/DateInput';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../common/ListStates';
 import {
+  ListTable,
   Table,
   TableBody,
   TableCell,
@@ -729,8 +730,8 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
             />
           ) : (
           <div className="max-h-[60vh] overflow-y-auto rounded-md border">
-          <Table>
-            <TableHeader className="sticky top-0 bg-white z-10 shadow-[inset_0_-1px_0_rgb(229,231,235)]">
+          <ListTable>
+            <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
                   <Checkbox
@@ -831,7 +832,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
           </div>
           )}
           <p className="text-[11px] text-gray-500 mt-2">

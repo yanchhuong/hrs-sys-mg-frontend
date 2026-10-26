@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { defaultOTSettings } from '../../data/settingsData';
 import { mockDepartments } from '../../data/mockData';
@@ -1237,7 +1237,7 @@ export function AttendanceSettings() {
                   <p className="text-sm">No custom department rules. All departments use default OT rates.</p>
                 </div>
               ) : (
-                <Table>
+                <ListTable>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Department</TableHead>
@@ -1279,7 +1279,7 @@ export function AttendanceSettings() {
                       </TableRow>
                     ))}
                   </TableBody>
-                </Table>
+                </ListTable>
               )}
             </CardContent>
           </Card>

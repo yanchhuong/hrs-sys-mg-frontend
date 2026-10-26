@@ -15,6 +15,7 @@ import { Badge } from '../ui/badge';
 import { Textarea } from '../ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
+  ListTable,
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import {
@@ -320,7 +321,7 @@ function ConsignmentReport() {
             <ListEmpty noun="consignments" filtered={!!(search || dateFrom || dateTo)} />
           ) : (
             <>
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead>Consignment No</TableHead>
@@ -444,7 +445,7 @@ function ConsignmentReport() {
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
             <Pagination
               currentPage={pagination.currentPage}
               totalPages={pagination.totalPages}
@@ -2090,7 +2091,7 @@ function ConsignmentSettlementView() {
             </ListEmpty>
           ) : (
             <div className="overflow-x-auto">
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead>Settlement No</TableHead>
@@ -2178,7 +2179,7 @@ function ConsignmentSettlementView() {
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
             </div>
           )}
           {filteredRows.length > 0 && (

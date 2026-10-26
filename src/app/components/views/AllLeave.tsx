@@ -8,7 +8,7 @@ import { Textarea } from '../ui/textarea';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
 import {
-  Table,
+  ListTable,
   TableBody,
   TableCell,
   TableHead,
@@ -737,7 +737,7 @@ export function AllLeave() {
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead>Employee</TableHead>
@@ -875,7 +875,7 @@ export function AllLeave() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
           <Pagination
             currentPage={leavesPagination.currentPage}
             totalPages={leavesPagination.totalPages}

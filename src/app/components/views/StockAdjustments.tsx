@@ -13,7 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { usePagination } from '../../hooks/usePagination';
@@ -272,12 +272,11 @@ export function StockAdjustments() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {/* v-list-table-invoice-shape reverted here — Adjustment
-              shares the empty-state colSpan pattern with Movement;
-              adding the border wrapper produced a phantom row below
-              the empty message. Keep the plain Table shell to match
-              StockMovements pixel-for-pixel. */}
-          <Table>
+          {/* Back on the shared shell. The note that used to sit here
+              said the border wrapper had been reverted to match
+              StockMovements — but StockMovements carries the shell
+              itself, so the two had been out of step ever since. */}
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[140px]">Date</TableHead>
@@ -356,7 +355,7 @@ export function StockAdjustments() {
                     );
                   })}
             </TableBody>
-          </Table>
+          </ListTable>
           {rows.length > 0 && (
             <div className="px-4 py-3 border-t">
               <Pagination

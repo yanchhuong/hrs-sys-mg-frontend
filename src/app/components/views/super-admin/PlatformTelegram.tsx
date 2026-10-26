@@ -7,7 +7,7 @@ import { Switch } from '../../ui/switch';
 import { Textarea } from '../../ui/textarea';
 import { Badge } from '../../ui/badge';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../../ui/table';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -367,7 +367,7 @@ export function PlatformTelegram() {
 
       <Card>
         <CardContent className="p-0">
-          <Table>
+          <ListTable>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[110px]">Type</TableHead>
@@ -525,7 +525,7 @@ export function PlatformTelegram() {
                 );
               })}
             </TableBody>
-          </Table>
+          </ListTable>
         </CardContent>
       </Card>
 

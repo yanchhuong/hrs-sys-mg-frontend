@@ -12,6 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
 import {
+  ListTable,
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -243,8 +244,8 @@ export function CashAdvances() {
               inner scroll when rows would overflow. Header + footer
               stay sticky inside this container. */}
           <div className="overflow-auto max-h-[calc(100vh-22rem)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-white z-10 shadow-[0_1px_0_rgba(0,0,0,0.06)]">
+            <ListTable>
+              <TableHeader>
                 <TableRow>
                   <TableHead className="w-[110px]">Date</TableHead>
                   <TableHead className="w-[120px]">Advance No</TableHead>
@@ -330,7 +331,7 @@ export function CashAdvances() {
                   ))}
                 </TableFooter>
               )}
-            </Table>
+            </ListTable>
           </div>
           {visibleRows.length > 0 && (
             <div className="px-1 py-0 border-t">

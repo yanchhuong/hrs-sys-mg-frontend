@@ -12,7 +12,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { DateInput } from '../common/DateInput';
 import { Loader2, Plus, RefreshCw, Trash2, Eye, Wallet, ReceiptText, DollarSign, Edit3, Search } from 'lucide-react';
@@ -208,7 +208,7 @@ export function CommissionSettlementView() {
             <ListEmpty noun="settlements" filtered={isFiltered} />
           ) : (
             <>
-            <Table>
+            <ListTable>
               <TableHeader>
                 <TableRow>
                   <TableHead>Settlement No</TableHead>
@@ -267,7 +267,7 @@ export function CommissionSettlementView() {
                   );
                 })}
               </TableBody>
-            </Table>
+            </ListTable>
             <Pagination
               currentPage={pagination.currentPage}
               totalPages={pagination.totalPages}
@@ -479,7 +479,7 @@ function NewSettlementDialog({
                   </div>
                 ) : (
                   <div className="max-h-56 overflow-y-auto border rounded">
-                    <Table>
+                    <ListTable>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Invoice</TableHead>
@@ -500,7 +500,7 @@ function NewSettlementDialog({
                           </TableRow>
                         ))}
                       </TableBody>
-                    </Table>
+                    </ListTable>
                   </div>
                 )}
               </CardContent>
@@ -562,7 +562,7 @@ function ViewSettlementDialog({
             <Card>
               <CardHeader className="pb-2"><CardTitle className="text-sm">Detail</CardTitle></CardHeader>
               <CardContent className="p-0">
-                <Table>
+                <ListTable>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Invoice</TableHead>
@@ -581,7 +581,7 @@ function ViewSettlementDialog({
                       </TableRow>
                     ))}
                   </TableBody>
-                </Table>
+                </ListTable>
               </CardContent>
             </Card>
           </div>
