@@ -81,7 +81,12 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved, onSet
     setLoading(true);
     setSection('display');
     Promise.all([
-      categoriesApi.list(),
+      // Only the categories switched on in Payroll Categories. A
+      // category that is off there never reaches a payroll run —
+      // payrollCompose filters on enabled before it looks at the
+      // salary types — so listing it here offers a toggle that
+      // cannot do anything.
+      categoriesApi.list({ enabled: true }),
       settingsApi.get('payroll').catch(() => settingsApi.defaultsFor('payroll')),
     ])
       .then(([rows, s]) => {
