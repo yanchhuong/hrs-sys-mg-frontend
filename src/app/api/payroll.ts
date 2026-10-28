@@ -77,6 +77,8 @@ export interface PayrollItem {
   mailSentAt?: string | null;
   smsSentAt?: string | null;
   bankSentAt?: string | null;
+  /** V384 — sent by the tenant's HR Telegram bot. */
+  botSentAt?: string | null;
   /** Author / modifier of THIS slip. Separate from the batch's pair:
    *  a slip can be edited on its own (per-row amount, per-row remark),
    *  and the batch modifier only says someone changed something in the
@@ -238,16 +240,21 @@ export async function removeBatch(id: string): Promise<void> {
 /** Mark batch items as dispatched on a channel. Idempotent — items already
  *  stamped on this channel are left alone. Returns counts so the caller
  *  can show "X queued, Y already sent and skipped". */
+export type DispatchChannel = 'mail' | 'sms' | 'bank' | 'bot';
+/** V384 — 'mail' and 'bot' really deliver; a slip that could not go
+ *  (no email on file, not linked to the HR bot) is not stamped and comes
+ *  back in `failed` with its reason. */
 export interface DispatchResponse {
-  channel: 'mail' | 'sms' | 'bank';
+  channel: DispatchChannel;
   requested: number;
   dispatched: number;
   skipped: number;
+  failed?: { employeeId: string; name: string; reason: string }[];
 }
 
 export async function dispatchBatchItems(
   batchId: string,
-  channel: 'mail' | 'sms' | 'bank',
+  channel: DispatchChannel,
   itemIds: string[],
 ): Promise<DispatchResponse> {
   return apiJson<DispatchResponse>(`/api/v1/payroll/batches/${batchId}/dispatch`, {

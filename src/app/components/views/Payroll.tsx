@@ -409,6 +409,7 @@ export function Payroll() {
   const [sentMail, setSentMail] = useState<Set<string>>(new Set());
   const [sentSms, setSentSms] = useState<Set<string>>(new Set());
   const [sentBank, setSentBank] = useState<Set<string>>(new Set());
+  const [sentBot, setSentBot] = useState<Set<string>>(new Set());
   /** Per-batch PayWay beneficiary lookup (V168). Keyed by
    *  employee UUID so the per-row "Payout Ready" chip can resolve
    *  in O(1) inside the table render. Refreshed when the selected
@@ -423,6 +424,7 @@ export function Payroll() {
       setSentMail(new Set());
       setSentSms(new Set());
       setSentBank(new Set());
+      setSentBot(new Set());
       setBeneficiaryByEmpId(new Map());
     }
   }, [selectedBatch]);
@@ -871,6 +873,7 @@ export function Payroll() {
         setSentMail(new Set(items.filter(it => it.mailSentAt).map(it => it.id)));
         setSentSms(new Set(items.filter(it => it.smsSentAt).map(it => it.id)));
         setSentBank(new Set(items.filter(it => it.bankSentAt).map(it => it.id)));
+        setSentBot(new Set(items.filter(it => it.botSentAt).map(it => it.id)));
       } catch (err) {
         if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load batch items');
       } finally {
@@ -3382,15 +3385,15 @@ export function Payroll() {
 
               // Yes = already dispatched on that channel. Yes rows are
               // excluded from any subsequent bulk send.
-              const sentByChannel = { mail: sentMail, sms: sentSms, bank: sentBank } as const;
-              const setSentByChannel = { mail: setSentMail, sms: setSentSms, bank: setSentBank } as const;
+              const sentByChannel = { mail: sentMail, sms: sentSms, bank: sentBank, bot: sentBot } as const;
+              const setSentByChannel = { mail: setSentMail, sms: setSentSms, bank: setSentBank, bot: setSentBot } as const;
 
-              const dispatch = async (channel: 'mail' | 'sms' | 'bank') => {
+              const dispatch = async (channel: payrollApi.DispatchChannel) => {
                 if (selectedRowIds.size === 0) {
                   toast.warning('Tick at least one row first.');
                   return;
                 }
-                const labels = { mail: 'email', sms: 'SMS', bank: 'bank transfer' } as const;
+                const labels = { mail: 'email', sms: 'SMS', bank: 'bank transfer', bot: 'HR bot' } as const;
                 const sentSet = sentByChannel[channel];
                 // Skip rows already marked Yes for this channel — never
                 // double-send.
@@ -3423,6 +3426,18 @@ export function Payroll() {
 
                 try {
                   const res = await payrollApi.dispatchBatchItems(selectedBatch.id, channel, targets);
+                  // V384 — mail / bot report who could not be reached;
+                  // those rows stay unsent.
+                  const failed = res.failed ?? [];
+                  const failedEmp = new Set(failed.map(f => f.employeeId));
+                  const delivered = targets.filter(id => !failedEmp.has(detailRows.find(r => r.id === id)?.employeeId ?? ''));
+                  if (failed.length) {
+                    toast.error(`${failed.length} payslip${failed.length === 1 ? '' : 's'} not sent by ${labels[channel]}`, {
+                      description: failed.slice(0, 5).map(f => `${f.name || 'Employee'} — ${f.reason}`).join(' · ')
+                        + (failed.length > 5 ? ` · +${failed.length - 5} more` : ''),
+                      duration: 9000,
+                    });
+                  }
                   // Reflect the server-confirmed dispatched ids in local
                   // state. We mirror only `targets` here — the server
                   // re-applies its own idempotency check, but we already
@@ -3430,14 +3445,14 @@ export function Payroll() {
                   // res.dispatched should match in normal flows.
                   setSentByChannel[channel](prev => {
                     const next = new Set(prev);
-                    targets.forEach(id => next.add(id));
+                    delivered.forEach(id => next.add(id));
                     return next;
                   });
                   const note = alreadySent > 0
                     ? ` — ${alreadySent} already sent earlier and skipped.`
                     : '';
-                  toast.success(
-                    `Queued ${res.dispatched} payslip${res.dispatched === 1 ? '' : 's'} for ${labels[channel]}${note}`,
+                  if (res.dispatched > 0 || !failed.length) toast.success(
+                    `${channel === 'mail' || channel === 'bot' ? 'Sent' : 'Queued'} ${res.dispatched} payslip${res.dispatched === 1 ? '' : 's'} for ${labels[channel]}${note}`,
                     { duration: 6000 },
                   );
                 } catch (err) {
@@ -3460,7 +3475,7 @@ export function Payroll() {
                     <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 flex items-start gap-2">
                       <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                       <span>
-                        Payslip delivery (Mail / SMS / Bank Transfer) becomes available
+                        Payslip delivery (Mail / Bot / SMS / Bank Transfer) becomes available
                         once this batch is <strong>approved</strong>. Current status:&nbsp;
                         <strong>{selectedBatch?.status ?? 'pending'}</strong>.
                       </span>
@@ -3479,11 +3494,16 @@ export function Payroll() {
                       const m = eligibleCount(sentMail);
                       const s = eligibleCount(sentSms);
                       const b = eligibleCount(sentBank);
+                      const t = eligibleCount(sentBot);
                       return (
                         <>
                           <Button size="sm" variant="outline" disabled={m === 0} onClick={() => dispatch('mail')}>
                             <Mail className="h-3.5 w-3.5 mr-1.5" />
                             Send by Mail{selectedRowIds.size > 0 ? ` (${m})` : ''}
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={t === 0} onClick={() => dispatch('bot')}>
+                            <Send className="h-3.5 w-3.5 mr-1.5" />
+                            Send by Bot{selectedRowIds.size > 0 ? ` (${t})` : ''}
                           </Button>
                           <Button size="sm" variant="outline" disabled={s === 0} onClick={() => dispatch('sms')}>
                             <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
@@ -3523,6 +3543,7 @@ export function Payroll() {
                         <TableHead>Total Earnings</TableHead>
                         <TableHead>Deductions</TableHead>
                         {dispatchEnabled && <TableHead className="text-center">Mail</TableHead>}
+                        {dispatchEnabled && <TableHead className="text-center">Bot</TableHead>}
                         {dispatchEnabled && <TableHead className="text-center">SMS</TableHead>}
                         {dispatchEnabled && <TableHead className="text-center">Bank Transfer</TableHead>}
                         <TableHead>Actions</TableHead>
@@ -3532,7 +3553,7 @@ export function Payroll() {
                       {batchItemsLoading && detailRows.length === 0 ? (
                         <TableBodySkeletonRows columns={dispatchEnabled ? 15 : 11} />
                       ) : detailRows.length === 0 ? (
-                        <ListEmpty colSpan={dispatchEnabled ? 15 : 11} noun="items in this batch" />
+                        <ListEmpty colSpan={dispatchEnabled ? 16 : 11} noun="items in this batch" />
                       ) : detailRows.map((record) => {
                     const employee = empByRowId.get(record.id);
                     const dept = deptName(employee?.department);
@@ -3672,6 +3693,7 @@ export function Payroll() {
                       <TableCell className="text-green-600">${formatMoney(record.totalEarnings)}</TableCell>
                       <TableCell className="text-red-600">${formatMoney(record.deductions)}</TableCell>
                       {dispatchEnabled && <TableCell className="text-center">{yesNo(sentMail.has(record.id))}</TableCell>}
+                      {dispatchEnabled && <TableCell className="text-center">{yesNo(sentBot.has(record.id))}</TableCell>}
                       {dispatchEnabled && <TableCell className="text-center">{yesNo(sentSms.has(record.id))}</TableCell>}
                       {dispatchEnabled && <TableCell className="text-center">{yesNo(sentBank.has(record.id))}</TableCell>}
                       <TableCell>
