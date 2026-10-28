@@ -67,7 +67,7 @@ export async function create(req: CreateIncreaseRequest): Promise<SalaryIncrease
 }
 
 export async function update(id: string, req: CreateIncreaseRequest): Promise<SalaryIncrease> {
-  return apiJson(`/api/v1/salary-increases/${id}`, { method: 'PUT', json: req });
+  return apiJson(`/api/v1/salary-increases/${id}`, { method: 'PATCH', json: req });
 }
 
 export async function remove(id: string): Promise<void> {

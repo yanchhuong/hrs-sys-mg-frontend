@@ -62,7 +62,7 @@ export async function create(req: CreateDeductionRequest): Promise<SalaryDeducti
 }
 
 export async function update(id: string, req: CreateDeductionRequest): Promise<SalaryDeduction> {
-  return apiJson(`/api/v1/salary-deductions/${id}`, { method: 'PUT', json: req });
+  return apiJson(`/api/v1/salary-deductions/${id}`, { method: 'PATCH', json: req });
 }
 
 /**

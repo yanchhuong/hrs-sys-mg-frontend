@@ -1384,13 +1384,34 @@ export function Payroll() {
     // would just clutter the upload sheet with zero-amount lines.
     const activeEmployees = employees.filter(e => e.status === 'active');
 
+    // Settings decide what takes part: a category must be enabled under
+    // Settings → Payroll Categories AND switched on for this batch type in
+    // the Payroll Settings popup. Increase / deduction rows of any other
+    // category are left out of the generated payslip (they used to be
+    // posted anyway, so a disabled "Petrol" still paid out).
+    const inPlayCategories = payrollCategories.filter(c => c.enabled && matchesSalaryType(c));
+    /** Row type → in-play category code. Matches the code, or the label
+     *  for rows older mobile builds saved with the label; null = skip. */
+    const inPlayCode = (kind: 'earning' | 'deduction', raw: string | null | undefined): string | null => {
+      const v = (raw ?? '').toLowerCase().trim();
+      if (!v) return null;
+      return inPlayCategories.find(c =>
+        c.kind === kind && (c.code.toLowerCase() === v || c.label.toLowerCase() === v),
+      )?.code ?? null;
+    };
+    /** A percentage row is a share of the employee's base salary. */
+    const moneyOf = (base: number, amount: unknown, isPct: boolean) => {
+      const n = Number(amount || 0);
+      return isPct ? Math.round(((base || 0) * n / 100) * 100) / 100 : n;
+    };
+
     // Resolve the canonical earnings codes (basic / allowances / ot) from
-    // the live category list. Match by code first, fall back to label
+    // the in-play category list. Match by code first, fall back to label
     // (case-insensitive) so admins who renamed the labels still get values
     // routed correctly.
     const earningCode = (predicates: ((c: typeof payrollCategories[number]) => boolean)[]) =>
-      payrollCategories.find(c =>
-        c.kind === 'earning' && c.enabled && predicates.some(p => p(c)),
+      inPlayCategories.find(c =>
+        c.kind === 'earning' && predicates.some(p => p(c)),
       )?.code ?? null;
 
     // Basic / Position / Evaluation no longer have payroll-category rows
@@ -1424,23 +1445,22 @@ export function Payroll() {
     // Tax-on-Salary code on the deduction side. Used to pre-fill the Tax
     // column from the configured Cambodia TOS brackets so HR doesn't have
     // to paste tax values into 100 rows by hand.
-    const taxCode = payrollCategories.find(c =>
+    const taxCode = inPlayCategories.find(c =>
       c.kind === 'deduction'
-      && c.enabled
       && (c.code.toLowerCase() === 'tax' || c.label.toLowerCase().startsWith('tax'))
     )?.code ?? null;
     // '1st Salary' on the DEDUCTION side (V44 seed). Same code as the
     // earning, different `kind` row. Used to clawback the mid-month
     // advance on the 2nd Salary payslip.
-    const firstSalaryDeductionCode = payrollCategories.find(c =>
-      c.kind === 'deduction' && c.enabled && c.code.toLowerCase() === 'first_salary'
+    const firstSalaryDeductionCode = inPlayCategories.find(c =>
+      c.kind === 'deduction' && c.code.toLowerCase() === 'first_salary'
     )?.code ?? null;
     // NSSF Pension — employee portion (2% during the first 5 years per
     // Cambodian NSSF). Computed deterministically below so HR doesn't
     // have to enter dollar values by hand and so manual mistakes can't
     // drift from the legal schedule.
-    const nssfDeductionCode = payrollCategories.find(c =>
-      c.kind === 'deduction' && c.enabled && c.code.toLowerCase() === 'nssf'
+    const nssfDeductionCode = inPlayCategories.find(c =>
+      c.kind === 'deduction' && c.code.toLowerCase() === 'nssf'
     )?.code ?? null;
 
     /**
@@ -1674,10 +1694,10 @@ export function Payroll() {
       );
       if (!emp) continue;
       const apiId = (emp as { apiId?: string }).apiId ?? emp.id;
-      const code = (d.type ?? '').toLowerCase().trim();
+      const code = inPlayCode('deduction', d.type);
       if (!code) continue;
       const bucket = deductionsByApiId.get(apiId) ?? {};
-      bucket[code] = (bucket[code] ?? 0) + Number(d.amount || 0);
+      bucket[code] = Math.round(((bucket[code] ?? 0) + moneyOf(emp.baseSalary, d.amount, !!d.isPercentage)) * 100) / 100;
       deductionsByApiId.set(apiId, bucket);
     }
 
@@ -1697,7 +1717,7 @@ export function Payroll() {
       );
       if (!emp) continue;
       const apiId = (emp as { apiId?: string }).apiId ?? emp.id;
-      const code = (inc.type ?? '').toLowerCase().trim();
+      const code = inPlayCode('earning', inc.type);
       if (!code) continue;
       // Skip rows that target the reserved built-in earnings — those are
       // owned by the employee record / OT module and shouldn't be
@@ -1708,8 +1728,9 @@ export function Payroll() {
       // would land as $7.50 in the template). The Compute Seniority
       // Indemnity dialog owns the dollar math for those.
       if (inc.unit === 'day') continue;
+      const isPct = inc.unit === 'percentage' || (!inc.unit && !!inc.isPercentage);
       const bucket = increasesByApiId.get(apiId) ?? {};
-      bucket[code] = (bucket[code] ?? 0) + Number(inc.amount || 0);
+      bucket[code] = Math.round(((bucket[code] ?? 0) + moneyOf(emp.baseSalary, inc.amount, isPct)) * 100) / 100;
       increasesByApiId.set(apiId, bucket);
     }
 
@@ -1751,7 +1772,9 @@ export function Payroll() {
       // otherwise print verbatim into the dollar column. Force it to
       // 0 here so the cell stays blank until HR populates it via the
       // dedicated flow — even when the column is visible.
-      earnRow['seniority_indemnity'] = 0;
+      if (inPlayCategories.some(c => c.kind === 'earning' && c.code === 'seniority_indemnity')) {
+        earnRow['seniority_indemnity'] = 0;
+      }
       earningsByEmployee[emp.id] = earnRow;
 
       // 1st Salary is a mid-month half-payment with no deductions —

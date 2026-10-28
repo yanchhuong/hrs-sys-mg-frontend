@@ -48,7 +48,16 @@ import * as contractsApi from '../../api/contracts';
 import * as categoriesApi from '../../api/payrollCategories';
 import { formatMoney } from '../../utils/format';
 import { USE_MOCKS } from '../../api/client';
-import { TrendingUp, Plus, User as UserIcon, Search, Settings, Eye } from 'lucide-react';
+import { TrendingUp, Plus, User as UserIcon, Search, Settings, Eye, Pencil } from 'lucide-react';
+import { statusBadgeClass } from '../../utils/statusTones';
+import {
+  categoryDefaults, increaseLifecycle, LIFECYCLE_LABEL, type IncreaseLifecycle,
+} from '../../utils/payrollAdjust';
+
+/** Lifecycle → shared status palette (mobile: statusTone). */
+const LIFECYCLE_TONE: Record<IncreaseLifecycle, string> = {
+  active: 'active', scheduled: 'pending', ended: 'closed',
+};
 import { CategoryCardVisibilityDialog } from '../common/CategoryCardVisibilityDialog';
 import * as cardVisibilityApi from '../../api/categoryCardVisibility';
 import { format, isWithinInterval, parseISO } from 'date-fns';
@@ -155,7 +164,7 @@ export function Increase() {
   const canAdd = canCreate('increase');
   const canEdit = canUpdate('increase');
   const canRemove = canDelete('increase');
-  void canEdit; void canRemove; // future per-row mutations gate here
+  void canRemove; // no delete on this page — corrections are new rows or edits
   const [increases, setIncreases] = useState<SalaryIncrease[]>(USE_MOCKS ? mockIncreases : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   /** Map of employee API id → active contract type (V64 vocabulary:
@@ -186,6 +195,11 @@ export function Increase() {
   // Search matches against the employee's name / empNo / position and
   // the increase reason; case-insensitive.
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  // Lifecycle filter — Active / Scheduled / Ended, as on mobile.
+  const [statusFilter, setStatusFilter] = useState<'all' | IncreaseLifecycle>('all');
+  /** Set when the dialog edits an existing row (opened from Details);
+   *  null = Add. Editing is one row, so the multi-employee list is off. */
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Create-dialog form state
@@ -280,6 +294,7 @@ export function Increase() {
   }, []);
 
   const resetForm = () => {
+    setEditingId(null);
     setNewEmployeeId('');
     setMultiEmployeeIds([]);
     setEmployeePickerSearch('');
@@ -298,7 +313,7 @@ export function Increase() {
   // forcing single-pick keeps the Effective Date aligned with that one
   // contract's expiry. Cambodian Labour Law requires it as a one-off.
   const isFdcSeverance = newType === 'fdc_severance';
-  const isMultiTargetMode = !isFdcSeverance && (newUnit === 'percentage' || newUnit === 'day');
+  const isMultiTargetMode = !editingId && !isFdcSeverance && (newUnit === 'percentage' || newUnit === 'day');
 
   /** When the user picks a Type, auto-default the unit + amount from the
    *  category's value_type so day-flavoured categories (seniority_indemnity)
@@ -313,24 +328,41 @@ export function Increase() {
     }
     const cat = earningCategories.find((c) => c.code === code);
     if (!cat) return;
-    if (cat.valueType === 'day') {
-      setNewUnit('day');
-      if (cat.defaultAmount > 0) setNewAmount(String(cat.defaultAmount));
-    } else if (cat.valueType === 'percentage') {
-      setNewUnit('percentage');
-    } else {
-      setNewUnit('amount');
-    }
+    // Unit + default value come from Settings → Payroll Categories (any
+    // value type, e.g. 5% Severance → 5%). A value the previous Type
+    // filled in is replaced; one HR typed is kept. Same as mobile.
+    const next = categoryDefaults(cat);
+    const prev = categoryDefaults(earningCategories.find((c) => c.code === newType));
+    setNewUnit(next.unit);
+    if (next.amount) setNewAmount(next.amount);
+    else if (newAmount === prev.amount) setNewAmount('');
+  };
+
+  /** Open the dialog on an existing row (Details → Edit). */
+  const openEdit = (inc: SalaryIncrease) => {
+    setEditingId(inc.id);
+    setNewEmployeeId(inc.employeeId);
+    setMultiEmployeeIds([]);
+    setNewType(inc.type);
+    setNewUnit(inc.unit ?? (inc.isPercentage ? 'percentage' : 'amount'));
+    setNewAmount(String(inc.amount ?? ''));
+    setNewEffectiveDate(inc.effectiveDate);
+    setNewRecurrence(inc.recurrence === 'monthly' ? 'monthly' : 'once');
+    setNewEffectiveUntil(inc.effectiveUntil ?? '');
+    setNewReason(inc.reason ?? '');
+    setDetailsTarget(null);
+    setDialogOpen(true);
   };
 
   /** When the user picks the FDC employee on a 5% Severance row, snap
    *  Effective Date to that contract's natural expiry. Skips silently
    *  if the contract has no end date on file — HR enters one manually. */
   useEffect(() => {
-    if (!isFdcSeverance || !newEmployeeId) return;
+    // Not when editing — the saved date wins over the contract's.
+    if (!isFdcSeverance || !newEmployeeId || editingId) return;
     const end = contractEndByEmpId[newEmployeeId];
     if (end) setNewEffectiveDate(end);
-  }, [isFdcSeverance, newEmployeeId, contractEndByEmpId]);
+  }, [isFdcSeverance, newEmployeeId, contractEndByEmpId, editingId]);
 
   const handleAddIncrease = async () => {
     // In multi-target mode (% / day) we ignore the single-picker value and
@@ -397,6 +429,30 @@ export function Increase() {
     }
 
     setSubmitting(true);
+    if (editingId) {
+      try {
+        await increasesApi.update(editingId, {
+          employeeId: newEmployeeId,
+          type: newType,
+          amount: amt,
+          isPercentage: newUnit === 'percentage',
+          unit: newUnit,
+          effectiveDate: newEffectiveDate,
+          recurrence: newRecurrence,
+          effectiveUntil: newRecurrence === 'monthly' && newEffectiveUntil ? newEffectiveUntil : null,
+          reason: newReason.trim(),
+        });
+        toast.success('Salary increase updated');
+        resetForm();
+        setDialogOpen(false);
+        await loadIncreases();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to update salary increase');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     try {
       // Sequential POSTs — keeps backend write order deterministic and
       // surfaces a per-row failure (e.g. one employee fails a server-side
@@ -454,6 +510,11 @@ export function Increase() {
   }
   if (typeFilter !== 'all') {
     filteredIncreases = filteredIncreases.filter(inc => inc.type === typeFilter);
+  }
+  if (statusFilter !== 'all') {
+    filteredIncreases = filteredIncreases.filter(
+      inc => increaseLifecycle(inc.effectiveDate, inc.effectiveUntil) === statusFilter,
+    );
   }
   // Free-text search matches against the employee (name / empNo /
   // position) and the increase reason. Looked up via the employees
@@ -534,17 +595,20 @@ export function Increase() {
     categoryColorMap.get(type) ?? 'bg-gray-100 text-gray-800 hover:bg-gray-100';
 
   const getTypeLabel = (type: string) => categoryLabelMap.get(type) ?? type;
+  // Hint under the Type field — what Settings says this category is.
+  const typeHint = categoryDefaults(earningCategories.find((c) => c.code === newType)).hint;
 
   const increasePagination = usePagination(filteredIncreases, 10);
 
   useEffect(() => {
     increasePagination.resetPage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFrom, dateTo, typeFilter, searchQuery]);
+  }, [dateFrom, dateTo, typeFilter, statusFilter, searchQuery]);
 
-  const hasActiveFilters = typeFilter !== 'all' || !!searchQuery.trim() || !!dateFrom || !!dateTo;
+  const hasActiveFilters = typeFilter !== 'all' || statusFilter !== 'all' || !!searchQuery.trim() || !!dateFrom || !!dateTo;
   const clearFilters = () => {
     setTypeFilter('all');
+    setStatusFilter('all');
     setSearchQuery('');
     setDateFrom('');
     setDateTo('');
@@ -577,19 +641,42 @@ export function Increase() {
               <Settings className="h-4 w-4" />
             </Button>
           )}
-          {canAdd && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
+          {(canAdd || canEdit) && <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) resetForm(); }}>
+          {canAdd && <DialogTrigger asChild>
+            <Button onClick={resetForm}>
               <Plus className="mr-2 h-4 w-4" />
               Add
             </Button>
-          </DialogTrigger>
+          </DialogTrigger>}
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add Salary Increase</DialogTitle>
-              <DialogDescription>Record a raise, bonus, or promotion</DialogDescription>
+              <DialogTitle>{editingId ? 'Edit Salary Increase' : 'Add Salary Increase'}</DialogTitle>
+              <DialogDescription>
+                {editingId ? 'Change this increase — it applies from the next payroll run.' : 'Record a raise, bonus, or promotion'}
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              {/* Type first (as on mobile): it decides the unit, the
+                  default value and which employees can be picked. */}
+              <div className="space-y-2">
+                <Label>Type <span className="text-red-500">*</span></Label>
+                <Select value={newType || undefined} onValueChange={handleTypeChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select type…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {!!newType && !earningCategories.some(c => c.code === newType) && (
+                      <SelectItem value={newType}>{newType} (inactive)</SelectItem>
+                    )}
+                    {earningCategories.map((c) => (
+                      <SelectItem key={c.id} value={c.code}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!!newType && !!typeHint && <p className="text-xs text-gray-500">{typeHint}</p>}
+              </div>
               {isMultiTargetMode ? (
                 <div className="space-y-2">
                   <Label>
@@ -700,8 +787,9 @@ export function Increase() {
                           ? 'FDC'
                           : null;
                       return employees
-                        .filter(e => e.status === 'active')
+                        .filter(e => e.status === 'active' || ((e as { apiId?: string }).apiId ?? e.id) === newEmployeeId)
                         .filter(e => {
+                          if (((e as { apiId?: string }).apiId ?? e.id) === newEmployeeId) return true;
                           if (!requiredContractType) return true;
                           const empApiId = (e as { apiId?: string }).apiId ?? e.id;
                           return contractTypeByEmpId[empApiId] === requiredContractType;
@@ -724,21 +812,6 @@ export function Increase() {
                   />
                 </div>
               )}
-              <div className="space-y-2">
-                <Label>Type <span className="text-red-500">*</span></Label>
-                <Select value={newType || undefined} onValueChange={handleTypeChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select type…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {earningCategories.map((c) => (
-                      <SelectItem key={c.id} value={c.code}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>{newUnit === 'day' ? 'Days' : 'Amount'} <span className="text-red-500">*</span></Label>
@@ -847,7 +920,9 @@ export function Increase() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
               <Button onClick={handleAddIncrease} disabled={submitting}>
-                {submitting ? 'Creating…' : 'Create Increase'}
+                {editingId
+                  ? (submitting ? 'Saving…' : 'Save Changes')
+                  : (submitting ? 'Creating…' : isMultiTargetMode && multiEmployeeIds.length > 1 ? `Create ${multiEmployeeIds.length} Increases` : 'Create Increase')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -922,6 +997,17 @@ export function Increase() {
                 </option>
               ))}
             </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              aria-label="Filter by status"
+            >
+              <option value="all">Status : All</option>
+              <option value="active">Status : Active</option>
+              <option value="scheduled">Status : Scheduled</option>
+              <option value="ended">Status : Ended</option>
+            </select>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>
@@ -944,6 +1030,7 @@ export function Increase() {
                 <TableHead className="w-[90px]">Unit</TableHead>
                 <TableHead className="w-[110px] text-right">Amount</TableHead>
                 <TableHead className="w-[130px]">Effective</TableHead>
+                <TableHead className="w-[100px]">Status</TableHead>
                 <TableHead>Reason</TableHead>
                 <TableHead className="w-[140px]">Approved By</TableHead>
                 <TableHead className="w-[160px]">Author</TableHead>
@@ -953,11 +1040,11 @@ export function Increase() {
             </TableHeader>
             <TableBody>
               {loading && increases.length === 0 ? (
-                <TableBodySkeletonRows rows={6} columns={10} />
+                <TableBodySkeletonRows rows={6} columns={11} />
               ) : loadError && increases.length === 0 ? (
-                <ListError colSpan={10} message={loadError} onRetry={() => void reloadIncreases()} />
+                <ListError colSpan={11} message={loadError} onRetry={() => void reloadIncreases()} />
               ) : filteredIncreases.length === 0 && (
-                <ListEmpty colSpan={10} noun="salary increases" filtered={hasActiveFilters} />
+                <ListEmpty colSpan={11} noun="salary increases" filtered={hasActiveFilters} />
               )}
               {increasePagination.paginatedItems.map((increase) => {
                 const employee = employees.find(
@@ -986,7 +1073,24 @@ export function Increase() {
                     <TableCell className="font-semibold text-green-600 text-right">
                       +{formatIncreaseAmount(increase)}
                     </TableCell>
-                    <TableCell className="text-xs text-gray-600">{formatDate(increase.effectiveDate)}</TableCell>
+                    <TableCell className="text-xs text-gray-600">
+                      {formatDate(increase.effectiveDate)}
+                      {increase.recurrence === 'monthly' && (
+                        <div className="text-[11px] text-gray-400">
+                          Monthly → {increase.effectiveUntil ? formatDate(increase.effectiveUntil) : 'Ongoing'}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const lc = increaseLifecycle(increase.effectiveDate, increase.effectiveUntil);
+                        return (
+                          <Badge variant="outline" className={statusBadgeClass(LIFECYCLE_TONE[lc])}>
+                            {LIFECYCLE_LABEL[lc]}
+                          </Badge>
+                        );
+                      })()}
+                    </TableCell>
                     <TableCell className="max-w-xs truncate text-xs text-gray-700">{increase.reason}</TableCell>
                     <TableCell className="text-xs text-gray-700">{approver?.name}</TableCell>
                     <TableCell>
@@ -1040,7 +1144,7 @@ export function Increase() {
               <TrendingUp className="h-5 w-5 text-green-600" />
               Salary Increase Details
             </DialogTitle>
-            <DialogDescription>Read-only record. Create a correction entry if anything here is wrong.</DialogDescription>
+            <DialogDescription>All fields recorded for this increase. Use Edit to change it.</DialogDescription>
             {/* v-doc-audit-line — creator / last editor under the meta row */}
             {detailsTarget && (
               <DocAuditLine createdBy={detailsTarget.createdByName} updatedBy={detailsTarget.updatedByName} className="mt-1" />
@@ -1107,7 +1211,12 @@ export function Increase() {
               already does — `flex flex-col` on DialogContent with an inner
               `overflow-y-auto` body — which stops the FRAME scrolling and pins
               the X for real. */}
-          <DialogFooter>
+          <DialogFooter className="flex gap-2 sm:gap-2">
+            {canEdit && detailsTarget && (
+              <Button variant="outline" onClick={() => openEdit(detailsTarget)}>
+                <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+              </Button>
+            )}
             <Button onClick={() => setDetailsTarget(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>

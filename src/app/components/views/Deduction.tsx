@@ -25,7 +25,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '../ui/dialog';
-import { Switch } from '../ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { DateInput } from '../common/DateInput';
 import { NumericInput } from '../common/NumericInput';
@@ -54,6 +53,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { formatMoney } from '../../utils/format';
 import { loadPayrollCategories } from '../../utils/payrollCategories';
 import { PayrollCategory } from '../../types/settings';
+import { categoryDefaults } from '../../utils/payrollAdjust';
 
 // Adapts a backend Employee to the front-end Employee shape (mirrors Employees.tsx /
 // Exception.tsx). The user-facing `id` carries the human-readable empNo and the
@@ -259,17 +259,9 @@ export function Deduction() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Default the dialog selectors once the data sources load.
-  useEffect(() => {
-    if (!newEmployeeId && employees.length > 0) {
-      setNewEmployeeId(employees[0].apiId ?? employees[0].id);
-    }
-  }, [employees, newEmployeeId]);
-  useEffect(() => {
-    if (!newType && deductionCategories.length > 0) {
-      setNewType(deductionCategories[0].code);
-    }
-  }, [deductionCategories, newType]);
+  // No pre-selected employee or type: a deduction silently landing on
+  // the first employee in the list was too easy to miss. HR picks both,
+  // as on mobile.
 
   const categoryLabelMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -285,10 +277,10 @@ export function Deduction() {
 
 
   const resetAddForm = () => {
-    setNewEmployeeId(employees[0]?.apiId ?? employees[0]?.id ?? '');
+    setNewEmployeeId('');
     setMultiEmployeeIds([]);
     setEmployeePickerSearch('');
-    setNewType(deductionCategories[0]?.code ?? '');
+    setNewType('');
     setNewName('');
     setNewAmount('');
     setNewUnit('amount');
@@ -305,6 +297,24 @@ export function Deduction() {
   // corrections / retroactive adjustments).
   const FORMULA_DRIVEN_TYPES = new Set(['tax', 'nssf', 'first_salary']);
   const isFormulaDrivenType = FORMULA_DRIVEN_TYPES.has(newType.toLowerCase());
+
+  /** Type picked → Name defaults to the category label (until HR types
+   *  their own) and Unit + Amount come from Settings → Payroll
+   *  Categories. A value the previous Type filled in is replaced; one HR
+   *  typed is kept. Same behaviour as the mobile form. */
+  const handleTypeChange = (code: string) => {
+    const prevCat = deductionCategories.find(c => c.code === newType);
+    const cat = deductionCategories.find(c => c.code === code);
+    setNewType(code);
+    if (!newName.trim() || newName === (prevCat?.label ?? '')) setNewName(cat?.label ?? '');
+    if (!cat) return;
+    const next = categoryDefaults(cat);
+    const prev = categoryDefaults(prevCat);
+    setNewUnit(next.unit);
+    if (next.amount) setNewAmount(next.amount);
+    else if (newAmount === prev.amount) setNewAmount('');
+  };
+  const typeHint = categoryDefaults(deductionCategories.find(c => c.code === newType)).hint;
   // Clear the override flag whenever HR switches to a different Type,
   // so a previous override doesn't silently survive a Type change.
   useEffect(() => {
@@ -589,6 +599,24 @@ export function Deduction() {
               <DialogDescription>Configure a new salary deduction for an employee</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              {/* Type first (as on mobile): it decides Name, Unit, the
+                  default amount and whether the formula notice shows. */}
+              <div className="space-y-2">
+                <Label>Deduction Type <span className="text-red-500">*</span></Label>
+                <Select value={newType || undefined} onValueChange={handleTypeChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select type…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {deductionCategories.map((c) => (
+                      <SelectItem key={c.id} value={c.code}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!!newType && !!typeHint && <p className="text-xs text-gray-500">{typeHint}</p>}
+              </div>
               {isMultiTargetMode ? (
                 <div className="space-y-2">
                   <Label>
@@ -687,21 +715,6 @@ export function Deduction() {
                   />
                 </div>
               )}
-              <div className="space-y-2">
-                <Label>Deduction Type <span className="text-red-500">*</span></Label>
-                <Select value={newType} onValueChange={setNewType}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select type…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {deductionCategories.map((c) => (
-                      <SelectItem key={c.id} value={c.code}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="space-y-2">
                 <Label>Name <span className="text-red-500">*</span></Label>
                 <Input
@@ -812,7 +825,9 @@ export function Deduction() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleAddDeduction}>Create Deduction</Button>
+              <Button onClick={handleAddDeduction}>
+                {isMultiTargetMode && multiEmployeeIds.length > 1 ? `Create ${multiEmployeeIds.length} Deductions` : 'Create Deduction'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>}
@@ -1242,13 +1257,17 @@ export function Deduction() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="flex items-center justify-between">
-                      <span>Percentage of salary</span>
-                      <Switch
-                        checked={editForm.isPercentage}
-                        onCheckedChange={(v) => setEditForm({ ...editForm, isPercentage: v })}
-                      />
-                    </Label>
+                    <Label>Unit</Label>
+                    <Select
+                      value={editForm.isPercentage ? 'percentage' : 'amount'}
+                      onValueChange={(v) => setEditForm({ ...editForm, isPercentage: v === 'percentage' })}
+                    >
+                      <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="amount">Fixed Amount ($)</SelectItem>
+                        <SelectItem value="percentage">Percentage (%)</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <p className="text-[11px] text-gray-500">
                       {editForm.isPercentage
                         ? `${editForm.amount}% of base salary per cycle`
@@ -1257,36 +1276,59 @@ export function Deduction() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Start Date <span className="text-red-500">*</span></Label>
-                    <DateInput
-                      value={editForm.startDate || null}
-                      onChange={(v) => setEditForm({ ...editForm, startDate: v ?? '' })}
-                    />
+                <div className="space-y-1.5">
+                  <Label>Start Date <span className="text-red-500">*</span></Label>
+                  <DateInput
+                    value={editForm.startDate || null}
+                    onChange={(v) => setEditForm({ ...editForm, startDate: v ?? '' })}
+                  />
+                </div>
+
+                {/* Same One-time / Repeat Monthly control as the Add dialog
+                    and the mobile form; End Date belongs to Repeat Monthly. */}
+                <div className="space-y-2">
+                  <Label>Recurrence</Label>
+                  <div className="flex gap-2">
+                    {([['once', 'One-time'], ['monthly', 'Repeat Monthly']] as const).map(([key, label]) => {
+                      const on = (key === 'monthly') === editForm.isRecurring;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setEditForm({
+                            ...editForm,
+                            isRecurring: key === 'monthly',
+                            endDate: key === 'monthly' ? editForm.endDate : undefined,
+                          })}
+                          className={`flex-1 px-3 py-2 text-sm border rounded-md transition ${
+                            on
+                              ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                              : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
                   </div>
+                  {editForm.isRecurring && (
+                    <p className="text-[11px] text-gray-500">
+                      Applies to every payroll cycle until End Date or Cancelled.
+                    </p>
+                  )}
+                </div>
+                {editForm.isRecurring && (
                   <div className="space-y-1.5">
-                    <Label>End Date</Label>
+                    <Label>
+                      End Date <span className="text-xs text-gray-500 font-normal">(blank = open-ended)</span>
+                    </Label>
                     <DateInput
                       value={editForm.endDate ?? null}
                       min={editForm.startDate || undefined}
                       onChange={(v) => setEditForm({ ...editForm, endDate: v || undefined })}
                     />
                   </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-3 p-3 rounded-md border">
-                  <div className="space-y-0.5">
-                    <p className="font-medium text-sm">Recurring</p>
-                    <p className="text-[11px] text-gray-500">
-                      Apply automatically to every payroll cycle until End Date or Cancelled.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={editForm.isRecurring}
-                    onCheckedChange={(v) => setEditForm({ ...editForm, isRecurring: v })}
-                  />
-                </div>
+                )}
               </div>
             );
           })()}
@@ -1300,6 +1342,9 @@ export function Deduction() {
                 if (!editForm.name.trim()) { toast.error('Name is required'); return; }
                 if (!Number.isFinite(editForm.amount) || editForm.amount < 0) { toast.error('Amount must be ≥ 0'); return; }
                 if (!editForm.startDate) { toast.error('Start date is required'); return; }
+                if (editForm.isRecurring && editForm.endDate && editForm.endDate < editForm.startDate) {
+                  toast.error('End Date must be on or after Start Date'); return;
+                }
 
                 if (USE_MOCKS) {
                   setDeductions(prev => prev.map(d => d.id === editForm.id ? editForm : d));
@@ -1325,7 +1370,7 @@ export function Deduction() {
                     isPercentage: editForm.isPercentage,
                     isRecurring: editForm.isRecurring,
                     startDate: editForm.startDate,
-                    endDate: editForm.endDate || null,
+                    endDate: editForm.isRecurring && editForm.endDate ? editForm.endDate : null,
                     status: editForm.status,
                   });
                   // PUT on this endpoint may not honour status — patch it
