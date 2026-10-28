@@ -597,7 +597,7 @@ function StatusBadge({ status, viewerRole }: { status: approvalsApi.ApprovalStat
 /* Detail + decide dialog                                               */
 /* -------------------------------------------------------------------- */
 
-function ApprovalDetailDialog({
+export function ApprovalDetailDialog({
   approval, onClose, onChanged,
 }: {
   approval: approvalsApi.Approval;

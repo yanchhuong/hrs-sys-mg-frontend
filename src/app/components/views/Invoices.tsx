@@ -78,6 +78,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { consumeProfitLossNavIntent } from './ProfitLossReport';
 import { EncounterFormDialog } from './EncounterFormDialog';
+import { useOpenIntent } from '../../utils/openIntent';
 
 /* -------------------------------------------------------------------------- */
 /* Kind / status helpers — labels, badge colours, icons                       */
@@ -325,6 +326,8 @@ export function Invoices({
    *  inline "adjust" dropdown on each commercial/tax row). */
   const [formParentPrefill, setFormParentPrefill] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  // A notification (or other page) can ask to open one record here.
+  useOpenIntent('invoices', setDetailId);
   const [deleteTarget, setDeleteTarget] = useState<invoicesApi.Invoice | null>(null);
   // Per-currency Received totals for the visible page — populated by a
   // single batched call after the invoices land. Splits the single

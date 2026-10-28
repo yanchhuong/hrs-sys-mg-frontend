@@ -60,6 +60,7 @@ import { printWithKhmerFonts } from '../../utils/printFonts';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useOpenIntent } from '../../utils/openIntent';
 
 
 const fmtMoney = (n: number, currency: string): string => {
@@ -164,6 +165,8 @@ export function Vouchers() {
   // so the form lands on the right purpose pre-selected.
   const [initialPurpose, setInitialPurpose] = useState<vouchersApi.VoucherPurpose>('free_service');
   const [detailId, setDetailId] = useState<string | null>(null);
+  // A notification (or other page) can ask to open one record here.
+  useOpenIntent('vouchers', setDetailId);
   const [deleteTarget, setDeleteTarget] = useState<vouchersApi.Voucher | null>(null);
 
   // Sale-side Accountant settings — shared with Invoice / Quotation.

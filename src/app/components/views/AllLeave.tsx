@@ -57,6 +57,7 @@ import * as departmentsApi from '../../api/departments';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { leaderOf } from '../../utils/managerLadder';
+import { useOpenIntent } from '../../utils/openIntent';
 
 // Adapts a backend Employee to the front-end Employee shape. Mirrors
 // Exception.tsx — see that file for the wider rationale on apiId/empNo.
@@ -229,6 +230,17 @@ export function AllLeave() {
   };
 
   const [viewTarget, setViewTarget] = useState<AttendanceException | null>(null);
+  // A notification (or other page) can ask to open one leave here; it
+  // opens once the list holding it has loaded.
+  const [openLeaveId, setOpenLeaveId] = useState<string | null>(null);
+  useOpenIntent('all-leave', setOpenLeaveId);
+  useEffect(() => {
+    if (!openLeaveId || loading) return;
+    const hit = leaves.find(l => l.id === openLeaveId);
+    if (hit) setViewTarget(hit);
+    else toast.info('That leave is no longer available — it may have been deleted or is outside the current filter.');
+    setOpenLeaveId(null);
+  }, [openLeaveId, leaves, loading]);
 
   const {
     role,

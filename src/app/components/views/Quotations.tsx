@@ -65,6 +65,7 @@ import { loadBankAccounts } from '../../utils/bankAccount';
 import { printWithKhmerFonts } from '../../utils/printFonts';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { useOpenIntent } from '../../utils/openIntent';
 
 /** Floating popover that lists every contact reachable for a
  *  quotation — the primary recipient (name/email/phone stamped on the
@@ -221,6 +222,8 @@ export function Quotations() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<quotationsApi.Quotation | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  // A notification (or other page) can ask to open one record here.
+  useOpenIntent('quotations', setDetailId);
   const [deleteTarget, setDeleteTarget] = useState<quotationsApi.Quotation | null>(null);
 
   // Sale-side Accountant settings — shared with Invoice and Voucher.

@@ -65,6 +65,7 @@ import { format as formatLocalDate } from 'date-fns';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { useOpenIntent } from '../../utils/openIntent';
 
 /* -------------------------------------------------------------------------- */
 /* Kind / status helpers — labels, badge colours, icons                       */
@@ -318,6 +319,8 @@ export function Bills() {
    *  inline "adjust" dropdown on each commercial/tax row). */
   const [formParentPrefill, setFormParentPrefill] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  // A notification (or other page) can ask to open one record here.
+  useOpenIntent('bills', setDetailId);
   const [deleteTarget, setDeleteTarget] = useState<billsApi.Bill | null>(null);
   // Per-currency Paid totals for the visible page. Values come back
   // signed the same as sumForBill (credit positive, debit negative);

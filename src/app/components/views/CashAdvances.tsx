@@ -44,6 +44,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
+import { useOpenIntent } from '../../utils/openIntent';
 
 const STATUS_TABS: { value: '' | cashAdvancesApi.CashAdvanceStatus; label: string }[] = [
   { value: '',                  label: 'All' },
@@ -99,6 +100,11 @@ export function CashAdvances() {
   const [dateTo, setDateTo] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [detail, setDetail] = useState<cashAdvancesApi.CashAdvance | null>(null);
+  // A notification (or other page) can ask to open one advance here.
+  useOpenIntent('cash-advances', (id) => {
+    cashAdvancesApi.get(id).then(setDetail)
+      .catch(e => toast.error(e instanceof Error ? e.message : 'Could not open the cash advance'));
+  });
   /** Draft being edited — opened from the detail dialog's Edit button. */
   const [editing, setEditing] = useState<cashAdvancesApi.CashAdvance | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);

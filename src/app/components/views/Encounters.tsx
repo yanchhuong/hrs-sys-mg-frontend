@@ -32,6 +32,7 @@ import { DateInput } from '../common/DateInput';
 import { useConfirm } from '../../context/ConfirmContext';
 import { statusBadgeClass } from '../../utils/statusTones';
 import { formatMoneyForCurrency } from '../../utils/format';
+import { useOpenIntent } from '../../utils/openIntent';
 
 const FILTER_SELECT_CLS =
   'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
@@ -79,6 +80,8 @@ export function Encounters() {
   const [formOpen, setFormOpen]     = useState(false);
   const [formEditing, setFormEditing] = useState<invoicesApi.Invoice | null>(null);
   const [detailId, setDetailId]     = useState<string | null>(null);
+  // A notification (or other page) can ask to open one record here.
+  useOpenIntent('encounters', setDetailId);
   const [search, setSearch]         = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFrom, setDateFrom]     = useState('');

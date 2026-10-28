@@ -48,6 +48,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { formatMoneyForCurrency } from '../../utils/format';
+import { useOpenIntent } from '../../utils/openIntent';
 
 /** Render an amount with the currency prefix. USD collapses to "$" with
  *  2dp; KHR uses the ISO code with no decimals ("KHR 17,488,013");
@@ -120,6 +121,8 @@ export function Receipts() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<receiptsApi.Receipt | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  // A notification (or other page) can ask to open one record here.
+  useOpenIntent('receipts', setDetailId);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   // Receipt-scope Accountant settings — gates the Approvers picker
