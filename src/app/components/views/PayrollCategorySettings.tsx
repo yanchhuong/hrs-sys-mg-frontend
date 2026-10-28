@@ -333,6 +333,11 @@ export function PayrollCategorySettings() {
     () => categories.filter((c) => c.kind === 'deduction').sort((a, b) => a.order - b.order),
     [categories],
   );
+  /** "1/8" — switched on over the total. The total alone says how
+   *  many rows are behind the tab; how many are on is the number that
+   *  decides what a payroll run actually uses. */
+  const onOfTotal = (rows: PayrollCategory[]) =>
+    `${rows.filter((c) => c.enabled).length}/${rows.length}`;
 
   // ---- mutations ---------------------------------------------------------
   const persistLocal = (next: PayrollCategory[]) => {
@@ -764,18 +769,19 @@ export function PayrollCategorySettings() {
       </div>
 
       {/* Full-width tabs — Earnings and Deductions get the whole row each.
-          Counts on the trigger labels so the user sees scale before clicking. */}
+          Counts read on / total, matching the (1/8 on) header on the
+          Earn / Deduct screen. */}
       <Tabs defaultValue="earning">
         <TabsList>
           <TabsTrigger value="earning" className="flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-emerald-600" />
             {t('payrollCat.earnings')}
-            <Badge variant="secondary" className="ml-1">{earnings.length}</Badge>
+            <Badge variant="secondary" className="ml-1">{onOfTotal(earnings)}</Badge>
           </TabsTrigger>
           <TabsTrigger value="deduction" className="flex items-center gap-2">
             <Minus className="h-4 w-4 text-rose-600" />
             {t('payrollCat.deductions')}
-            <Badge variant="secondary" className="ml-1">{deductions.length}</Badge>
+            <Badge variant="secondary" className="ml-1">{onOfTotal(deductions)}</Badge>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="earning" className="mt-4">
