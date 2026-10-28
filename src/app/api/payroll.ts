@@ -6,6 +6,9 @@ export interface PayrollBatch {
   id: string;
   batchDate: string;
   monthYear: string;
+  /** V383 — pay period of a Weekly / Daily batch (YYYY-MM-DD); null otherwise. */
+  periodStart?: string | null;
+  periodEnd?: string | null;
   type: string;
   subject: string;
   totalEmployees: number;
@@ -108,6 +111,9 @@ export interface CreateBatchRequest {
    *  Empty / omitted = any admin (other than uploader) may approve. */
   approverIds?: string[];
   items: CreateBatchItem[];
+  /** V383 — Weekly / Daily Salary batches: the days paid (YYYY-MM-DD). */
+  periodStart?: string | null;
+  periodEnd?: string | null;
 }
 
 export interface ListBatchesParams {

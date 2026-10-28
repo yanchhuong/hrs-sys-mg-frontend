@@ -63,6 +63,12 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { format, parseISO } from 'date-fns';
+import { DateInput } from '../common/DateInput';
+import {
+  PAY_FREQUENCIES, frequencyOfBatchType, salaryTokenOf, isPeriodBatch, effectiveFrequency,
+  workDaysInRange, weekOf, weekFrom, toIso as isoOf, payFrequencyLabel,
+  type BatchType, type PayFrequency,
+} from '../../utils/payFrequency';
 import { toast } from 'sonner';
 import { downloadPayrollTemplate } from '../../utils/excelTemplate';
 import { parsePayrollExcel, ParsedPayrollData } from '../../utils/excelParser';
@@ -119,6 +125,9 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     // items always have a number to work with.
     positionAllowance: e.positionAllowance ?? 0,
     evaluationAllowance: e.evaluationAllowance ?? 0,
+    // V383 — own payout frequency (null = company default). Decides
+    // which Generate Payroll batch kind the employee is paid in.
+    payFrequency: e.payFrequency || null,
   };
 }
 
@@ -271,7 +280,16 @@ export function Payroll() {
   const [uploadDialogMode, setUploadDialogMode] = useState<'upload' | 'generate'>('upload');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [batchName, setBatchName] = useState('');
-  const [batchType, setBatchType] = useState<'One Time Salary' | '1st Salary' | '2nd Salary'>('One Time Salary');
+  const [batchType, setBatchType] = useState<BatchType>('One Time Salary');
+  // V383 — Weekly / Daily Salary batches pay a date range instead of a
+  // month. Weekly defaults to this Monday-Sunday; Daily to today.
+  const [periodFrom, setPeriodFrom] = useState(() => weekOf(isoOf(new Date())).from);
+  const [periodTo, setPeriodTo] = useState(() => weekOf(isoOf(new Date())).to);
+  useEffect(() => {
+    const today = isoOf(new Date());
+    if (batchType === 'Weekly Salary') { const w = weekOf(today); setPeriodFrom(w.from); setPeriodTo(w.to); }
+    else if (batchType === 'Daily Salary') { setPeriodFrom(today); setPeriodTo(today); }
+  }, [batchType]);
   // Period defaults to the current month / year so HR doesn't have to
   // type the same MM / YYYY into every batch they create. The dialog
   // re-applies these defaults on open (see handleDialogOpenChange) so
@@ -464,10 +482,15 @@ export function Payroll() {
   // category (V113 / V114). The Payroll Settings popup writes these
   // per category so the upload + generate flows below show exactly
   // the same on/off layout HR configured in the popup.
-  const salaryToken: 'first' | '1st' | '2nd' | 'onetime' =
-      batchType === '1st Salary'      ? '1st'
-    : batchType === '2nd Salary'      ? '2nd'
-    : /* 'One Time Salary' */            'onetime';
+  const salaryToken = salaryTokenOf(batchType);
+  /** Company payout frequency (Payroll Settings → Display, V383). */
+  const companyFrequency: PayFrequency = payrollSettings.payFrequency ?? 'monthly';
+  /** Active employees this batch kind pays — own frequency, else the company's. */
+  const eligibleEmployees = useMemo(
+    () => employees.filter(e => e.status === 'active'
+      && effectiveFrequency(e.payFrequency, companyFrequency) === frequencyOfBatchType(batchType)),
+    [employees, companyFrequency, batchType],
+  );
 
   /** True when the category is permitted to appear on the current
    *  batch type (applicable list) AND is toggled on for it
@@ -973,13 +996,14 @@ export function Payroll() {
 
     try {
       await payrollApi.createBatch({
-        batchDate,
-        monthYear,
+        batchDate: isPeriodBatch(batchType) ? periodFrom : batchDate,
+        monthYear: isPeriodBatch(batchType) ? periodFrom.slice(0, 7) : monthYear,
         type: batchType,
         subject: batchName,
         currency: 'USD',
         approverIds: batchApproverIds.some(Boolean) ? batchApproverIds.filter(Boolean) : undefined,
         items,
+        ...(isPeriodBatch(batchType) ? { periodStart: periodFrom, periodEnd: periodTo } : {}),
       });
       toast.success(`Payroll batch "${batchName}" submitted for approval - ${previewData.totalEmployees} employees`);
       resetUploadDialog();
@@ -1375,14 +1399,40 @@ export function Payroll() {
     // Backend expects ISO-ish YYYY-MM; the page-state vars are split
     // as month + year for the two MM / YYYY inputs in the dialog, so
     // assemble in the right order here.
-    const monthYear = `${year}-${month}`;
-    const periodFromIso = `${year}-${month}-01`;
+    // V383 — Weekly / Daily Salary batches pay their own date range;
+    // the month is the one the range starts in.
+    const isPeriod = isPeriodBatch(batchType);
+    const monthYear = isPeriod ? periodFrom.slice(0, 7) : `${year}-${month}`;
+    const periodFromIso = isPeriod ? periodFrom : `${year}-${month}-01`;
     const periodEndDay = new Date(Number(year), Number(month), 0).getDate(); // last day of month
-    const periodToIso = `${year}-${month}-${String(periodEndDay).padStart(2, '0')}`;
+    const periodToIso = isPeriod ? periodTo : `${year}-${month}-${String(periodEndDay).padStart(2, '0')}`;
+    if (isPeriod && (!periodFrom || !periodTo || periodTo < periodFrom)) {
+      toast.error('Pick a valid pay period (From on or before To)');
+      return;
+    }
+    /** Weekly / Daily: share of the month this period is worth —
+     *  working days in the period ÷ standard working days in its month.
+     *  The monthly base, allowances and monthly-recurring increases /
+     *  deductions are paid at this share; 1 for the monthly kinds. */
+    const stdDays = isPeriod
+      ? calcStandardWorkDays(monthYear, attendanceGeneral.weekendDays, attendanceGeneral.halfDayDays)
+      : 0;
+    const periodDays = isPeriod
+      ? workDaysInRange(periodFromIso, periodToIso, attendanceGeneral.weekendDays, attendanceGeneral.halfDayDays)
+      : 0;
+    const share = isPeriod ? (stdDays > 0 ? periodDays / stdDays : 0) : 1;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
 
     // Only active employees in the template — terminated / inactive rows
-    // would just clutter the upload sheet with zero-amount lines.
-    const activeEmployees = employees.filter(e => e.status === 'active');
+    // would just clutter the upload sheet with zero-amount lines — and
+    // only those paid on this batch kind's rhythm (V383): their own
+    // payout frequency, else the company's.
+    const activeEmployees = eligibleEmployees;
+    if (activeEmployees.length === 0) {
+      toast.error(`No active employee is paid ${payFrequencyLabel(frequencyOfBatchType(batchType)).toLowerCase()}. `
+        + 'Change the payout type in Payroll Settings, or set it on the employee.');
+      return;
+    }
 
     // Settings decide what takes part: a category must be enabled under
     // Settings → Payroll Categories AND switched on for this batch type in
@@ -1697,7 +1747,10 @@ export function Payroll() {
       const code = inPlayCode('deduction', d.type);
       if (!code) continue;
       const bucket = deductionsByApiId.get(apiId) ?? {};
-      bucket[code] = Math.round(((bucket[code] ?? 0) + moneyOf(emp.baseSalary, d.amount, !!d.isPercentage)) * 100) / 100;
+      // Weekly / Daily: a recurring (monthly) deduction is paid at the
+      // period's share; a one-off dated in the period in full.
+      const dScale = isPeriod && d.isRecurring ? share : 1;
+      bucket[code] = Math.round(((bucket[code] ?? 0) + moneyOf(emp.baseSalary, d.amount, !!d.isPercentage) * dScale) * 100) / 100;
       deductionsByApiId.set(apiId, bucket);
     }
 
@@ -1729,8 +1782,10 @@ export function Payroll() {
       // Indemnity dialog owns the dollar math for those.
       if (inc.unit === 'day') continue;
       const isPct = inc.unit === 'percentage' || (!inc.unit && !!inc.isPercentage);
+      // Same rule as deductions: monthly-recurring at the period's share.
+      const iScale = isPeriod && inc.recurrence === 'monthly' ? share : 1;
       const bucket = increasesByApiId.get(apiId) ?? {};
-      bucket[code] = Math.round(((bucket[code] ?? 0) + moneyOf(emp.baseSalary, inc.amount, isPct)) * 100) / 100;
+      bucket[code] = Math.round(((bucket[code] ?? 0) + moneyOf(emp.baseSalary, inc.amount, isPct) * iScale) * 100) / 100;
       increasesByApiId.set(apiId, bucket);
     }
 
@@ -1761,9 +1816,10 @@ export function Payroll() {
         const firstSalary = Math.round(((base + pa + ea) / 2) * 100) / 100;
         if (firstSalaryCode) earnRow[firstSalaryCode] = firstSalary;
       } else {
-        earnRow[BASIC_KEY]      = base;
-        earnRow[POSITION_KEY]   = pa;
-        earnRow[EVALUATION_KEY] = ea;
+        // Weekly / Daily pay the monthly figures at the period's share.
+        earnRow[BASIC_KEY]      = isPeriod ? r2(base * share) : base;
+        earnRow[POSITION_KEY]   = isPeriod ? r2(pa * share)   : pa;
+        earnRow[EVALUATION_KEY] = isPeriod ? r2(ea * share)   : ea;
       }
       if (otCode)        earnRow[otCode]        = Math.round((otTotalByApiId.get(apiId) ?? 0) * 100) / 100;
       // Seniority Indemnity is computed by the dedicated "Compute
@@ -1791,7 +1847,11 @@ export function Payroll() {
         0,
       );
       if (!isFirstSalaryBatch && taxCode && !(dedBucket[taxCode] > 0)) {
-        dedBucket[taxCode] = computeTosUsd(grossUsd, dependentsFor(emp));
+        // TOS brackets are monthly: on a Weekly / Daily batch, price the
+        // month this gross is a share of, then take that share back.
+        dedBucket[taxCode] = isPeriod
+          ? (share > 0 ? r2(computeTosUsd(grossUsd / share, dependentsFor(emp)) * share) : 0)
+          : computeTosUsd(grossUsd, dependentsFor(emp));
       }
       // NSSF — 2% of min(gross_khr, 1,200,000 KHR cap), converted back
       // to USD. Same "don't stomp manual" guard as Tax so an HR-entered
@@ -1799,7 +1859,10 @@ export function Payroll() {
       // automatic fill. Skipped on the 1st Salary batch (mid-month
       // advance — no statutory deductions until the 2nd cycle settles).
       if (!isFirstSalaryBatch && nssfDeductionCode && !(dedBucket[nssfDeductionCode] > 0)) {
-        dedBucket[nssfDeductionCode] = computeNssfUsd(grossUsd);
+        // NSSF's 1.2M KHR cap is monthly too — same share treatment.
+        dedBucket[nssfDeductionCode] = isPeriod
+          ? (share > 0 ? r2(computeNssfUsd(grossUsd / share) * share) : 0)
+          : computeNssfUsd(grossUsd);
       }
       // 2nd Salary clawback: deduct the half already paid mid-month so
       // the take-home only reflects the remaining half. Recomputed from
@@ -1838,7 +1901,7 @@ export function Payroll() {
       toast.error('Subject is required');
       return;
     }
-    if (!periodStart || !periodEnd) {
+    if (!isPeriod && (!periodStart || !periodEnd)) {
       toast.error('Period (Month + Year) is required');
       return;
     }
@@ -1850,13 +1913,14 @@ export function Payroll() {
     }));
     try {
       await payrollApi.createBatch({
-        batchDate: `${year}-${month}-01`,
+        batchDate: isPeriod ? periodFromIso : `${year}-${month}-01`,
         monthYear,
         type: batchType,
         subject: batchName.trim(),
         currency: 'USD',
         approverIds: batchApproverIds.some(Boolean) ? batchApproverIds.filter(Boolean) : undefined,
         items,
+        ...(isPeriod ? { periodStart: periodFromIso, periodEnd: periodToIso } : {}),
       }, asDraft);
       toast.success(asDraft
         ? `Draft "${batchName}" saved — open it to adjust workdays before submitting.`
@@ -2059,17 +2123,58 @@ export function Payroll() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="batchType">Type</Label>
-                      <Select value={batchType} onValueChange={(v) => setBatchType(v as typeof batchType)}>
+                      <Select value={batchType} onValueChange={(v) => setBatchType(v as BatchType)}>
                         <SelectTrigger id="batchType" className="w-full h-9"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="One Time Salary">One Time Salary</SelectItem>
-                          <SelectItem value="1st Salary">1st Salary</SelectItem>
-                          <SelectItem value="2nd Salary">2nd Salary</SelectItem>
+                          {PAY_FREQUENCIES.flatMap(p => p.batchTypes).map(t => (
+                            <SelectItem key={t} value={t}>{t}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
 
+                  {isPeriodBatch(batchType) ? (
+                    // V383 — Weekly / Daily pay a date range. Weekly picks
+                    // the first day and runs seven days; Daily is From–To.
+                    <div className="space-y-2">
+                      <Label>
+                        {batchType === 'Weekly Salary' ? 'Week' : 'Days'} <span className="text-red-500">*</span>
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <DateInput
+                            value={periodFrom || null}
+                            onChange={(v) => {
+                              const from = v ?? '';
+                              setPeriodFrom(from);
+                              if (batchType === 'Weekly Salary' && from) setPeriodTo(weekFrom(from).to);
+                              else if (from && periodTo < from) setPeriodTo(from);
+                            }}
+                            clearable={false}
+                            className="w-full"
+                          />
+                        </div>
+                        <span className="text-gray-400">→</span>
+                        <div className="flex-1">
+                          <DateInput
+                            value={periodTo || null}
+                            min={periodFrom || undefined}
+                            onChange={(v) => setPeriodTo(v ?? '')}
+                            clearable={false}
+                            disabled={batchType === 'Weekly Salary'}
+                            className="w-full"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        {workDaysInRange(periodFrom, periodTo, attendanceGeneral.weekendDays, attendanceGeneral.halfDayDays)} working day(s)
+                        {' of '}
+                        {calcStandardWorkDays(periodFrom.slice(0, 7), attendanceGeneral.weekendDays, attendanceGeneral.halfDayDays)} in the month
+                        {' — base salary and monthly allowances are paid at that share.'}
+                      </p>
+                    </div>
+                  ) : (
                   <div className="space-y-2">
                     <Label>
                       Period <span className="text-red-500">*</span>
@@ -2108,6 +2213,14 @@ export function Payroll() {
                       </div>
                     </div>
                   </div>
+                  )}
+                  {/* Who this batch pays (V383) — employees on this
+                      batch kind's payout frequency. */}
+                  <p className={`text-xs ${eligibleEmployees.length === 0 ? 'text-amber-700' : 'text-gray-500'}`}>
+                    {eligibleEmployees.length} active employee{eligibleEmployees.length === 1 ? '' : 's'} paid
+                    {' '}{payFrequencyLabel(frequencyOfBatchType(batchType)).toLowerCase()}
+                    {eligibleEmployees.length === 0 && ' — change the payout type in Payroll Settings or on the employee.'}
+                  </p>
 
                   {/* Approvers picker — gated on payrollSettings.showApproval
                       (V175). Off by default; flip it on in Payroll
@@ -2687,18 +2800,29 @@ export function Payroll() {
                   Generate Payroll
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                {(['1st Salary', '2nd Salary', 'One Time Salary'] as const).map(opt => (
-                  <DropdownMenuItem
-                    key={opt}
-                    onClick={() => {
-                      setBatchType(opt);
-                      handleGeneratePayroll();
-                    }}
-                  >
-                    {opt}
-                  </DropdownMenuItem>
-                ))}
+              <DropdownMenuContent align="end" className="w-60">
+                {/* Grouped by payout type (V383), the company's own first. */}
+                {[...PAY_FREQUENCIES]
+                  .sort((a, b) => Number(b.key === companyFrequency) - Number(a.key === companyFrequency))
+                  .map((p, gi) => (
+                    <div key={p.key}>
+                      {gi > 0 && <DropdownMenuSeparator />}
+                      <DropdownMenuLabel className="text-[11px] text-gray-500 font-medium">
+                        {p.label}{p.key === companyFrequency ? ' · company' : ''}
+                      </DropdownMenuLabel>
+                      {p.batchTypes.map(opt => (
+                        <DropdownMenuItem
+                          key={opt}
+                          onClick={() => {
+                            setBatchType(opt);
+                            handleGeneratePayroll();
+                          }}
+                        >
+                          {opt}
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                  ))}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

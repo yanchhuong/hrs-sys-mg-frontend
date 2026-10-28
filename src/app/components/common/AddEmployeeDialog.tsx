@@ -27,6 +27,7 @@ import { USE_MOCKS, ApiError as ApiClientError } from '../../api/client';
 import { SearchablePicker } from './SearchablePicker';
 import { SeatCapDialog } from './SeatCapDialog';
 import { PaymentMethodToggle, paymentMethodHint } from './PaymentMethodToggle';
+import { PayFrequencySelect, useCompanyPayFrequency } from './PayFrequencySelect';
 import { EDUCATION_OPTIONS } from '../../utils/education';
 
 interface Props {
@@ -77,6 +78,8 @@ export function AddEmployeeDialog({
     payoutSettingsApi.get().then(st => setPaywayEnabled(st.paywayEnabled)).catch(() => setPaywayEnabled(true));
   }, [open]);
   const [form, setForm] = useState<Partial<Employee>>(blank);
+  // V383 — company payout type, for the "Company default (…)" option.
+  const companyPayFrequency = useCompanyPayFrequency();
   const [submitting, setSubmitting] = useState(false);
   const [seatCapMessage, setSeatCapMessage] = useState<string | null>(null);
 
@@ -235,6 +238,8 @@ export function AddEmployeeDialog({
         status: form.status || 'active',
         linkUserId: linkUserId || undefined,
         paymentMethod: form.paymentMethod ?? 'transfer',
+        // V383 — omitted = follow the company default.
+        payFrequency: form.payFrequency || undefined,
         // Omitted rather than sent empty when not picked — the column
         // stays unrecorded instead of claiming a level.
         education: form.education || undefined,
@@ -667,6 +672,13 @@ export function AddEmployeeDialog({
 
           {/* Payment Method — Transfer (bank / wallet) or Cash */}
           <TabsContent value="payment" className="space-y-4 pt-4">
+            <Field label="Payout type">
+              <PayFrequencySelect
+                value={form.payFrequency}
+                company={companyPayFrequency}
+                onChange={v => patch({ payFrequency: v || null })}
+              />
+            </Field>
             <Field label="Type">
               <PaymentMethodToggle
                 value={form.paymentMethod}

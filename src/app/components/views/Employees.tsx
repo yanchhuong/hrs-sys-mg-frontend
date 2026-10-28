@@ -95,6 +95,7 @@ import { AuditCell } from '../common/AuditCell';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { PaymentMethodToggle, paymentMethodHint } from '../common/PaymentMethodToggle';
+import { PayFrequencySelect, useCompanyPayFrequency, payFrequencyText } from '../common/PayFrequencySelect';
 import { EDUCATION_OPTIONS, educationLabel } from '../../utils/education';
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
@@ -522,6 +523,10 @@ function adaptApiEmployee(e: employeesApi.Employee): Employee {
     // level, and carried on the FE object so the detail dialog's
     // full-replace PUT does not blank it while saving something else.
     education: e.education ?? undefined,
+    // V383 — own payout frequency. Carried for the same reason as
+    // education: the save below is a full replace, so a field missing
+    // here would be sent empty and wipe the override on an unrelated edit.
+    payFrequency: e.payFrequency || null,
     // Forward audit fields (createdAt/By/Name + updatedAt/By/Name) so
     // the Author/Modifier columns can read them. Cast to a dynamic
     // shape since the FE Employee type doesn't declare them yet.
@@ -816,6 +821,8 @@ export function Employees() {
     }
   };
   const [selectedEmployee, setSelectedEmployee] = useState<typeof mockEmployees[0] | null>(null);
+  // V383 — company payout type, for the "Company default (…)" option.
+  const companyPayFrequency = useCompanyPayFrequency();
   const [sheetOpen, setSheetOpen] = useState(false);
   // The Records tab body only mounts when opened, so the badge count is
   // fetched here, per employee; the panel refreshes it after a change.
@@ -932,6 +939,9 @@ export function Employees() {
         empNo,
         departmentId: department && department !== '-' ? department : null,
         status,
+        // V383 — '' clears the override back to the company default
+        // (null would mean "leave unchanged" to the server).
+        payFrequency: editedEmployee.payFrequency ?? '',
         // The ID trio is derived ONLY once the employee has actually been
         // classified — i.e. nationalityType is set. Then tidType follows
         // from it and a visa date is kept only on a passport row, so the
@@ -2924,6 +2934,19 @@ export function Employees() {
                             ? v => setEditedEmployee({ ...editedEmployee, paymentMethod: v })
                             : undefined}
                         />
+                      </div>
+                      {/* V383 — how often this employee is paid. */}
+                      <div className="space-y-1.5">
+                        <p className="text-xs text-gray-500">Payout type</p>
+                        {isEditing && editedEmployee ? (
+                          <PayFrequencySelect
+                            value={editedEmployee.payFrequency}
+                            company={companyPayFrequency}
+                            onChange={v => setEditedEmployee({ ...editedEmployee, payFrequency: v || null })}
+                          />
+                        ) : (
+                          <p className="text-sm">{payFrequencyText(selectedEmployee.payFrequency, companyPayFrequency)}</p>
+                        )}
                       </div>
                       {((isEditing && editedEmployee ? editedEmployee.paymentMethod : selectedEmployee.paymentMethod) ?? 'transfer') === 'cash' ? (
                         <p className="text-xs text-gray-500">{paymentMethodHint('cash')}</p>

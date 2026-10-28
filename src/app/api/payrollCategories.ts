@@ -5,7 +5,7 @@ export type PayrollCategoryValueType = 'flat' | 'percentage' | 'day';
 /** Salary-type tokens recognised by the backend (V113). Match the
  *  Payroll batch dropdown labels — 1st Salary / 2nd Salary / One
  *  Time Salary. Stale tokens are dropped server-side. */
-export type SalaryTypeToken = '1st' | '2nd' | 'onetime';
+export type SalaryTypeToken = '1st' | '2nd' | 'onetime' | 'weekly' | 'daily';
 
 export interface PayrollCategory {
   id: string;

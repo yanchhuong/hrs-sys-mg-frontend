@@ -133,7 +133,7 @@ export type PayrollCategoryValueType = 'flat' | 'percentage' | 'day';
 /** Salary-type tokens shared with the backend (V113). The Payroll
  *  Settings popup writes these per category to drive upload + generate
  *  filtering by batch type. */
-export type PayrollSalaryTypeToken = '1st' | '2nd' | 'onetime';
+export type PayrollSalaryTypeToken = '1st' | '2nd' | 'onetime' | 'weekly' | 'daily';
 
 export interface PayrollCategory {
   id: string;

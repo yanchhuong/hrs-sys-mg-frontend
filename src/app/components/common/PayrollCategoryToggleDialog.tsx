@@ -12,6 +12,7 @@ import { Eye, TrendingUp, TrendingDown, Loader2, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as categoriesApi from '../../api/payrollCategories';
 import * as settingsApi from '../../api/accountingSettings';
+import { PAY_FREQUENCIES, salaryTokenOf, type PayFrequency } from '../../utils/payFrequency';
 
 interface Props {
   open: boolean;
@@ -33,6 +34,9 @@ const SALARY_TABS: { key: categoriesApi.SalaryTypeToken; label: string }[] = [
   { key: '1st',     label: '1st Salary' },
   { key: '2nd',     label: '2nd Salary' },
   { key: 'onetime', label: 'One Time Salary' },
+  // V383 — weekly / daily wage batches.
+  { key: 'weekly',  label: 'Weekly' },
+  { key: 'daily',   label: 'Daily' },
 ];
 
 type Section = 'display' | 'categories';
@@ -96,6 +100,9 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved, onSet
         setOriginal(snap);
         setSettings(s);
         setSettingsOriginal(s);
+        // Open Earn / Deduct on the company's own batch kind.
+        const freq = PAY_FREQUENCIES.find(p => p.key === (s.payFrequency ?? 'monthly'));
+        setActiveTab(salaryTokenOf(freq?.batchTypes[0] ?? 'One Time Salary'));
       })
       .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load settings'))
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -127,7 +134,8 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved, onSet
       original.get(c.id) !== [...c.enabledSalaryTypes].sort().join(','));
     const settingsChanged =
       settings.showApproval !== settingsOriginal.showApproval
-      || settings.approverCount !== settingsOriginal.approverCount;
+      || settings.approverCount !== settingsOriginal.approverCount
+      || settings.payFrequency !== settingsOriginal.payFrequency;
     if (changedCats.length === 0 && !settingsChanged) {
       onOpenChange(false);
       return;
@@ -289,6 +297,27 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved, onSet
               </div>
             ) : section === 'display' ? (
               <div className="space-y-1">
+                {/* V383 — company payout type. Decides which batch kinds
+                    Generate Payroll leads with and who goes into each;
+                    an employee can override it on their profile. */}
+                <h3 className="text-sm font-semibold mb-1">Payout type</h3>
+                <p className="text-[11px] text-gray-500 mb-2">
+                  How often the company pays. Employees follow this unless their profile sets their own.
+                </p>
+                <div role="radiogroup" aria-label="Payout type" className="grid grid-cols-2 gap-2 mb-4">
+                  {PAY_FREQUENCIES.map(p => {
+                    const on = (settings.payFrequency ?? 'monthly') === p.key;
+                    return (
+                      <button key={p.key} type="button" role="radio" aria-checked={on} disabled={saving}
+                        onClick={() => setSettings({ ...settings, payFrequency: p.key as PayFrequency })}
+                        className={`text-left rounded-md border px-3 py-2 transition-colors ${
+                          on ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                        <div className={`text-sm font-medium ${on ? 'text-blue-700' : 'text-gray-800'}`}>{p.label}</div>
+                        <div className="text-[11px] text-gray-500 mt-0.5">{p.hint}</div>
+                      </button>
+                    );
+                  })}
+                </div>
                 <h3 className="text-sm font-semibold mb-1">Display</h3>
                 <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-gray-50">
                   <div className="flex-1">
@@ -336,7 +365,7 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved, onSet
               // the previous popup so muscle memory carries over.
               <div className="space-y-3">
                 <Tabs value={activeTab} onValueChange={v => setActiveTab(v as categoriesApi.SalaryTypeToken)}>
-                  <TabsList className="grid grid-cols-3 w-full">
+                  <TabsList className="grid grid-cols-5 w-full">
                     {SALARY_TABS.map(t => (
                       <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>
                     ))}
@@ -357,7 +386,13 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved, onSet
                           { label: 'Position Allowance',   hint: 'from Employee' },
                           { label: 'Evaluation Allowance', hint: 'from Employee' },
                         ]
-                      : undefined,
+                      : activeTab === 'weekly' || activeTab === 'daily'
+                        ? [
+                            { label: 'Basic Salary',         hint: 'prorated by days worked' },
+                            { label: 'Position Allowance',   hint: 'prorated by days worked' },
+                            { label: 'Evaluation Allowance', hint: 'prorated by days worked' },
+                          ]
+                        : undefined,
                   )}
                   {renderColumn(
                     'Deductions',

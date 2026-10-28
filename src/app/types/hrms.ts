@@ -176,6 +176,9 @@ export interface Employee {
    *  recorded, which is not the same as 'under_diploma'. Labels live
    *  in utils/education.ts. */
   education?: EducationLevel | null;
+  /** V383 — own payout frequency; null / undefined = company default
+   *  (Payroll Settings). Labels in utils/payFrequency.ts. */
+  payFrequency?: 'monthly' | 'semi_monthly' | 'weekly' | 'daily' | null;
   /** Spreadsheet-only: the bulk import / export still carries Bank and
    *  Account columns, but the employee API has no such fields — the
    *  account lives on the PayWay beneficiary. Not shown on any form. */

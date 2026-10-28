@@ -89,6 +89,9 @@ export interface Employee {
   /** V377 — under_diploma | diploma | bachelor | master | doctorate.
    *  Omitted / null on update leaves it unchanged; '' clears it. */
   education?: EducationLevel | null;
+  /** V383 — own payout frequency; null = company default. Omitted /
+   *  null on update leaves it unchanged; '' clears it to the default. */
+  payFrequency?: 'monthly' | 'semi_monthly' | 'weekly' | 'daily' | '' | null;
   /** Author + modifier audit. Display names resolved server-side. */
   createdAt?: string | null;
   createdById?: string | null;

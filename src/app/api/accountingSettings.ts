@@ -134,6 +134,8 @@ export interface AccountingSettings {
   headerName?: string | null;
   headerPhone?: string | null;
   headerAddress?: string | null;
+  /** V383 — company payout frequency (payroll scope). */
+  payFrequency?: 'monthly' | 'semi_monthly' | 'weekly' | 'daily';
   /** ISO-8601 timestamp of the last save, or null when the popup
    *  is still showing baked-in defaults (no row yet). */
   updatedAt: string | null;
@@ -303,6 +305,7 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     headerName: null,
     headerPhone: null,
     headerAddress: null,
+    payFrequency: 'monthly',
     updatedAt: null,
     updatedByEmail: null,
   };
