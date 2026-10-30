@@ -88,6 +88,9 @@ const HIDDEN_MODULE_KEYS = new Set([
   //                     / exception) each carry the real gate.
   'payment',
   'time-tracking',
+  //   * item — a manual row under Stock that no page or endpoint reads;
+  //     the Items page is gated by `stock` (shown as the Items tile).
+  'item',
 ]);
 
 const LABEL_OVERRIDES: Record<string, string> = {
@@ -95,23 +98,35 @@ const LABEL_OVERRIDES: Record<string, string> = {
   'class-attendance': 'Attendance',
 };
 
+/**
+ * Menus vs apps. A catalog row with children is a MENU: it renders as a
+ * heading and its children as app tiles, each installed on its own.
+ *   - If the menu's own key also gates a page (a nav leaf uses it), that
+ *     page is an app too and gets its own tile under the heading — e.g.
+ *     `expenses`: the Purchases menu over Vendors / Bill, whose key is
+ *     the Expense page's gate (its own row was dropped in V201).
+ *   - Otherwise the key gates no page (Sale, Payroll Management, Reports…)
+ *     and has no tile: it follows its children — on while any is on — so
+ *     a server-side gate on it (/api/v1/reports) never blocks an
+ *     installed child.
+ * A row with no children (Approval, Quotation…) is simply an app.
+ */
+const NAV_MODULE_KEYS = new Set(NAV_LEAVES.map(l => l.module).filter((m): m is string => !!m));
+/** Tile label when a menu's own page reads differently from the menu. */
+const SELF_TILE_LABEL: Record<string, string> = {
+  expenses: 'Expense',
+  stock:    'Items',
+};
+
 interface InheritTile {
   key: string;         // synthetic display key (not a real module)
   label: string;
   inheritsFrom: string;// real module key whose enabled-state we mirror
-  /** Render right after this module's tile instead of at the start of
-   *  the category (falls back to the end when that tile is filtered out). */
-  after?: string;
 }
 const INHERIT_TILES: Record<string, InheritTile[]> = {
   // Injected at the START of each category's tile list.
   education:  [{ key: 'students', label: 'Students', inheritsFrom: 'enrollment' }],
   healthcare: [{ key: 'patients', label: 'Patients', inheritsFrom: 'encounter'  }],
-  // Expense has no switch of its own since V201 (one page, one switch):
-  // the `expenses` row — shown as "Purchases", the menu group over
-  // Vendors / Bill / Expense — is what turns the Expense app on. Show
-  // it here so it can be found, lit by that switch.
-  accounting: [{ key: 'expense-app', label: 'Expense', inheritsFrom: 'expenses', after: 'vendor' }],
 };
 // A tile renders in whichever category holds its parent module, not by
 // the category key above: categories are renamed / re-keyed in Module
@@ -215,8 +230,35 @@ export function TenantModules() {
     setSelectedTenantId(id);
   };
 
+  /** Menus with no page of their own (see NAV_MODULE_KEYS), deepest
+   *  first, each with every key beneath it. */
+  const followerMenus = useMemo(() => {
+    const out: Array<{ key: string; below: string[] }> = [];
+    const walk = (ns: platformApi.ModuleNode[]): string[] => {
+      const keys: string[] = [];
+      for (const n of ns) {
+        keys.push(n.key);
+        if (n.children?.length) {
+          const below = walk(n.children);
+          keys.push(...below);
+          if (!NAV_MODULE_KEYS.has(n.key)) out.push({ key: n.key, below });
+        }
+      }
+      return keys;
+    };
+    for (const c of categories) walk(c.modules);
+    return out;
+  }, [categories]);
+
+  /** A page-less menu is on while any app beneath it is on. */
+  const withMenus = (d: Record<string, boolean>) => {
+    const out = { ...d };
+    for (const m of followerMenus) out[m.key] = m.below.some(k => Boolean(out[k]));
+    return out;
+  };
+
   const handleToggle = (key: string) =>
-    setDraft(d => ({ ...d, [key]: !d[key] }));
+    setDraft(d => withMenus({ ...d, [key]: !d[key] }));
 
   /**
    * Flatten a category's module tree to its leaf keys for the toggle
@@ -266,7 +308,7 @@ export function TenantModules() {
     setDraft(d => {
       const out = { ...d };
       for (const k of keys) out[k] = next;
-      return out;
+      return withMenus(out);
     });
   };
 
@@ -413,42 +455,55 @@ export function TenantModules() {
                   || (stateFilter === 'disabled' && !on);
                 const rendered: ReactNode[] = [];
                 for (const cat of categories) {
-                  const modules = flattenModules(cat.modules).filter(n => !HIDDEN_MODULE_KEYS.has(n.key));
-                  const inheritTiles = ALL_INHERIT_TILES.filter(t => modules.some(m => m.key === t.inheritsFrom));
-                  // Apply search + state filter to the tile lists.
+                  // Sections: loose apps first, then one heading per menu.
+                  type TileItem = { key: string; label: string };
+                  const labelOf = (key: string, label: string) =>
+                    LABEL_OVERRIDES[key] ?? (label && label.trim() ? label : prettifyKey(key));
+                  const loose: TileItem[] = [];
+                  const menus: Array<{ key: string; label: string; tiles: TileItem[] }> = [];
+                  for (const n of cat.modules) {
+                    if (!n.children?.length) {
+                      loose.push({ key: n.key, label: labelOf(n.key, n.label) });
+                      continue;
+                    }
+                    const tiles: TileItem[] = [];
+                    if (NAV_MODULE_KEYS.has(n.key)) {
+                      tiles.push({ key: n.key, label: SELF_TILE_LABEL[n.key] ?? labelOf(n.key, n.label) });
+                    }
+                    for (const c of flattenModules(n.children)) tiles.push({ key: c.key, label: labelOf(c.key, c.label) });
+                    menus.push({ key: n.key, label: labelOf(n.key, n.label), tiles });
+                  }
+                  const shown = (t: TileItem, menuLabel = '') =>
+                    !HIDDEN_MODULE_KEYS.has(t.key)
+                    && (matchesSearch(t.label, t.key) || (!!menuLabel && matchesSearch(menuLabel, '')))
+                    && matchesState(Boolean(draft[t.key]));
+                  const visibleLoose = loose.filter(t => shown(t));
+                  const visibleMenus = menus
+                    .map(m => ({ ...m, tiles: m.tiles.filter(t => shown(t, m.label)) }))
+                    .filter(m => m.tiles.length > 0);
+                  const tileKeys = [...loose, ...menus.flatMap(m => m.tiles)].map(t => t.key);
+                  const inheritTiles = ALL_INHERIT_TILES.filter(t => tileKeys.includes(t.inheritsFrom));
+                  // Apply search + state filter to the inherit tiles.
                   const visibleInheritTiles = inheritTiles.filter(t => {
                     const parentOn = Boolean(draft[t.inheritsFrom]);
                     return matchesSearch(t.label, t.key) && matchesState(parentOn);
                   });
-                  const visibleModules = modules.filter(({ key, label }) => {
-                    const display = LABEL_OVERRIDES[key] ?? (label && label.trim() ? label : prettifyKey(key));
-                    return matchesSearch(display, key) && matchesState(Boolean(draft[key]));
-                  });
                   // Skip categories where the filter left nothing to render.
-                  if (visibleInheritTiles.length === 0 && visibleModules.length === 0) continue;
+                  if (visibleInheritTiles.length === 0 && visibleLoose.length === 0 && visibleMenus.length === 0) continue;
                   // v-tenant-modules-category-visible-count — the
                   // header badge + Install all / Uninstall all button
                   // must reflect what the operator actually SEES after
-                  // the state filter. Basing them on the full category
-                  // (hidden tiles included) gave the confusing case
-                  // where every visible tile was installed but the
-                  // button still said "Install all" because there were
-                  // filtered-out uninstalled ones. Only the visible
-                  // (non-inherit) module tiles participate in the
-                  // toggle — inherit tiles mirror their parent's state
-                  // and have no independent flip.
-                  const visibleKeys = visibleModules.map(m => m.key);
+                  // the state filter. Only real app tiles count; inherit
+                  // tiles mirror their parent and menus follow their
+                  // children.
+                  const visibleKeys = [...visibleLoose, ...visibleMenus.flatMap(m => m.tiles)].map(t => t.key);
                   const total = visibleKeys.length;
                   const on = visibleKeys.filter(k => draft[k]).length;
                   const allOn = on === total && total > 0;
                   const noneOn = on === 0;
-                  const afterKeys = new Set(visibleModules.map(m => m.key));
-                  const leadInherit = visibleInheritTiles.filter(t => !t.after);
-                  const tailInherit = visibleInheritTiles.filter(t => t.after && !afterKeys.has(t.after));
                   const renderInherit = (tile: InheritTile) => {
                     const parentOn = Boolean(draft[tile.inheritsFrom]);
                     const parentLabel = LABEL_OVERRIDES[tile.inheritsFrom]
-                      ?? modules.find(m => m.key === tile.inheritsFrom)?.label
                       ?? tile.inheritsFrom.replace(/-/g, ' ');
                     const Icon = MODULE_ICON[tile.inheritsFrom] ?? Link2;
                     return (
@@ -482,6 +537,55 @@ export function TenantModules() {
                       </div>
                     );
                   };
+                  const renderTile = ({ key, label: displayLabel }: TileItem) => {
+                    // v-tenant-modules-install-button — every tile
+                    // reads as an app-store card. Draft-side only; the
+                    // Save panel below commits the batched changes.
+                    const Icon = MODULE_ICON[key] ?? LayoutGrid;
+                    const on = Boolean(draft[key]);
+                    return (
+                      // v-tenant-modules-drawer-tile — the whole
+                      // tile is the button. Installed apps show
+                      // a colorful icon; not-installed apps are
+                      // muted with a corner "+" hint. Hovering
+                      // reveals the install/uninstall verb.
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => handleToggle(key)}
+                        title={on ? `Uninstall ${displayLabel}` : `Install ${displayLabel}`}
+                        className="group relative flex flex-col items-center justify-start gap-1.5 rounded-lg p-2 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        aria-label={on ? `Uninstall ${displayLabel} for ${selectedTenant.name}` : `Install ${displayLabel} for ${selectedTenant.name}`}
+                      >
+                        {/* Corner action chip — quiet by default,
+                            brightens on hover / focus so the toggle
+                            intent is discoverable without adding a
+                            permanent button. */}
+                        <span className={`absolute top-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full shadow-sm transition-opacity duration-150 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 ${
+                          on ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'
+                        }`}>
+                          {on
+                            ? <Minus className="h-2.5 w-2.5" />
+                            : <Plus className="h-2.5 w-2.5" />}
+                        </span>
+                        <span className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm ${
+                          on
+                            ? 'bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700'
+                            : 'bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400 grayscale'
+                        }`}>
+                          <Icon className="h-5 w-5" />
+                        </span>
+                        <span
+                          className={`text-[11px] leading-tight text-center line-clamp-2 w-full ${
+                            on ? 'text-slate-900 font-medium' : 'text-slate-500'
+                          }`}
+                        >
+                          {displayLabel}
+                        </span>
+                      </button>
+                    );
+                  };
+                  const GRID = 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3';
                   rendered.push(
                   <div
                     key={cat.key}
@@ -546,78 +650,23 @@ export function TenantModules() {
                       )}
                     </div>
 
-                    {/* Children — individual module toggles. Same per-row
-                        styling as before; bulk-flip from the parent
-                        propagates through the same draft object so this
-                        view stays in sync without extra wiring. Only
-                        tiles that survive the search + state filter
-                        render here; hidden tiles still exist in state
-                        and stay toggled. */}
-                    {/* v-tenant-modules-drawer-grid — mobile app-
-                        drawer density: 5+ tiles per row, no per-
-                        tile button, whole tile is clickable to
-                        install / uninstall. Toggles via draft
-                        state; Save panel below commits the batch. */}
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3 p-3">
-                      {/* Inherit tiles first — Students (before Enrollment),
-                          Patients (before Encounter). Read-only; state
-                          mirrors the parent module so the operator sees
-                          them light up when they enable the parent. */}
-                      {leadInherit.map(renderInherit)}
-                      {visibleModules.map(({ key, label }) => {
-                        // v-tenant-modules-install-button — every tile
-                        // reads as an app-store card: icon + name on
-                        // the left, install/uninstall action on the
-                        // right. Draft-side only; the Save panel below
-                        // commits the batched changes.
-                        const Icon = MODULE_ICON[key] ?? LayoutGrid;
-                        const on = Boolean(draft[key]);
-                        const displayLabel = LABEL_OVERRIDES[key]
-                          ?? (label && label.trim() ? label : prettifyKey(key));
-                        return [(
-                          // v-tenant-modules-drawer-tile — the whole
-                          // tile is the button. Installed apps show
-                          // a colorful icon; not-installed apps are
-                          // muted with a corner "+" hint. Hovering
-                          // reveals the install/uninstall verb.
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => handleToggle(key)}
-                            title={on ? `Uninstall ${displayLabel}` : `Install ${displayLabel}`}
-                            className="group relative flex flex-col items-center justify-start gap-1.5 rounded-lg p-2 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                            aria-label={on ? `Uninstall ${displayLabel} for ${selectedTenant.name}` : `Install ${displayLabel} for ${selectedTenant.name}`}
-                          >
-                            {/* Corner action chip — quiet by default,
-                                brightens on hover / focus so the toggle
-                                intent is discoverable without adding a
-                                permanent button. */}
-                            <span className={`absolute top-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full shadow-sm transition-opacity duration-150 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 ${
-                              on ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'
-                            }`}>
-                              {on
-                                ? <Minus className="h-2.5 w-2.5" />
-                                : <Plus className="h-2.5 w-2.5" />}
-                            </span>
-                            <span className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm ${
-                              on
-                                ? 'bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700'
-                                : 'bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400 grayscale'
-                            }`}>
-                              <Icon className="h-5 w-5" />
-                            </span>
-                            <span
-                              className={`text-[11px] leading-tight text-center line-clamp-2 w-full ${
-                                on ? 'text-slate-900 font-medium' : 'text-slate-500'
-                              }`}
-                            >
-                              {displayLabel}
-                            </span>
-                          </button>
-                        ), ...visibleInheritTiles.filter(t => t.after === key).map(renderInherit)];
-                      })}
-                      {tailInherit.map(renderInherit)}
-                    </div>
+                    {/* Apps — every tile installs on its own. Loose apps
+                        first (Students / Patients inherit tiles lead),
+                        then one block per menu: its heading, then its
+                        apps. Only tiles that survive the search + state
+                        filter render; hidden ones keep their state. */}
+                    {(visibleInheritTiles.length > 0 || visibleLoose.length > 0) && (
+                      <div className={`${GRID} p-3`}>
+                        {visibleInheritTiles.map(renderInherit)}
+                        {visibleLoose.map(renderTile)}
+                      </div>
+                    )}
+                    {visibleMenus.map(m => (
+                      <div key={m.key} className="border-t border-slate-100 px-3 pb-3 pt-2">
+                        <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{m.label}</p>
+                        <div className={GRID}>{m.tiles.map(renderTile)}</div>
+                      </div>
+                    ))}
                   </div>
                   );
                 }
