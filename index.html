@@ -4,9 +4,18 @@
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <!-- Device routing: phones go to the mobile site (m.hr-share.com).
-           Only this site checks the device — m.hr-share.com never
-           redirects anyone, so opening it directly always stays there.
+      <!-- Device routing: phones go to the mobile site, served at
+           smrt-hrms-view.vercel.app. Only this site checks the device —
+           the mobile site never redirects anyone, so opening it
+           directly always stays there.
+
+           The destination used to be m.hr-share.com, and that host is
+           still deployed and still works. Smart (the carrier) started
+           restricting it, so phones on Smart data could not reach the
+           mobile site at all; the Vercel domain is the same deployment
+           under a name Smart does not block. Change MOBILE_SITE below
+           if that stops being true — it is the only place the target
+           is written.
 
            Runs in the browser, first thing in <head>, so a phone leaves
            before the desktop bundle downloads (no flash, no wasted mobile
@@ -26,6 +35,7 @@
            prefer_desktop cookie (this host only); ?desktop=0 clears it. -->
       <script>
         (function () {
+          var MOBILE_SITE = 'https://smrt-hrms-view.vercel.app/';
           try {
             if (!/^(www\.)?hr-share\.com$/.test(location.hostname)) return;
             var choice = /[?&]desktop=([01])(&|$)/.exec(location.search);
@@ -37,7 +47,7 @@
             else if (/(^|;\s*)prefer_desktop=1/.test(document.cookie)) return;
             if (!/iPhone|iPod|Android.*Mobile|Windows Phone|BlackBerry|BB10|Opera Mini|IEMobile/i.test(navigator.userAgent || '')) return;
             if (/^\/(scan|pos\/display|requirement-survey|cambodia|reset-password)(\/|$)|^\/(shop|kitchen|invoice\/view)\//.test(location.pathname)) return;
-            location.replace('https://m.hr-share.com/');
+            location.replace(MOBILE_SITE);
           } catch (e) { /* never keep anyone off the site */ }
         })();
       </script>
