@@ -238,6 +238,9 @@ export interface PlatformUser {
    *  the last 5 minutes. */
   online?: boolean;
   createdAt: string;
+  /** V385 — app of the latest login / activity. Null until the user's
+   *  next request after the column landed. */
+  lastApp?: 'web' | 'mobile' | null;
 }
 
 export interface ListUsersParams {

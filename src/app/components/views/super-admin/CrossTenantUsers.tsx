@@ -12,7 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '../../ui/alert-dialog';
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
-import { Search, KeyRound, UserX, UserCheck, Shield, UsersRound, GitMerge, AlertTriangle, UserPlus, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Search, KeyRound, UserX, UserCheck, Shield, UsersRound, GitMerge, AlertTriangle, UserPlus, Eye, EyeOff, ArrowUp, ArrowDown, ArrowUpDown, Monitor, Smartphone } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../../ui/dialog';
@@ -544,6 +544,7 @@ export function CrossTenantUsers() {
                 <TableHead>
                   <SortHeader label="Online" col="online" sort={sort} onCycle={cycleSort} />
                 </TableHead>
+                <TableHead>App</TableHead>
                 <TableHead>
                   <SortHeader label="Last Login" col="lastLogin" sort={sort} onCycle={cycleSort} />
                 </TableHead>
@@ -553,13 +554,13 @@ export function CrossTenantUsers() {
             </TableHeader>
             <TableBody>
               {loading && pager.paginatedItems.length === 0 && (
-                <TableBodySkeletonRows rows={6} columns={8} />
+                <TableBodySkeletonRows rows={6} columns={9} />
               )}
               {!loading && loadError && pager.paginatedItems.length === 0 && (
-                <ListError message={loadError} onRetry={() => void loadUsers()} colSpan={8} />
+                <ListError message={loadError} onRetry={() => void loadUsers()} colSpan={9} />
               )}
               {!loading && !loadError && pager.paginatedItems.length === 0 && (
-                <ListEmpty noun="users" filtered={hasFilters} colSpan={8} />
+                <ListEmpty noun="users" filtered={hasFilters} colSpan={9} />
               )}
               {pager.paginatedItems.map(u => {
                 // Cross-tenant duplicate emails are valid (the same person can
@@ -611,6 +612,9 @@ export function CrossTenantUsers() {
                           {u.online ? 'Online' : 'Offline'}
                         </span>
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      <AppBadge app={u.lastApp} />
                     </TableCell>
                     <TableCell className="text-sm text-gray-500">
                       <span title={u.lastLogin ? formatDateTime(u.lastLogin) : 'Never'}>
@@ -725,6 +729,7 @@ export function CrossTenantUsers() {
                       <span>
                         Last login {formatLastLogin(u.lastLogin, formatDate)}
                       </span>
+                      {u.lastApp && <AppBadge app={u.lastApp} />}
                     </div>
                   </div>
                   {selected && (
@@ -928,6 +933,25 @@ export function CrossTenantUsers() {
 /** Header-cell button that cycles the parent's sort state. Idle
  *  shows a two-way arrow in grey; active column shows up/down in
  *  blue. Kept local — used only by the users table above. */
+/** V385 — the app a user last signed in from or used: Web or Mobile.
+ *  "—" until their next request after the column landed. */
+function AppBadge({ app }: { app?: 'web' | 'mobile' | null }) {
+  if (!app) return <span className="text-sm text-gray-400" title="Not recorded yet">—</span>;
+  const mobile = app === 'mobile';
+  const Icon = mobile ? Smartphone : Monitor;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+        mobile ? 'bg-violet-50 text-violet-700' : 'bg-sky-50 text-sky-700'
+      }`}
+      title={mobile ? 'Last used the mobile app' : 'Last used the web app'}
+    >
+      <Icon className="h-3 w-3" />
+      {mobile ? 'Mobile' : 'Web'}
+    </span>
+  );
+}
+
 type UsersSortKey = 'name' | 'company' | 'role' | 'online' | 'lastLogin';
 function SortHeader({
   label, col, sort, onCycle,

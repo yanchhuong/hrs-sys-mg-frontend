@@ -194,6 +194,8 @@ export async function apiFetch(path: string, opts: RawFetchOptions = {}): Promis
   const url = buildUrl(path, query);
   const merged: Record<string, string> = { ...(headers as Record<string, string> ?? {}) };
   if (json !== undefined) merged['Content-Type'] = 'application/json';
+  // V385 — Super Admin → Users shows which app a user is on.
+  merged['X-Client-App'] = 'web';
   if (auth) {
     const tok = getToken();
     if (tok) merged['Authorization'] = `Bearer ${tok}`;
