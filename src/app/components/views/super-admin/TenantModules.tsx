@@ -99,12 +99,24 @@ interface InheritTile {
   key: string;         // synthetic display key (not a real module)
   label: string;
   inheritsFrom: string;// real module key whose enabled-state we mirror
+  /** Render right after this module's tile instead of at the start of
+   *  the category (falls back to the end when that tile is filtered out). */
+  after?: string;
 }
 const INHERIT_TILES: Record<string, InheritTile[]> = {
   // Injected at the START of each category's tile list.
   education:  [{ key: 'students', label: 'Students', inheritsFrom: 'enrollment' }],
   healthcare: [{ key: 'patients', label: 'Patients', inheritsFrom: 'encounter'  }],
+  // Expense has no switch of its own since V201 (one page, one switch):
+  // the `expenses` row — shown as "Purchases", the menu group over
+  // Vendors / Bill / Expense — is what turns the Expense app on. Show
+  // it here so it can be found, lit by that switch.
+  accounting: [{ key: 'expense-app', label: 'Expense', inheritsFrom: 'expenses', after: 'vendor' }],
 };
+// A tile renders in whichever category holds its parent module, not by
+// the category key above: categories are renamed / re-keyed in Module
+// Categories per deployment, and the tile must follow its switch.
+const ALL_INHERIT_TILES: InheritTile[] = Object.values(INHERIT_TILES).flat();
 
 /**
  * Super Admin → Tenant Modules. Pick a company, toggle which menu
@@ -402,7 +414,7 @@ export function TenantModules() {
                 const rendered: ReactNode[] = [];
                 for (const cat of categories) {
                   const modules = flattenModules(cat.modules).filter(n => !HIDDEN_MODULE_KEYS.has(n.key));
-                  const inheritTiles = INHERIT_TILES[cat.key] ?? [];
+                  const inheritTiles = ALL_INHERIT_TILES.filter(t => modules.some(m => m.key === t.inheritsFrom));
                   // Apply search + state filter to the tile lists.
                   const visibleInheritTiles = inheritTiles.filter(t => {
                     const parentOn = Boolean(draft[t.inheritsFrom]);
@@ -430,6 +442,46 @@ export function TenantModules() {
                   const on = visibleKeys.filter(k => draft[k]).length;
                   const allOn = on === total && total > 0;
                   const noneOn = on === 0;
+                  const afterKeys = new Set(visibleModules.map(m => m.key));
+                  const leadInherit = visibleInheritTiles.filter(t => !t.after);
+                  const tailInherit = visibleInheritTiles.filter(t => t.after && !afterKeys.has(t.after));
+                  const renderInherit = (tile: InheritTile) => {
+                    const parentOn = Boolean(draft[tile.inheritsFrom]);
+                    const parentLabel = LABEL_OVERRIDES[tile.inheritsFrom]
+                      ?? modules.find(m => m.key === tile.inheritsFrom)?.label
+                      ?? tile.inheritsFrom.replace(/-/g, ' ');
+                    const Icon = MODULE_ICON[tile.inheritsFrom] ?? Link2;
+                    return (
+                      // v-tenant-modules-drawer-tile — matching
+                      // drawer density for inherit tiles.
+                      // Non-clickable (read-only) with a Link2
+                      // corner chip signalling their derived
+                      // state.
+                      <div
+                        key={tile.key}
+                        title={`Inherits from ${parentLabel} — no independent toggle`}
+                        className="relative flex flex-col items-center justify-start gap-1.5 rounded-lg p-2"
+                      >
+                        <span className="absolute top-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-slate-500 shadow-sm">
+                          <Link2 className="h-2.5 w-2.5" />
+                        </span>
+                        <span className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm border border-dashed ${
+                          parentOn
+                            ? 'bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-600 border-blue-200'
+                            : 'bg-gradient-to-br from-slate-50 to-slate-100 text-slate-400 border-slate-300 grayscale'
+                        }`}>
+                          <Icon className="h-5 w-5" />
+                        </span>
+                        <span
+                          className={`text-[11px] leading-tight text-center line-clamp-2 w-full ${
+                            parentOn ? 'text-slate-900 font-medium' : 'text-slate-500'
+                          }`}
+                        >
+                          {tile.label}
+                        </span>
+                      </div>
+                    );
+                  };
                   rendered.push(
                   <div
                     key={cat.key}
@@ -511,42 +563,7 @@ export function TenantModules() {
                           Patients (before Encounter). Read-only; state
                           mirrors the parent module so the operator sees
                           them light up when they enable the parent. */}
-                      {visibleInheritTiles.map(tile => {
-                        const parentOn = Boolean(draft[tile.inheritsFrom]);
-                        const parentLabel = LABEL_OVERRIDES[tile.inheritsFrom]
-                          ?? tile.inheritsFrom.replace(/-/g, ' ');
-                        const Icon = MODULE_ICON[tile.inheritsFrom] ?? Link2;
-                        return (
-                          // v-tenant-modules-drawer-tile — matching
-                          // drawer density for inherit tiles.
-                          // Non-clickable (read-only) with a Link2
-                          // corner chip signalling their derived
-                          // state.
-                          <div
-                            key={tile.key}
-                            title={`Inherits from ${parentLabel} — no independent toggle`}
-                            className="relative flex flex-col items-center justify-start gap-1.5 rounded-lg p-2"
-                          >
-                            <span className="absolute top-1 right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-200 text-slate-500 shadow-sm">
-                              <Link2 className="h-2.5 w-2.5" />
-                            </span>
-                            <span className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-sm border border-dashed ${
-                              parentOn
-                                ? 'bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-600 border-blue-200'
-                                : 'bg-gradient-to-br from-slate-50 to-slate-100 text-slate-400 border-slate-300 grayscale'
-                            }`}>
-                              <Icon className="h-5 w-5" />
-                            </span>
-                            <span
-                              className={`text-[11px] leading-tight text-center line-clamp-2 w-full ${
-                                parentOn ? 'text-slate-900 font-medium' : 'text-slate-500'
-                              }`}
-                            >
-                              {tile.label}
-                            </span>
-                          </div>
-                        );
-                      })}
+                      {leadInherit.map(renderInherit)}
                       {visibleModules.map(({ key, label }) => {
                         // v-tenant-modules-install-button — every tile
                         // reads as an app-store card: icon + name on
@@ -557,7 +574,7 @@ export function TenantModules() {
                         const on = Boolean(draft[key]);
                         const displayLabel = LABEL_OVERRIDES[key]
                           ?? (label && label.trim() ? label : prettifyKey(key));
-                        return (
+                        return [(
                           // v-tenant-modules-drawer-tile — the whole
                           // tile is the button. Installed apps show
                           // a colorful icon; not-installed apps are
@@ -597,8 +614,9 @@ export function TenantModules() {
                               {displayLabel}
                             </span>
                           </button>
-                        );
+                        ), ...visibleInheritTiles.filter(t => t.after === key).map(renderInherit)];
                       })}
+                      {tailInherit.map(renderInherit)}
                     </div>
                   </div>
                   );
