@@ -53,7 +53,7 @@ import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { statusBadgeClass } from '../../utils/statusTones';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { DocAuditLine } from '../common/DocAuditLine';
-import { Plus, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download, Upload, Info, FileSpreadsheet } from 'lucide-react';
+import { Plus, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download, Upload, Info, FileSpreadsheet, Banknote, Undo2 } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadOtDialog } from '../common/BulkUploadOtDialog';
 import { useAuth } from '../../context/AuthContext';
@@ -62,6 +62,7 @@ import { formatMoney } from '../../utils/format';
 import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 // Adapts a backend OtRequest to the front-end OTRequest shape used by the table.
 // `isWeekend`/`isHoliday` are not currently provided by the backend DTO — we
@@ -88,6 +89,8 @@ function adaptApiOt(o: overtimeApi.OtRequest): OTRequest {
     isWeekend: dow === 0 || dow === 6,
     isHoliday: false,
     payrollBatchSubject: o.payrollBatchSubject ?? null,
+    paidAt: o.paidAt ?? null,
+    paidByName: o.paidByName ?? null,
     // v-doc-audit-line — carry the server-resolved names through the adapter
     // (submitter / approver names were previously dropped here, leaving the
     // "Submitted By" / approver cells blank).
@@ -161,6 +164,7 @@ export function Overtime() {
   const { t } = useI18n();
   const { formatDate, formatDateTime } = useDateFormat();
   const { canCreate, canUpdate, canDelete, currentUser } = useAuth();
+  const confirm = useConfirm();
   // "Full OT permission AND see all employees" — only surface bulk upload
   // to operators who can legitimately file / edit / delete OT for any
   // employee in the tenant. Employees / leaders scoped to their reports
@@ -230,10 +234,10 @@ export function Overtime() {
     return hit?.apiId ?? '';
   }, [currentUser?.employeeId, employees]);
   // Default the Request OT target to the caller each time the dialog
-  // opens, so an admin filing their own OT does not have to find
-  // their own name in the roster. An admin with no linked employee
-  // gets an empty picker and must choose somebody — there is no
-  // "me" for them to file as.
+   // opens, so an admin filing their own OT does not have to find
+   // their own name in the roster. An admin with no linked employee
+   // gets an empty picker and must choose somebody — there is no
+   // "me" for them to file as.
   useEffect(() => {
     if (dialogOpen && isTenantWide && !reqEmployeeId) setReqEmployeeId(myApiEmployeeId);
   }, [dialogOpen, isTenantWide, myApiEmployeeId, reqEmployeeId]);
@@ -396,6 +400,10 @@ export function Overtime() {
   }
 
   const pendingRequests = otRequests.filter(req => req.status === 'pending');
+  /** Summary-card rows: an Employee / Manager counts only their own OT. */
+  const summaryRows = isTenantWide
+    ? otRequests
+    : otRequests.filter(req => !!myApiEmployeeId && req.employeeId === myApiEmployeeId);
   /** Per-status counts, shown on the filter's options. */
   const statusCounts: Record<string, number> = {
     all: otRequests.length,
@@ -532,6 +540,38 @@ export function Overtime() {
       await loadOtRequests();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to reject OT request');
+    }
+  };
+
+  /** V386 — approved OT paid outside payroll (cash, a transfer). Marked
+   *  paid, payroll skips it, so it is never paid twice. */
+  const handleMarkPaid = async (id: string) => {
+    if (!(await confirm({
+      title: 'Mark this overtime paid?',
+      message: 'Use this when it was paid outside payroll. Payroll will no longer include it.',
+      confirmLabel: 'Mark paid',
+    }))) return;
+    try {
+      await overtimeApi.markPaid(id);
+      toast.success('Overtime marked paid');
+      await loadOtRequests();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to mark overtime paid');
+    }
+  };
+
+  const handleMarkUnpaid = async (id: string) => {
+    if (!(await confirm({
+      title: 'Undo paid?',
+      message: 'The overtime goes back to Approved and the next payroll run will include it.',
+      confirmLabel: 'Undo paid',
+    }))) return;
+    try {
+      await overtimeApi.markUnpaid(id);
+      toast.success('Overtime back to approved');
+      await loadOtRequests();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to undo paid');
     }
   };
 
@@ -1059,36 +1099,30 @@ export function Overtime() {
         </div>
       </div>
 
-      {/* OT summary cards — surfaced above the listing for quick context.
-          Employee-only since admins / managers see the same numbers via
-          the by-employee view + Reports. */}
-      {isEmployee && (
-        <div className="stat-strip">
-          <StatCard
-            label="Total OT Hours"
-            value={`${otRequests
-              .filter(req => isApprovedOnward(req.status))
-              .reduce((sum, req) => sum + req.hours, 0)}h`}
-            icon={TimerIcon}
-            tone="blue"
-            hint="Approved this period"
-          />
-          <StatCard
-            label="Pending"
-            value={pendingRequests.length}
-            icon={TimerIcon}
-            tone="amber"
-            hint="Awaiting approval"
-          />
-          <StatCard
-            label="Approved"
-            value={otRequests.filter(req => isApprovedOnward(req.status)).length}
-            icon={TimerIcon}
-            tone="green"
-            hint="Requests approved"
-          />
-        </div>
-      )}
+      {/* OT summary cards — Paid / Approved / Pending hours, the same
+          three tiles as mobile. An Employee or Manager sees their OWN
+          overtime here (the list also carries a manager's reports, for
+          approving); a tenant-wide role sees everyone in the list.
+          Approved means approved-but-unpaid (approved + closed), so the
+          three never double count. */}
+      <div className="stat-strip">
+        {(() => {
+          const sum = (rs: OTRequest[]) => rs.reduce((s, r) => s + (Number(r.hours) || 0), 0);
+          const paid = summaryRows.filter(r => r.status === 'paid');
+          const approved = summaryRows.filter(r => r.status === 'approved' || r.status === 'closed');
+          const pending = summaryRows.filter(r => r.status === 'pending');
+          const reqs = (n: number) => `${n} request${n === 1 ? '' : 's'}`;
+          const whose = isTenantWide ? '' : 'Your ';
+          return (<>
+            <StatCard label="Total Paid OT" value={`${sum(paid).toFixed(1)}h`} icon={Banknote} tone="blue"
+              hint={`${whose}${reqs(paid.length)} paid`} />
+            <StatCard label="Total Approved" value={`${sum(approved).toFixed(1)}h`} icon={Check} tone="green"
+              hint={`${whose}${reqs(approved.length)} awaiting pay`} />
+            <StatCard label="Total Pending" value={`${sum(pending).toFixed(1)}h`} icon={TimerIcon} tone="amber"
+              hint={`${whose}${reqs(pending.length)} awaiting approval`} />
+          </>);
+        })()}
+      </div>
 
       <Card>
         <CardHeader className="pb-3">
@@ -1306,6 +1340,28 @@ export function Overtime() {
                         const isPaid = overtimeApi.otIsLocked(request.status);
                         if (isPaid) {
                           const slipRef = request.payrollBatchSubject;
+                          // V386 — paid by hand (no batch): say who and
+                          // when, and let an admin undo it.
+                          if (request.status === 'paid' && request.paidAt && !slipRef) {
+                            return (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] text-emerald-700 bg-emerald-50 border-emerald-200"
+                                  title={`Marked paid${request.paidByName ? ` by ${request.paidByName}` : ''} · ${formatDateTime(request.paidAt)}`}
+                                >
+                                  <Banknote className="h-3 w-3 mr-1 shrink-0" />
+                                  Paid · manual
+                                </Badge>
+                                {canUpdate('overtime') && (
+                                  <Button size="sm" variant="ghost" className="h-7 text-xs text-gray-500"
+                                    onClick={() => handleMarkUnpaid(request.id)} title="Undo paid — back to Approved">
+                                    <Undo2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            );
+                          }
                           return (
                             <Badge
                               variant="outline"
@@ -1321,6 +1377,19 @@ export function Overtime() {
                         }
                         return (
                           <div className="flex items-center justify-end gap-1.5">
+                            {/* V386 — paid outside payroll. */}
+                            {request.status === 'approved' && canUpdate('overtime') && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                                onClick={() => handleMarkPaid(request.id)}
+                                title="Paid outside payroll — mark it paid so payroll skips it"
+                              >
+                                <Banknote className="h-3.5 w-3.5 mr-1" />
+                                Mark paid
+                              </Button>
+                            )}
                             {isAdmin && (
                               <Button
                                 size="sm"

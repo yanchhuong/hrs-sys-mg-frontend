@@ -67,6 +67,9 @@ export interface OtRequest {
    *  approver's user account has no linked employee profile. */
   approvedByName?: string | null;
   approvedAt?: string | null;
+  /** V386 — set when marked paid by hand (no payroll batch). */
+  paidAt?: string | null;
+  paidByName?: string | null;
   /** ISO timestamp of when the request was filed. */
   requestedAt: string;
   /** Display names of the creator / last editor (server-resolved). */
@@ -167,6 +170,19 @@ export async function update(id: string, req: UpdateOtRequest): Promise<OtReques
 export async function approve(id: string): Promise<OtRequest> {
   return apiJson(`/api/v1/ot-requests/${id}/approve`, { method: 'POST' });
 }
+
+/** V386 — mark approved OT paid outside payroll (cash, a transfer).
+ *  It becomes 'paid' with no payroll batch, so payroll never pays it
+ *  again. Needs overtime:update. */
+export async function markPaid(id: string): Promise<OtRequest> {
+  return apiJson<OtRequest>(`/api/v1/ot-requests/${id}/mark-paid`, { method: 'POST' });
+}
+
+/** V386 — undo markPaid (back to approved). Refused for batch-paid rows. */
+export async function markUnpaid(id: string): Promise<OtRequest> {
+  return apiJson<OtRequest>(`/api/v1/ot-requests/${id}/mark-unpaid`, { method: 'POST' });
+}
+
 
 export async function reject(id: string, reason?: string): Promise<OtRequest> {
   return apiJson(`/api/v1/ot-requests/${id}/reject`, {
