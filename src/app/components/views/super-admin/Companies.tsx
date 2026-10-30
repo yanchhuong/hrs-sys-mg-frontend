@@ -21,7 +21,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import {
   Building2, Plus, Search, Pause, Play, Trash2, Edit, ArrowUp, ArrowDown, ArrowUpDown, HardDrive, UsersRound,
-  AlertTriangle, Shield, Calendar, FileText, Info, Snowflake, Sun,
+  AlertTriangle, Shield, Calendar, FileText, Info, Snowflake, Sun, Copy,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
 import { toast } from 'sonner';
@@ -210,6 +210,15 @@ export function Companies() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Company | null>(null);
+  /** v-company-copy — set while the Create dialog is a "Copy as new"
+   *  of this company; null for a plain Create. */
+  const [copySource, setCopySource] = useState<Company | null>(null);
+  /** True while the source company's installed apps are loading. */
+  const [copyLoading, setCopyLoading] = useState(false);
+  /** The source's whole module map, so modules with no checkbox here
+   *  (Approval, Expense, …) copy across too instead of falling back
+   *  to the Business-Base default. */
+  const [copyModules, setCopyModules] = useState<Record<string, boolean> | null>(null);
   const [form, setForm] = useState<Partial<Company>>({});
   /** v-tenant-freeze — target of the Freeze / Unfreeze dialog. */
   const [freezeTarget, setFreezeTarget] = useState<Company | null>(null);
@@ -475,6 +484,8 @@ export function Companies() {
   // CRUD
   const handleOpenCreate = () => {
     setEditing(null);
+    setCopySource(null);
+    setCopyModules(null);
     // The backend always creates tenants as 'active'; Suspended / Frozen
     // picked here are applied right after create via the transition
     // endpoints (see handleSave). Trial / Cancelled have no endpoint, so
@@ -493,7 +504,45 @@ export function Companies() {
     setModuleToggles(seed);
     setDialogOpen(true);
   };
+  /** v-company-copy — Create, pre-filled from an existing company:
+   *  same plan, country, notes, Business Base and the SAME installed
+   *  apps, each still a checkbox the Super Admin can flip. Name, slug
+   *  and contact are the new company's own, so they start fresh (the
+   *  name/slug with a "copy" hint). Only setup is copied — no
+   *  employees, users or documents. */
+  const handleOpenCopy = async (c: Company) => {
+    setEditing(null);
+    setCopySource(c);
+    setForm({
+      name: `${c.name} (Copy)`,
+      slug: `${c.slug}-copy`,
+      planTier: c.planTier,
+      status: 'active',
+      country: c.country,
+      notes: c.notes,
+    });
+    setBases(basesByTenant[c.id] ?? []);
+    setModuleToggles({});
+    setCopyModules(null);
+    setDialogOpen(true);
+    if (USE_MOCKS) { setModuleToggles(Object.fromEntries(ALL_INSTALL_KEYS.map(k => [k, true]))); return; }
+    setCopyLoading(true);
+    try {
+      const src = await platformApi.tenantModules.get(c.id);
+      setCopyModules(src.modules);
+      setModuleToggles(Object.fromEntries(ALL_INSTALL_KEYS.map(k => [k, src.modules[k] === true])));
+    } catch (e) {
+      // Fall back to "everything on" — the plain Create default — so
+      // the dialog is still usable; say so rather than copy silently wrong.
+      setModuleToggles(Object.fromEntries(ALL_INSTALL_KEYS.map(k => [k, true])));
+      toast.warning(`Couldn't read ${c.name}'s apps — all apps are checked instead.`);
+      console.warn('tenantModules.get for copy failed', e);
+    } finally {
+      setCopyLoading(false);
+    }
+  };
   const handleOpenEdit = (c: Company) => {
+    setCopySource(null);
     setEditing(c);
     setForm({ ...c });
     // Seed the picker with the tenant's current Base(s). Falls back
@@ -618,7 +667,9 @@ export function Companies() {
         // of the Business-Base auto-seed. Bulk endpoint accepts any
         // subset, so we push only the keys we curated a checkbox
         // for — anything else keeps the Base-driven default.
-        const toApply: Record<string, boolean> = {};
+        // Copy as new: start from the source's full map; the checkboxes
+        // below then override the keys they cover.
+        const toApply: Record<string, boolean> = copySource && copyModules ? { ...copyModules } : {};
         for (const k of ALL_INSTALL_KEYS) {
           if (k in moduleToggles) toApply[k] = moduleToggles[k];
         }
@@ -840,7 +891,7 @@ export function Companies() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Building2 className="h-5 w-5" />
-                {editing ? `Edit ${editing.name}` : 'Create Company'}
+                {editing ? `Edit ${editing.name}` : copySource ? `Copy ${copySource.name} as new company` : 'Create Company'}
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
@@ -984,7 +1035,16 @@ export function Companies() {
               {!editing && (
                 <div className="rounded-md border p-3 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Apps to install</div>
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Apps to install</div>
+                      {copySource && (
+                        <div className="text-[11px] text-gray-500 mt-0.5">
+                          {copyLoading
+                            ? `Loading ${copySource.name}'s apps…`
+                            : `Same apps as ${copySource.name} — check or uncheck to change.`}
+                        </div>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1142,7 +1202,7 @@ export function Companies() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
-              <Button onClick={handleSave} disabled={submitting}>{editing ? 'Save' : 'Create Company'}</Button>
+              <Button onClick={handleSave} disabled={submitting || copyLoading}>{editing ? 'Save' : 'Create Company'}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1407,6 +1467,9 @@ export function Companies() {
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleOpenEdit(c)} title="Edit">
                         <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-indigo-600 hover:text-indigo-700" onClick={() => void handleOpenCopy(c)} title="Copy as new company">
+                        <Copy className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
