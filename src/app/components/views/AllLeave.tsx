@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -247,10 +247,27 @@ export function AllLeave() {
     isEmployee,
     isManager,
     isTenantWide,
+    myEmpId,
     showScopePicker,
     matchesScope,
     canApproveFor: canApproveLeaveOf,
   } = useTeamScope();
+  /** Who the New Leave Request dialog is filing for, as the backend
+   *  employee UUID. Only tenant-wide roles can change it. */
+  const [reqEmployeeId, setReqEmployeeId] = useState<string>('');
+  /** The caller’s own roster row, as an `apiId` — matched on both id
+   *  shapes, the same way the rest of this page resolves employees. */
+  const myApiEmployeeId = useMemo(() => {
+    if (!myEmpId) return '';
+    const hit = employees.find(e => e.apiId === myEmpId || e.id === myEmpId);
+    return hit?.apiId ?? '';
+  }, [myEmpId, employees]);
+  // Default the target to the caller each time the dialog opens, so
+  // an admin filing their own leave does not have to pick their own
+  // name out of the roster.
+  useEffect(() => {
+    if (dialogOpen && isTenantWide && !reqEmployeeId) setReqEmployeeId(myApiEmployeeId);
+  }, [dialogOpen, isTenantWide, myApiEmployeeId, reqEmployeeId]);
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
 
 
@@ -384,6 +401,7 @@ export function AllLeave() {
 
     try {
       await leaveApi.create({
+        ...(isTenantWide && reqEmployeeId ? { employeeId: reqEmployeeId } : {}),
         date: newDate,
         endDate: newEndDate,
         days: totalDays,
@@ -406,6 +424,7 @@ export function AllLeave() {
       setNewReason(''); setNewAccident(false); setNewCeremonyType(''); setNewCeremonyRelation('self');
       setNewCorrectedIn('');
       setNewCorrectedOut('');
+      setReqEmployeeId('');
       await loadLeaves();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to submit leave request');
@@ -540,7 +559,7 @@ export function AllLeave() {
           >
             <Download className="h-4 w-4" />
           </Button>
-          {isEmployee && (
+          {(isEmployee || isTenantWide) && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -552,10 +571,34 @@ export function AllLeave() {
                 <DialogHeader>
                   <DialogTitle>Submit Leave Request</DialogTitle>
                   <DialogDescription>
-                    Your manager will review and approve this request
+                    {isTenantWide
+                      ? "Goes to this employee's manager for approval. With no manager above you, it is approved as you file it."
+                      : 'Your manager will review and approve this request'}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
+                  {/* Admin / custom roles file for anyone, themselves
+                      included. Employees and managers never see this. */}
+                  {isTenantWide && (
+                    <div className="space-y-2">
+                      <Label>For employee <span className="text-red-500">*</span></Label>
+                      <Select value={reqEmployeeId} onValueChange={setReqEmployeeId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose an employee" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {employees
+                            .filter(e => e.status === 'active' && !!e.apiId)
+                            .map(e => (
+                              <SelectItem key={e.apiId} value={e.apiId!}>
+                                {e.name}{e.id ? ' · ' + e.id : ''}
+                                {e.apiId === myApiEmployeeId ? ' (me)' : ''}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   {/* Category — Annual / Sick / Special / Maternity.
                       Pure Exception is filed from Attendance → Mark
                       Exception, not here. */}

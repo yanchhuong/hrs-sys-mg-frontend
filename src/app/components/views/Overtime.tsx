@@ -160,7 +160,7 @@ const OT_STATUS_OPTIONS = [
 export function Overtime() {
   const { t } = useI18n();
   const { formatDate, formatDateTime } = useDateFormat();
-  const { canCreate, canUpdate, canDelete } = useAuth();
+  const { canCreate, canUpdate, canDelete, currentUser } = useAuth();
   // "Full OT permission AND see all employees" — only surface bulk upload
   // to operators who can legitimately file / edit / delete OT for any
   // employee in the tenant. Employees / leaders scoped to their reports
@@ -184,6 +184,10 @@ export function Overtime() {
   /** Admin-only manual rate override (V62). String to allow partial
    *  entry; empty = use auto-detected rate. */
   const [reqOtRateOverride, setReqOtRateOverride] = useState<string>('');
+  /** Who the Request OT dialog is filing for, as the backend employee
+   *  UUID. Only tenant-wide roles can change it; everyone else files
+   *  for themselves and never sees the picker. */
+  const [reqEmployeeId, setReqEmployeeId] = useState<string>('');
 
   /** State for the admin "Edit OT row" dialog. `null` = closed. */
   const [editingOt, setEditingOt] = useState<overtimeApi.OtRequest | null>(null);
@@ -215,6 +219,24 @@ export function Overtime() {
   // Live data — falls back to the mock arrays when VITE_USE_MOCKS is on.
   const [allOtRequests, setAllOtRequests] = useState<OTRequest[]>(USE_MOCKS ? mockOTRequests : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
+  /** The caller’s own row in the loaded roster, as an `apiId`.
+   *  Matched on both id shapes: currentUser.employeeId is the backend
+   *  UUID, which is `apiId` here, but the roster also keys rows by
+   *  empNo on `id` and other call sites accept either. */
+  const myApiEmployeeId = useMemo(() => {
+    const mine = currentUser?.employeeId;
+    if (!mine) return '';
+    const hit = employees.find(e => e.apiId === mine || e.id === mine);
+    return hit?.apiId ?? '';
+  }, [currentUser?.employeeId, employees]);
+  // Default the Request OT target to the caller each time the dialog
+  // opens, so an admin filing their own OT does not have to find
+  // their own name in the roster. An admin with no linked employee
+  // gets an empty picker and must choose somebody — there is no
+  // "me" for them to file as.
+  useEffect(() => {
+    if (dialogOpen && isTenantWide && !reqEmployeeId) setReqEmployeeId(myApiEmployeeId);
+  }, [dialogOpen, isTenantWide, myApiEmployeeId, reqEmployeeId]);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
   const deptName = makeDeptName(deptList, '-');
   // OT multipliers come from Attendance Settings → OT Rules. We load the
@@ -443,6 +465,7 @@ export function Overtime() {
       setReason('');
       setReqOtDayTypeOverride(null);
       setReqOtRateOverride('');
+      setReqEmployeeId('');
       return;
     }
     // Hours is the canonical value the backend persists. Parse from the
@@ -456,6 +479,7 @@ export function Overtime() {
     }
     try {
       await overtimeApi.create({
+        ...(isTenantWide && reqEmployeeId ? { employeeId: reqEmployeeId } : {}),
         date: dateStr,
         endDate: endDateStr,
         hours: hoursNum,
@@ -476,6 +500,7 @@ export function Overtime() {
       setReason('');
       setReqOtDayTypeOverride(null);
       setReqOtRateOverride('');
+      setReqEmployeeId('');
       await loadOtRequests();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to submit OT request');
@@ -781,7 +806,7 @@ export function Overtime() {
               Bulk Upload
             </Button>
           )}
-        {isEmployee && (
+        {(isEmployee || isTenantWide) && (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -792,9 +817,37 @@ export function Overtime() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Submit Overtime Request</DialogTitle>
-                <DialogDescription>Fill in the details for your overtime request</DialogDescription>
+                <DialogDescription>
+                  {isTenantWide
+                    ? "Goes to this employee's manager for approval. With no manager above you, it is approved as you file it."
+                    : 'Fill in the details for your overtime request'}
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
+                {/* Admin / custom roles file for anyone, themselves
+                    included. Employees and managers never see this —
+                    their request is always their own, and the backend
+                    resolves the employee from the caller. */}
+                {isTenantWide && (
+                  <div className="space-y-2">
+                    <Label>For employee <span className="text-red-500">*</span></Label>
+                    <Select value={reqEmployeeId} onValueChange={setReqEmployeeId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose an employee" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {employees
+                          .filter(e => e.status === 'active' && !!e.apiId)
+                          .map(e => (
+                            <SelectItem key={e.apiId} value={e.apiId!}>
+                              {e.name}{e.id ? ' · ' + e.id : ''}
+                              {e.apiId === myApiEmployeeId ? ' (me)' : ''}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Start Date <span className="text-red-500">*</span></Label>
