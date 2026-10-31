@@ -1,5 +1,6 @@
 import { fetchProfileImageBlobUrl } from './documents';
 import { fetchMyProfileImageBlobUrl } from './auth';
+import { fetchProfileImageBlobUrl as fetchUserProfileImageBlobUrl } from './users';
 
 /**
  * Cache key for a user WITHOUT a linked employee: their photo has no
@@ -9,6 +10,10 @@ import { fetchMyProfileImageBlobUrl } from './auth';
  * entry and an upload on either shows on both (see useMyProfileImage).
  */
 export const selfPhotoKey = (userId: string) => `me:${userId}`;
+
+/** Another user's own photo, as an admin sees it in the Users list —
+ *  fetched from /users/:id/profile-image. */
+export const userPhotoKey = (userId: string) => `user:${userId}`;
 
 /**
  * Process-wide cache of employee profile-image blob URLs.
@@ -83,7 +88,9 @@ export function getProfileImageUrl(apiId: string): Promise<string | null> {
     // A failed fetch resolves to null rather than rejecting, so one
     // network blip doesn't leave a rejected promise cached for the
     // rest of the session. The entry is dropped so a later mount retries.
-    const fetch = apiId.startsWith('me:') ? fetchMyProfileImageBlobUrl() : fetchProfileImageBlobUrl(apiId);
+    const fetch = apiId.startsWith('me:') ? fetchMyProfileImageBlobUrl()
+      : apiId.startsWith('user:') ? fetchUserProfileImageBlobUrl(apiId.slice('user:'.length))
+      : fetchProfileImageBlobUrl(apiId);
     pending = fetch.catch(() => {
       entries.delete(apiId);
       return null;

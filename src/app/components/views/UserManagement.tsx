@@ -52,6 +52,8 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { EmployeeCell } from '../common/EmployeeCell';
+import { EmployeeAvatar } from '../common/EmployeeAvatar';
+import { selfPhotoKey, userPhotoKey } from '../../api/profileImageCache';
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from '../ui/popover';
@@ -565,7 +567,29 @@ function adaptApiUser(u: usersApi.User): User {
     createdAt: u.createdAt ?? new Date().toISOString(),
     name: u.name ?? undefined,
     username: u.username ?? undefined,
+    profileImage: u.profileImage ?? null,
   };
+}
+
+/**
+ * V388 — the user's profile photo, else their initial. Linked to an
+ * employee it is the employee's photo; otherwise the user's own. Keys
+ * match useMyProfileImage for the signed-in user, so an upload in Your
+ * Profile shows on their row at once.
+ */
+function UserAvatar({ user, employee, name }: { user: User; employee?: Employee; name: string }) {
+  const { currentUser } = useAuth();
+  const self = user.id === currentUser?.id;
+  const key = user.employeeId ? user.employeeId : self ? selfPhotoKey(user.id) : userPhotoKey(user.id);
+  const flag = self ? currentUser?.profileImage : user.employeeId ? employee?.profileImage : user.profileImage;
+  return (
+    <EmployeeAvatar
+      employee={{ apiId: key, profileImage: flag ?? undefined, name }}
+      className="h-8 w-8 rounded-md border border-gray-200 shrink-0"
+      imageClassName="rounded-md"
+      fallbackClassName="rounded-md bg-blue-50 text-blue-700 text-xs font-medium"
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1882,9 +1906,16 @@ export function UserManagement() {
                     return (
                       <TableRow key={user.id}>
                         <TableCell className="font-medium">
-                          {user.name?.trim() || employee?.name || (
-                            <span className="text-gray-400">—</span>
-                          )}
+                          <div className="flex items-center gap-2.5">
+                            <UserAvatar
+                              user={user}
+                              employee={employee}
+                              name={user.name?.trim() || employee?.name || user.email}
+                            />
+                            {user.name?.trim() || employee?.name || (
+                              <span className="text-gray-400">—</span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-sm text-gray-700">
                           {user.username?.trim() || user.email}

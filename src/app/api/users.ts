@@ -1,4 +1,4 @@
-import { apiJson, apiVoid } from './client';
+import { apiJson, apiVoid, apiFetch, ApiError } from './client';
 
 export type UserRole = 'admin' | 'manager' | 'employee';
 
@@ -17,6 +17,10 @@ export interface User {
   isActive: boolean;
   lastLogin?: string | null;
   createdAt?: string;
+  /** V388 — the user's own photo path ("has a photo" flag), set only
+   *  for users without a linked employee; a linked user's photo is the
+   *  employee's. Load it with useProfileImage(userPhotoKey(id), …). */
+  profileImage?: string | null;
 }
 
 export interface CreateUserRequest {
@@ -80,6 +84,15 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<User>
 
 export async function get(id: string): Promise<User> {
   return apiJson(`/api/v1/users/${id}`);
+}
+
+/** V388 — blob URL of a user's photo, null on 404 (none). Admin only. */
+export async function fetchProfileImageBlobUrl(id: string): Promise<string | null> {
+  // no-cache — see fetchProfileImageBlobUrl (documents.ts).
+  const res = await apiFetch(`/api/v1/users/${id}/profile-image`, { cache: 'no-cache' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(`Profile image fetch failed (${res.status})`, res.status, `/api/v1/users/${id}/profile-image`);
+  return URL.createObjectURL(await res.blob());
 }
 
 export async function create(req: CreateUserRequest): Promise<User> {
