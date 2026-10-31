@@ -60,8 +60,8 @@ const EMPTY_FORM: FormState = {
 export function StockAdjustments() {
   const { t } = useI18n();
   const { canCreate, canDelete } = useAuth();
-  const canAdd    = canCreate('stock_adjustment');
-  const canRemove = canDelete('stock_adjustment');
+  const canAdd    = canCreate('adjustment');
+  const canRemove = canDelete('adjustment');
 
   const [rows, setRows] = useState<adjustmentsApi.StockAdjustment[]>([]);
   const [loading, setLoading] = useState(false);

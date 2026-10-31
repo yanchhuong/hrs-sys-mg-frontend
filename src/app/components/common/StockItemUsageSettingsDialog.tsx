@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   FileText, FileSignature, Receipt, ShoppingBag, ShoppingCart, Save, Info,
-  Warehouse as WarehouseIcon, Eye, Plus, Pencil, Trash2, Loader2, ScanBarcode,
+  Warehouse as WarehouseIcon, Eye, Plus, Pencil, Trash2, Loader2, ScanBarcode, Users, Search,
 } from 'lucide-react';
 
 import {
@@ -21,6 +21,8 @@ import { Textarea } from '../ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as itemsApi from '../../api/items';
 import * as warehousesApi from '../../api/warehouses';
+import * as usersApi from '../../api/users';
+import { useAuth } from '../../context/AuthContext';
 
 interface Props {
   open: boolean;
@@ -71,6 +73,16 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
   const [whSaving, setWhSaving] = useState(false);
   const [whDeleteTarget, setWhDeleteTarget] = useState<warehousesApi.Warehouse | null>(null);
 
+  // V389 — users assigned to a warehouse. Only an admin assigns (the
+  // server refuses anyone else, and only an admin may list users), so the
+  // picker, the user list and the userIds in the save are admin-only.
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
+  const [allUsers, setAllUsers] = useState<usersApi.User[]>([]);
+  const [userQuery, setUserQuery] = useState('');
+  const userLabel = (u: usersApi.User) => u.name?.trim() || u.email;
+  const userById = new Map(allUsers.map(u => [u.id, u]));
+
   // Re-fetch usage settings on every dialog open so closing without
   // saving leaves no in-memory stale state on the next visit.
   useEffect(() => {
@@ -86,6 +98,9 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
   const loadWarehouses = async () => {
     try {
       setWarehouses(await warehousesApi.list());
+      if (isAdmin && allUsers.length === 0) {
+        usersApi.list({ size: 500 }).then(r => setAllUsers(r.data ?? [])).catch(() => { /* picker stays empty */ });
+      }
       setWarehousesLoaded(true);
     } catch (e) {
       // Soft-fail: a tenant without stock.view perm gets a 403, the
@@ -165,7 +180,8 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
 
   const openCreateWarehouse = () => {
     setWhEditing(null);
-    setWhForm({ name: '', code: '', address: '', enabled: true });
+    setWhForm({ name: '', code: '', address: '', enabled: true, userIds: [] });
+    setUserQuery('');
     setWhDialogOpen(true);
   };
   const openEditWarehouse = (w: warehousesApi.Warehouse) => {
@@ -175,7 +191,9 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
       code: w.code ?? '',
       address: w.address ?? '',
       enabled: w.enabled,
+      userIds: w.userIds ?? [],
     });
+    setUserQuery('');
     setWhDialogOpen(true);
   };
 
@@ -189,6 +207,9 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
         code: whForm.code?.trim() || undefined,
         address: whForm.address?.trim() || undefined,
         enabled: whForm.enabled,
+        // Omitted for non-admins: null on the server leaves the
+        // assignments as they are.
+        ...(isAdmin ? { userIds: whForm.userIds ?? [] } : {}),
       };
       if (whEditing) await warehousesApi.update(whEditing.id, payload);
       else           await warehousesApi.create(payload);
@@ -362,6 +383,15 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
                                 {w.address && (
                                   <div className="text-[11px] text-gray-500 truncate">{w.address}</div>
                                 )}
+                                {(w.userIds?.length ?? 0) > 0 && (
+                                  <div className="text-[11px] text-blue-700 truncate flex items-center gap-1"
+                                    title="Only these users see this warehouse's stock">
+                                    <Users className="h-3 w-3 shrink-0" />
+                                    {isAdmin && allUsers.length > 0
+                                      ? w.userIds!.map(id => userById.get(id)).filter(Boolean).map(u => userLabel(u!)).join(', ')
+                                      : `${w.userIds!.length} assigned user${w.userIds!.length === 1 ? '' : 's'}`}
+                                  </div>
+                                )}
                               </div>
                               <div className="flex items-center gap-1 shrink-0">
                                 <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
@@ -462,6 +492,48 @@ export function StockItemUsageSettingsDialog({ open, onOpenChange, onSaved }: Pr
                 onCheckedChange={v => setWhForm({ ...whForm, enabled: v })}
               />
             </div>
+            {isAdmin && (() => {
+              const picked = new Set(whForm.userIds ?? []);
+              const q = userQuery.trim().toLowerCase();
+              const shown = allUsers.filter(u => !q
+                || userLabel(u).toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+              const toggle = (id: string) => {
+                const next = new Set(picked);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                setWhForm({ ...whForm, userIds: [...next] });
+              };
+              return (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-600 flex items-center justify-between">
+                    <span>Users</span>
+                    <span className="text-gray-400 font-normal">{picked.size} selected</span>
+                  </Label>
+                  <div className="relative">
+                    <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Input value={userQuery} onChange={e => setUserQuery(e.target.value)}
+                      placeholder="Search users…" className="h-8 pl-8 text-sm" />
+                  </div>
+                  <div className="border rounded-md max-h-44 overflow-y-auto divide-y">
+                    {shown.length === 0 ? (
+                      <div className="text-center py-4 text-xs text-gray-400">
+                        {allUsers.length === 0 ? 'Loading users…' : 'No user matches that search.'}
+                      </div>
+                    ) : shown.map(u => (
+                      <label key={u.id} className="flex items-center gap-2.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" className="h-4 w-4 accent-blue-600"
+                          checked={picked.has(u.id)} onChange={() => toggle(u.id)} />
+                        <span className="min-w-0 flex-1 truncate">{userLabel(u)}</span>
+                        <span className="text-[11px] text-gray-400 capitalize shrink-0">{u.role}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-gray-500 leading-snug">
+                    People picked here see only the warehouses they are assigned to. Anyone not assigned
+                    to a warehouse sees all of them, and admins always see everything.
+                  </p>
+                </div>
+              );
+            })()}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setWhDialogOpen(false)} disabled={whSaving}>

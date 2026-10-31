@@ -15,6 +15,9 @@ export interface Warehouse {
   enabled: boolean;
   createdAt?: string;
   updatedAt?: string;
+  /** V389 — users assigned to this warehouse. Assigned users see only
+   *  their warehouses' stock; a user assigned nowhere sees everything. */
+  userIds?: string[];
 }
 
 export interface WarehouseRequest {
@@ -23,6 +26,9 @@ export interface WarehouseRequest {
   address?: string;
   manager?: string;
   enabled?: boolean;
+  /** V389 — replaces the assigned users; omit to leave them as they are.
+   *  Admin only on the server. */
+  userIds?: string[];
 }
 
 export async function list(): Promise<Warehouse[]> {
