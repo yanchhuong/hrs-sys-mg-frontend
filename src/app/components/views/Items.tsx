@@ -52,6 +52,7 @@ const CameraBarcodeScanner = lazy(() =>
 );
 import { SearchablePicker } from '../common/SearchablePicker';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
+import { FilterStrip } from '../common/FilterStrip';
 import { makeThumbnailFromUrl } from '../../utils/imageCompress';
 
 interface FormState {
@@ -1470,16 +1471,15 @@ export function Items() {
       )}
 
       <Card>
-        {/* Filters on the left, search on the right — and when they
-            don't fit, the row WRAPS: the filters flow onto as many
-            lines as they need and the search form drops below, still
-            right-aligned. It used to stay one row and scroll sideways,
-            but the scrollbar is hidden (no cue anything is off screen)
-            and on a touch screen the swipe didn't move it, so the
-            search box and Search button sat cut off at the card edge
-            (iPad, 1194px). Each control keeps its natural width. */}
-        <CardHeader className="flex flex-row flex-wrap items-end justify-between gap-x-4 gap-y-3 space-y-0">
-          <div className="flex flex-wrap items-end gap-x-4 gap-y-3 min-w-0">
+        {/* Filters on the left, search on the right, in ONE row. When
+            they don't fit, the row scrolls sideways like a wide table's
+            header: swipe on touch, or hold and drag a gap with the mouse.
+            FilterStrip fades the edge that has more off screen — the cue
+            the old hidden-scrollbar version lacked — and its
+            touch-action fixes the iPad swipe that didn't move it (which
+            is why this row wrapped onto two lines for a while). */}
+        <CardHeader className="block space-y-0">
+          <FilterStrip>
             {rows.length > 0 && (
               <>
                 <select
@@ -1645,87 +1645,87 @@ export function Items() {
                 )}
               </>
             )}
-          </div>
-          <form onSubmit={onSearchSubmit} className="flex items-center gap-2 shrink-0 ml-auto">
-            {/* Warehouse filter — shown only when the feature gate is
-                on. "All" = empty value, picks one warehouse otherwise.
-                Re-runs the list call via the warehouseFilter useEffect. */}
-            {warehouseFeatureOn && (
-              <div className="flex items-center gap-1.5">
-                <WarehouseIcon className="h-3.5 w-3.5 text-gray-500" />
-                <select
-                  value={warehouseFilter}
-                  onChange={e => setWarehouseFilter(e.target.value)}
-                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  aria-label="Filter by warehouse"
+            <form onSubmit={onSearchSubmit} className="flex items-center gap-2 shrink-0 ml-auto">
+              {/* Warehouse filter — shown only when the feature gate is
+                  on. "All" = empty value, picks one warehouse otherwise.
+                  Re-runs the list call via the warehouseFilter useEffect. */}
+              {warehouseFeatureOn && (
+                <div className="flex items-center gap-1.5">
+                  <WarehouseIcon className="h-3.5 w-3.5 text-gray-500" />
+                  <select
+                    value={warehouseFilter}
+                    onChange={e => setWarehouseFilter(e.target.value)}
+                    className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    aria-label="Filter by warehouse"
+                  >
+                    <option value="">All warehouses</option>
+                    {warehouses.filter(w => w.enabled).map(w => (
+                      <option key={w.id} value={w.id}>
+                        {w.code ? `${w.code} — ${w.name}` : w.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {/* v-items-search-suggestions — typeahead over the loaded
+                  rows; matched substring is highlighted in each row.
+                  Source is `rows` (already loaded window) so the
+                  dropdown doesn't need an extra fetch. Picking a
+                  suggestion drops the name into the search box and the
+                  table narrows to that row. */}
+              <SearchWithSuggestions
+                value={search}
+                onChange={(v) => {
+                  setSearch(v);
+                  // v-items-suggestion-pick-by-id — any typing after a
+                  // suggestion pick reverts to server-based search.
+                  if (pickedItemId) setPickedItemId(null);
+                }}
+                placeholder="Search name or SKU…"
+                wrapperClassName="w-64"
+                className="h-9"
+                suggestions={rows.map(r => ({
+                  label: r.name,
+                  secondary: r.sku || undefined,
+                }))}
+                /* v-items-suggestion-pick-by-id — display the name in
+                   the search box (what the operator recognises), and
+                   pin the client-side filter to the picked row's ID.
+                   Server search is skipped — we already know which row
+                   the operator wants. Reliable for non-ASCII names
+                   that hit server LIKE mismatches. */
+                onPick={(s) => {
+                  const row = rows.find(r =>
+                    r.name === s.label && (r.sku ?? undefined) === s.secondary,
+                  );
+                  if (row) {
+                    setSearch(s.label);
+                    setPickedItemId(row.id);
+                  }
+                }}
+              />
+              {/* v-items-scan-to-stock-in — camera scan button next to
+                  the search input. Only surfaces when the barcode
+                  feature is on. Decoded value routes through
+                  getByBarcode; if the item exists we open the
+                  Increase Stock dialog straight away (no click into
+                  the row's + icon). */}
+              {barcodeFeatureOn && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  title="Scan barcode to increase stock"
+                  aria-label="Scan barcode to increase stock"
+                  onClick={() => setToolbarScannerOpen(true)}
                 >
-                  <option value="">All warehouses</option>
-                  {warehouses.filter(w => w.enabled).map(w => (
-                    <option key={w.id} value={w.id}>
-                      {w.code ? `${w.code} — ${w.name}` : w.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {/* v-items-search-suggestions — typeahead over the loaded
-                rows; matched substring is highlighted in each row.
-                Source is `rows` (already loaded window) so the
-                dropdown doesn't need an extra fetch. Picking a
-                suggestion drops the name into the search box and the
-                table narrows to that row. */}
-            <SearchWithSuggestions
-              value={search}
-              onChange={(v) => {
-                setSearch(v);
-                // v-items-suggestion-pick-by-id — any typing after a
-                // suggestion pick reverts to server-based search.
-                if (pickedItemId) setPickedItemId(null);
-              }}
-              placeholder="Search name or SKU…"
-              wrapperClassName="w-64"
-              className="h-9"
-              suggestions={rows.map(r => ({
-                label: r.name,
-                secondary: r.sku || undefined,
-              }))}
-              /* v-items-suggestion-pick-by-id — display the name in
-                 the search box (what the operator recognises), and
-                 pin the client-side filter to the picked row's ID.
-                 Server search is skipped — we already know which row
-                 the operator wants. Reliable for non-ASCII names
-                 that hit server LIKE mismatches. */
-              onPick={(s) => {
-                const row = rows.find(r =>
-                  r.name === s.label && (r.sku ?? undefined) === s.secondary,
-                );
-                if (row) {
-                  setSearch(s.label);
-                  setPickedItemId(row.id);
-                }
-              }}
-            />
-            {/* v-items-scan-to-stock-in — camera scan button next to
-                the search input. Only surfaces when the barcode
-                feature is on. Decoded value routes through
-                getByBarcode; if the item exists we open the
-                Increase Stock dialog straight away (no click into
-                the row's + icon). */}
-            {barcodeFeatureOn && (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                title="Scan barcode to increase stock"
-                aria-label="Scan barcode to increase stock"
-                onClick={() => setToolbarScannerOpen(true)}
-              >
-                <ScanBarcode className="h-4 w-4" />
-              </Button>
-            )}
-            <Button type="submit" variant="outline" size="sm">Search</Button>
-          </form>
+                  <ScanBarcode className="h-4 w-4" />
+                </Button>
+              )}
+              <Button type="submit" variant="outline" size="sm">Search</Button>
+            </form>
+          </FilterStrip>
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (

@@ -122,6 +122,26 @@ html.lang-km .text-lg  { font-size: 0.9rem;   }  /* was 1.125rem */
    forced per-page one-off overrides to pack them left. Pack items
    left everywhere by default; wide-screen surfaces that legitimately
    want to spread controls can add `justify-between` inline. */
+/* <FilterStrip> edge fades — the cue that more controls sit off-screen
+   on that side. The component sets the attributes from its scroll
+   position; a plain .filter-strip never gets them. A strip that can
+   scroll shows the grab cursor on its gaps (controls keep their own). */
+.filter-strip[data-fade-right] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+.filter-strip[data-fade-left] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px);
+  mask-image: linear-gradient(to right, transparent, #000 28px);
+}
+.filter-strip[data-fade-left][data-fade-right] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+.filter-strip[data-fade-left],
+.filter-strip[data-fade-right] {
+  cursor: grab;
+}
 /* Reveal a slim scrollbar on hover (desktop only). Touch devices
    pass @media (hover: hover) as `none`, so a phone tap never
    flashes a scrollbar. */

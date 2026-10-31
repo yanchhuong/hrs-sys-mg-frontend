@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { cn } from "./utils";
+import { startDragPan } from "../../utils/dragPan";
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   const wrapRef = React.useRef<HTMLDivElement>(null);
@@ -39,26 +40,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     // Nothing to pan when the table already fits — skip and let the
     // click land normally so header clicks (sort etc) still work.
     if (wrap.scrollWidth <= wrap.clientWidth + 1) return;
-    const startX = e.clientX;
-    const startScroll = wrap.scrollLeft;
-    let moved = false;
-    const move = (ev: MouseEvent) => {
-      const dx = ev.clientX - startX;
-      if (!moved && Math.abs(dx) < 3) return; // drag threshold
-      moved = true;
-      wrap.scrollLeft = startScroll - dx;
-    };
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-    document.body.style.cursor = 'grabbing';
-    document.body.style.userSelect = 'none';
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-    e.preventDefault();
+    startDragPan(e, wrap);
   }, []);
 
   return (
