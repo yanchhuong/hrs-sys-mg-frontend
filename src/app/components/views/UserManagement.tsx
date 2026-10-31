@@ -152,26 +152,6 @@ const MODULES: ModuleDef[] = [
   { key: 'increase',          label: 'Increase',          description: 'Salary increases and bonuses',                                parent: 'payroll-mgmt' },
   { key: 'deduction',         label: 'Deduction',         description: 'Salary deductions',                                           parent: 'payroll-mgmt' },
 
-  // v-reports-header-only — the Reports row is a section header,
-  // matching the sidebar's REPORTS group. Its children (Attendance
-  // Report / Payroll Report / Compliance / Sale Ledger / Purchase
-  // Ledger / Profit & Loss) each own their own permission key, so
-  // there's nothing to independently toggle at the parent level.
-  // Legacy `reports:view` grants still open the leaves via the
-  // parent-cascade helper in ReportController.
-  { key: 'reports',           label: 'Reports',           description: '', header: true },
-  { key: 'attendance-report', label: 'Attendance Report', description: 'Per-employee hours + late + leave used',                      parent: 'reports' },
-  { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',              parent: 'reports' },
-  { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',                  parent: 'reports' },
-  // v-report-leaves-first-class (V267) — each report leaf now owns its
-  // permission key. Endpoints accept the specific key OR the parent
-  // (invoice / bill), so a role can be granted the report without also
-  // unlocking the raw Invoice / Bill pages. Legacy tenants get seeded
-  // by the V267 backfill so nothing regresses on upgrade.
-  { key: 'sale-ledger',       label: 'Sale Ledger',       description: 'Customer-side invoice ledger',                                parent: 'reports' },
-  { key: 'purchase-ledger',   label: 'Purchase Ledger',   description: 'Vendor-side bill ledger',                                     parent: 'reports' },
-  { key: 'profit-loss',       label: 'Profit & Loss',     description: 'Sale income minus Purchase expense',                          parent: 'reports' },
-
   { key: 'sales',             label: 'Sale',              description: '',                                                            header: true },
   { key: 'customer',          label: 'Customers',         description: 'Individual + business customers (TIN, representative, site)', parent: 'sales' },
   { key: 'quotation',         label: 'Quotation',         description: 'Sale quotes sent to customers (convert to Invoice)',          parent: 'sales' },
@@ -287,6 +267,26 @@ const MODULES: ModuleDef[] = [
   { key: 'member',            label: 'Members',           description: 'Member roster (Customer lens with kind=member) — profile, type, effective / expiry', parent: 'library-group' },
   { key: 'book',              label: 'Payment History',   description: 'Membership invoices + receipts, and the book catalog behind the Activity picker', parent: 'library-group' },
   { key: 'reading',           label: 'Activity',          description: 'Member activities — reading, meeting, conference, other',                       parent: 'library-group' },
+
+  // v-reports-header-only — the Reports row is a section header,
+  // matching the sidebar's REPORTS group. Its children (Attendance
+  // Report / Payroll Report / Compliance / Sale Ledger / Purchase
+  // Ledger / Profit & Loss) each own their own permission key, so
+  // there's nothing to independently toggle at the parent level.
+  // Legacy `reports:view` grants still open the leaves via the
+  // parent-cascade helper in ReportController.
+  { key: 'reports',           label: 'Reports',           description: '', header: true },
+  { key: 'attendance-report', label: 'Attendance Report', description: 'Per-employee hours + late + leave used',                      parent: 'reports' },
+  { key: 'payroll-report',    label: 'Payroll Report',    description: 'Monthly payroll batches and earnings breakdown',              parent: 'reports' },
+  { key: 'compliance',        label: 'Compliance',        description: 'NSSF / tax / labour-law compliance summary',                  parent: 'reports' },
+  // v-report-leaves-first-class (V267) — each report leaf now owns its
+  // permission key. Endpoints accept the specific key OR the parent
+  // (invoice / bill), so a role can be granted the report without also
+  // unlocking the raw Invoice / Bill pages. Legacy tenants get seeded
+  // by the V267 backfill so nothing regresses on upgrade.
+  { key: 'sale-ledger',       label: 'Sale Ledger',       description: 'Customer-side invoice ledger',                                parent: 'reports' },
+  { key: 'purchase-ledger',   label: 'Purchase Ledger',   description: 'Vendor-side bill ledger',                                     parent: 'reports' },
+  { key: 'profit-loss',       label: 'Profit & Loss',     description: 'Sale income minus Purchase expense',                          parent: 'reports' },
 
   // Settings group — matrix rows mirror the sidebar leaves 1:1 so the
   // admin reading this section sees the same names they navigate to.

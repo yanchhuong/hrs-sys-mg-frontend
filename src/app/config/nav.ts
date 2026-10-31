@@ -159,7 +159,6 @@ export interface NavGroup {
 export const NAV_GROUPS: NavGroup[] = [
   { id: 'time-tracking',  labelKey: 'nav.time_tracking', icon: Clock },
   { id: 'payroll-mgmt',   labelKey: 'nav.payroll_mgmt',  icon: DollarSign },
-  { id: 'reports-group',  labelKey: 'nav.reports',       icon: BarChart3 },
   { id: 'sales-group',    labelKey: 'nav.sales',         icon: ShoppingCart },
   { id: 'receivables-group', labelKey: 'nav.receivables', icon: CreditCard },
   { id: 'purchases',      labelKey: 'nav.purchases',     icon: ShoppingBag },
@@ -178,6 +177,7 @@ export const NAV_GROUPS: NavGroup[] = [
   // tenant doesn't have any of the three modules enabled; same
   // collapsed-when-empty behaviour as the other vertical groups above.
   { id: 'library-group',   labelKey: 'nav.library',      icon: UserSquare2 },
+  { id: 'reports-group',  labelKey: 'nav.reports',       icon: BarChart3 },
   { id: 'settings-group', labelKey: 'nav.setting',       icon: Settings },
 ];
 
@@ -200,32 +200,6 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'benefit-calculator', labelKey: 'nav.benefit_calculator',    icon: Calculator,      module: 'benefit-calculator', component: BenefitCalculator, group: 'payroll-mgmt' },
   { id: 'increase',           labelKey: 'nav.increase',              icon: TrendingUp,      module: 'increase',        component: Increase,          group: 'payroll-mgmt' },
   { id: 'deduction',          labelKey: 'nav.deduction',             icon: Minus,           module: 'deduction',       component: Deduction,         group: 'payroll-mgmt' },
-
-  // Reports has been split into one leaf per sub-module (V77). Each
-  // leaf's `module` is the sub-module key so the Permission Matrix
-  // gates them independently (a custom role can be granted Attendance
-  // Report but not Compliance). Same key drives both gates: canView
-  // (role permission) AND isModuleAvailable (tenant catalog).
-  { id: 'attendance-report', labelKey: 'nav.reports.attendance',     icon: Clock,           module: 'attendance-report',  component: Reports, group: 'reports-group', initialView: 'attendance' },
-  { id: 'payroll-report',    labelKey: 'nav.reports.payroll',        icon: DollarSign,      module: 'payroll-report',     component: Reports, group: 'reports-group', initialView: 'payroll' },
-  { id: 'compliance-report', labelKey: 'nav.reports.compliance',     icon: FileText,        module: 'compliance',         component: Reports, group: 'reports-group', initialView: 'compliance' },
-  // Sale / Purchase Ledger reports — gated by the parent module
-  // (`invoice` / `bill`) so they show up whenever Super Admin has
-  // enabled the Sale or Purchase side for the tenant, without
-  // needing a separate flag in the tenant module catalog.
-  // v-report-leaves-first-class — each report leaf gates on its own
-  // permission key now (V267 seeded these for existing tenants that
-  // already had invoice/bill grants).
-  { id: 'sale-ledger',       labelKey: 'nav.reports.sale_ledger',     icon: FileText,        module: 'sale-ledger',        component: SaleLedger,     group: 'reports-group' },
-  { id: 'purchase-ledger',   labelKey: 'nav.reports.purchase_ledger', icon: FileText,        module: 'purchase-ledger',    component: PurchaseLedger, group: 'reports-group' },
-  // Profit & Loss — pulls income from the Sale side and expenses from
-  // the Purchase side. Gated on `invoice` for visibility (matches Sale
-  // Ledger); the backend additionally requires bill.view so a Sales-
-  // only user can't see the expense numbers.
-  // v-report-leaves-first-class — P&L gates on its own key now.
-  // requireAlso dropped: the endpoint's OR clause accepts the
-  // profit-loss key on its own (no need to also have invoice + bill).
-  { id: 'profit-loss',       labelKey: 'nav.reports.profit_loss',     icon: TrendingUp,      module: 'profit-loss',        component: ProfitLossReport, group: 'reports-group' },
 
   { id: 'customers',         labelKey: 'nav.customers',              icon: UserCheck,       module: 'customer',           component: Customers,                group: 'sales-group' },
   { id: 'quotations',        labelKey: 'nav.quotations',             icon: FileText,        module: 'quotation',          component: Quotations,               group: 'sales-group' },
@@ -353,6 +327,34 @@ export const NAV_LEAVES: NavLeaf[] = [
   // Warehouse CRUD lives inside Item Settings → Warehouse section
   // (the gear popup on the Items page). No standalone sidebar leaf —
   // one surface is enough; duplicating both was confusing.
+
+  // Reports sits just above Settings (moved from under Payroll so it
+  // no longer lands right below Dashboard for Sale-only tenants).
+  // Reports has been split into one leaf per sub-module (V77). Each
+  // leaf's `module` is the sub-module key so the Permission Matrix
+  // gates them independently (a custom role can be granted Attendance
+  // Report but not Compliance). Same key drives both gates: canView
+  // (role permission) AND isModuleAvailable (tenant catalog).
+  { id: 'attendance-report', labelKey: 'nav.reports.attendance',     icon: Clock,           module: 'attendance-report',  component: Reports, group: 'reports-group', initialView: 'attendance' },
+  { id: 'payroll-report',    labelKey: 'nav.reports.payroll',        icon: DollarSign,      module: 'payroll-report',     component: Reports, group: 'reports-group', initialView: 'payroll' },
+  { id: 'compliance-report', labelKey: 'nav.reports.compliance',     icon: FileText,        module: 'compliance',         component: Reports, group: 'reports-group', initialView: 'compliance' },
+  // Sale / Purchase Ledger reports — gated by the parent module
+  // (`invoice` / `bill`) so they show up whenever Super Admin has
+  // enabled the Sale or Purchase side for the tenant, without
+  // needing a separate flag in the tenant module catalog.
+  // v-report-leaves-first-class — each report leaf gates on its own
+  // permission key now (V267 seeded these for existing tenants that
+  // already had invoice/bill grants).
+  { id: 'sale-ledger',       labelKey: 'nav.reports.sale_ledger',     icon: FileText,        module: 'sale-ledger',        component: SaleLedger,     group: 'reports-group' },
+  { id: 'purchase-ledger',   labelKey: 'nav.reports.purchase_ledger', icon: FileText,        module: 'purchase-ledger',    component: PurchaseLedger, group: 'reports-group' },
+  // Profit & Loss — pulls income from the Sale side and expenses from
+  // the Purchase side. Gated on `invoice` for visibility (matches Sale
+  // Ledger); the backend additionally requires bill.view so a Sales-
+  // only user can't see the expense numbers.
+  // v-report-leaves-first-class — P&L gates on its own key now.
+  // requireAlso dropped: the endpoint's OR clause accepts the
+  // profit-loss key on its own (no need to also have invoice + bill).
+  { id: 'profit-loss',       labelKey: 'nav.reports.profit_loss',     icon: TrendingUp,      module: 'profit-loss',        component: ProfitLossReport, group: 'reports-group' },
 
   { id: 'settings',           labelKey: 'nav.setting.general',       icon: Settings,        module: 'settings',        component: SettingsView,            group: 'settings-group' },
   // Attendance / Employee Settings only make sense when the role
