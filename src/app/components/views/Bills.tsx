@@ -597,7 +597,7 @@ export function Bills() {
           <h1 className="text-3xl font-bold">{t('nav.bills')}</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -2303,7 +2303,7 @@ function BillDetailDialog({
                 the whole action row from the Print output. */}
             {invoice && (
               <div className="flex gap-1.5 mr-8 print:hidden">
-                <Button size="sm" variant="outline" onClick={() => { void printWithKhmerFonts(); }} title="Print invoice">
+                <Button size="sm" variant="outline" onClick={() => printWithKhmerFonts()} title="Print invoice">
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
                 {/* Edit available only on draft + progress per the

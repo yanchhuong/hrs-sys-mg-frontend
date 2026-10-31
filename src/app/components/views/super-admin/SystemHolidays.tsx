@@ -10,7 +10,7 @@ import { DateInput } from '../../common/DateInput';
 import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../../common/ListStates';
 import { Card, CardContent } from '../../ui/card';
-import { Button } from '../../ui/button';
+import { Button, PlainButton } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
@@ -168,12 +168,12 @@ export function SystemHolidays() {
                     <Badge variant="outline" className="capitalize text-[11px]">{r.type}</Badge>
                   </TableCell>
                   <TableCell className="text-center">
-                    <button type="button" onClick={() => togglePaid(r, !r.isPaid)}
+                    <PlainButton type="button" onClick={() => togglePaid(r, !r.isPaid)}
                       className={`inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border transition ${
                         r.isPaid ? TONE_CLASS.success : TONE_CLASS.neutral
                       }`} title="Click to toggle">
                       {r.isPaid ? 'Paid' : 'Unpaid'}
-                    </button>
+                    </PlainButton>
                   </TableCell>
                   <TableCell className="text-xs text-gray-500">{r.description ?? '—'}</TableCell>
                   <TableCell>

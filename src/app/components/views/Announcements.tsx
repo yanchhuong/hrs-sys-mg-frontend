@@ -571,7 +571,7 @@ export function Announcements() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -681,7 +681,7 @@ export function Announcements() {
                     <DocAuditLine compact createdBy={a.createdByName} updatedBy={a.updatedByName} className="max-w-[180px]" />
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" className="h-7" onClick={(e) => { e.stopPropagation(); void openDetail(a); }}>
+                    <Button size="sm" variant="ghost" className="h-7" onClick={(e) => { e.stopPropagation(); return openDetail(a); }}>
                       View
                     </Button>
                   </TableCell>
@@ -1158,7 +1158,7 @@ export function Announcements() {
               <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
                 Cancel
               </Button>
-              <Button variant="outline" onClick={() => void submit('draft')} disabled={creating}>
+              <Button variant="outline" onClick={() => submit('draft')} disabled={creating}>
                 <FileEdit className="h-3.5 w-3.5 mr-1.5" />
                 Draft
               </Button>

@@ -339,7 +339,7 @@ export function PlatformTelegram() {
               </TooltipProvider>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -475,7 +475,7 @@ export function PlatformTelegram() {
                             size="sm"
                             variant="ghost"
                             className="h-7"
-                            onClick={() => void testError()}
+                            onClick={() => testError()}
                             disabled={errorTesting}
                             title="Send a test message to the ops channel"
                           >

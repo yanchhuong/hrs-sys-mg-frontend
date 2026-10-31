@@ -223,7 +223,7 @@ export function AllDocumentsTab() {
                 Clear
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => void load(typeFilter)} disabled={loading}>
+            <Button variant="outline" size="sm" onClick={() => load(typeFilter)} disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>

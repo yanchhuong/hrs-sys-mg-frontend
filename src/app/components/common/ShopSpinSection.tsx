@@ -4,7 +4,7 @@ import { Gift, Plus, Trash2, Loader2, Ticket, CheckCircle2, Search, Trophy, Phon
 import { useDragReorder } from '../../hooks/useDragReorder';
 import { Switch } from '../ui/switch';
 import { Input } from '../ui/input';
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import * as shopApi from '../../api/shop';
 import { SpinWinnersDialog } from './SpinWinnersDialog';
 import { PRIZE_KINDS, COUPON_DAY_CHOICES, couponDaysLabel, autoLabel, fmtExpiry } from '../../utils/spinPrize';
@@ -228,13 +228,13 @@ export function ShopSpinSection() {
         </div>
         <div className="inline-flex shrink-0 rounded-md border p-0.5" role="radiogroup" aria-label="Spin & Win mode">
           {(['normal', 'demo'] as const).map(m => (
-            <button
+            <PlainButton
               key={m}
               type="button"
               role="radio"
               aria-checked={mode === m}
               disabled={busy}
-              onClick={() => void setMode(m)}
+              onClick={() => setMode(m)}
               className={`h-7 rounded px-2.5 text-xs font-medium transition-colors disabled:opacity-60 ${
                 mode === m
                   ? (m === 'demo' ? 'bg-amber-500 text-white' : 'bg-blue-600 text-white')
@@ -242,7 +242,7 @@ export function ShopSpinSection() {
               }`}
             >
               {m === 'normal' ? 'Normal' : 'Demo'}
-            </button>
+            </PlainButton>
           ))}
         </div>
       </div>

@@ -164,7 +164,7 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
           <div className="rounded-md border overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50">
               <div className="text-xs font-semibold uppercase text-gray-600">Existing types</div>
-              <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
+              <Button size="sm" variant="outline" onClick={() => load()} disabled={loading}>
                 <RefreshCcw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </div>
@@ -195,7 +195,7 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
                             className="h-7 w-7 text-red-600 hover:text-red-700"
                             aria-label={`Delete ${t.name}`}
                             title="Delete"
-                            onClick={(e) => { e.stopPropagation(); void remove(t); }}
+                            onClick={(e) => { e.stopPropagation(); return remove(t); }}
                             onKeyDown={(e) => e.stopPropagation()}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -257,7 +257,7 @@ export function MembershipTypesDialog({ open, onOpenChange, onChanged }: Props) 
                       onCheckedChange={v => setForm({ ...form, active: v })} />
             </div>
             <div className="flex items-center gap-2 pt-1">
-              <Button onClick={() => void save()} disabled={saving}>
+              <Button onClick={() => save()} disabled={saving}>
                 {editingId
                   ? (<><Pencil className="h-4 w-4 mr-2" /> Save Changes</>)
                   : (<><Plus className="h-4 w-4 mr-2" /> Add Type</>)}
@@ -390,7 +390,7 @@ function RemindersPanel({ onSaved }: { onSaved?: () => void }) {
       </div>
 
       <div className="flex justify-end pt-2">
-        <Button onClick={() => void save()} disabled={saving}>
+        <Button onClick={() => save()} disabled={saving}>
           {saving ? 'Saving…' : 'Save Reminder Settings'}
         </Button>
       </div>

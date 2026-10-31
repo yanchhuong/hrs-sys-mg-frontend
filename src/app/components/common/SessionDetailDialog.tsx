@@ -256,7 +256,7 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Close</Button>
           {session && (
             <>
-              <Button onClick={() => void save()} disabled={saving}>
+              <Button onClick={() => save()} disabled={saving}>
                 <Save className="h-4 w-4 mr-1.5" /> {saving ? 'Saving…' : 'Save Attendance'}
               </Button>
               {/* Complete only offered when the session isn't already
@@ -264,7 +264,7 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
                   safe on the backend but re-completing is noise. */}
               {session.status !== 'completed' && session.status !== 'cancelled' && (
                 <Button variant="default" className="bg-emerald-600 hover:bg-emerald-700"
-                  onClick={() => void save({ thenComplete: true })} disabled={saving}>
+                  onClick={() => save({ thenComplete: true })} disabled={saving}>
                   <CheckCircle2 className="h-4 w-4 mr-1.5" /> Complete Session
                 </Button>
               )}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader } from '../../ui/card';
-import { Button } from '../../ui/button';
+import { Button, PlainButton } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Badge } from '../../ui/badge';
 import { Label } from '../../ui/label';
@@ -149,7 +149,7 @@ export function AgencyTasksPage() {
           </PageTitleTooltip>
         </h1>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -222,7 +222,7 @@ export function AgencyTasksPage() {
                 const overdue = !!t.dueDate && t.status !== 'done' && t.dueDate.slice(0, 10) < today;
                 return (
                   <li key={t.id} className="py-3 px-1 hover:bg-gray-50 cursor-pointer flex items-start gap-3">
-                    <button
+                    <PlainButton
                       type="button"
                       onClick={() => cycleStatus(t)}
                       className="mt-0.5 shrink-0"
@@ -232,7 +232,7 @@ export function AgencyTasksPage() {
                         {t.status.replace('_', ' ')}
                         <ChevronDown className="h-2.5 w-2.5" />
                       </Badge>
-                    </button>
+                    </PlainButton>
                     <button
                       type="button"
                       onClick={() => openEdit(t)}

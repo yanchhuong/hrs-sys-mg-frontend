@@ -195,7 +195,7 @@ export function CashAdvances() {
           >
             <Settings className="h-4 w-4" />
           </Button>
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -656,7 +656,7 @@ function CashAdvanceFormDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={saving}>
+          <Button onClick={() => save()} disabled={saving}>
             {saving ? 'Saving…' : (editing ? 'Save' : 'Create')}
           </Button>
         </DialogFooter>
@@ -1059,7 +1059,7 @@ function CashAdvanceDetailDialog({
                 </Select>
               </div>
               <div className="col-span-1">
-                <Button size="sm" className="h-9 w-full" disabled={busy} onClick={() => void submitExpense()}>
+                <Button size="sm" className="h-9 w-full" disabled={busy} onClick={() => submitExpense()}>
                   <Plus className="h-3.5 w-3.5" />
                 </Button>
               </div>

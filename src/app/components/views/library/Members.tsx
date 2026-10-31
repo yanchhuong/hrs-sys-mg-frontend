@@ -433,7 +433,7 @@ export function Members() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -593,7 +593,7 @@ export function Members() {
                           </Button>
                         )}
                         {canDelete('member') && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete" aria-label="Delete" onClick={() => void remove(m)}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete" aria-label="Delete" onClick={() => remove(m)}>
                             <Trash2 className="h-3.5 w-3.5 text-red-600" />
                           </Button>
                         )}
@@ -833,7 +833,7 @@ export function Members() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => void save()} disabled={saving}>
+            <Button onClick={() => save()} disabled={saving}>
               {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Member'}
             </Button>
           </DialogFooter>

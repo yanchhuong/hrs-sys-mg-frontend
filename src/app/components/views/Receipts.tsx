@@ -213,7 +213,7 @@ export function Receipts() {
       <div className="page-header-strip">
         <h1 className="text-3xl font-bold">{t('nav.receipts')}</h1>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -1318,7 +1318,7 @@ function ReceiptPaymentsPanel({
                       </Tooltip>
                     ) : (
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600"
-                              onClick={() => void handleDelete(r.id)} title="Delete">
+                              onClick={() => handleDelete(r.id)} title="Delete">
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     )}

@@ -628,7 +628,7 @@ export function Invoices({
           <h1 className="text-3xl font-bold">{T.pageTitle ?? t('nav.invoices')}</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -2919,7 +2919,7 @@ function InvoiceDetailDialog({
                 below the title instead of overflowing horizontally. */}
             {invoice && (
               <div className="flex flex-wrap gap-1.5 justify-end print:hidden">
-                <Button size="sm" variant="outline" onClick={() => { void printInvoiceOrReceipt(invoice); }} title="Print invoice">
+                <Button size="sm" variant="outline" onClick={() => printInvoiceOrReceipt(invoice)} title="Print invoice">
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
                 {/* v-invoice-void-hide-send — hide the entire Send

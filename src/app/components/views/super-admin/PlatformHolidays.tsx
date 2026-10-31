@@ -11,7 +11,7 @@ import { DateInput } from '../../common/DateInput';
 import { TableBodySkeletonRows } from '../../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../../common/ListStates';
 import { Card, CardContent } from '../../ui/card';
-import { Button } from '../../ui/button';
+import { Button, PlainButton } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
@@ -191,7 +191,7 @@ export function PlatformHolidays() {
                     <Badge variant="outline" className="capitalize text-[11px]">{r.type}</Badge>
                   </TableCell>
                   <TableCell className="text-center">
-                    <button
+                    <PlainButton
                       type="button"
                       onClick={() => handleTogglePaid(r, !r.paid)}
                       className={`inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded border transition ${
@@ -200,7 +200,7 @@ export function PlatformHolidays() {
                       title="Click to toggle"
                     >
                       {r.paid ? 'Paid' : 'Unpaid'}
-                    </button>
+                    </PlainButton>
                   </TableCell>
                   <TableCell className="text-xs text-gray-500">{r.description ?? '—'}</TableCell>
                   <TableCell>

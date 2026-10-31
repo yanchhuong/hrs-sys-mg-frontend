@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
@@ -460,7 +460,7 @@ export function InvoiceTemplates() {
                 <CardHeader className="flex flex-row items-center gap-3 py-3">
                   <CardTitle className="text-base">{sectionLabel}</CardTitle>
                   {activeRow ? (
-                    <button
+                    <PlainButton
                       type="button"
                       onClick={() => clearDefault(activeRow)}
                       className="inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px] font-semibold hover:bg-emerald-200 transition"
@@ -468,7 +468,7 @@ export function InvoiceTemplates() {
                     >
                       <Star className="h-3 w-3 fill-current" /> Active: {activeRow.name}
                       <span className="opacity-70 ml-1">· unset</span>
-                    </button>
+                    </PlainButton>
                   ) : (
                     <span
                       className="inline-flex items-center gap-1 rounded bg-gray-100 text-gray-600 px-2 py-0.5 text-[11px] font-medium"

@@ -133,7 +133,7 @@ export function ClubProgramsDialog({ open, onOpenChange, employees }: {
                     )}
                     {canDelete('employee_records') && (
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" title="Delete"
-                        onClick={() => void del(p)}>
+                        onClick={() => del(p)}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     )}
@@ -244,7 +244,7 @@ function ProgramFormDialog({ open, onOpenChange, program, employees, onSaved }: 
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={saving}>
+          <Button onClick={() => save()} disabled={saving}>
             {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
             {program ? 'Save changes' : 'Add program'}
           </Button>
@@ -386,7 +386,7 @@ export function MyClubsPanel() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setApplyTo(null)} disabled={sending}>Cancel</Button>
-            <Button onClick={() => void send()} disabled={sending}>
+            <Button onClick={() => send()} disabled={sending}>
               {sending && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />} Send request
             </Button>
           </DialogFooter>

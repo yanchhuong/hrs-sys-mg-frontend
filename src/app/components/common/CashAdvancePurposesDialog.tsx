@@ -133,7 +133,7 @@ export function CashAdvancePurposesDialog({
               onKeyDown={e => { if (e.key === 'Enter') void add(); }}
               placeholder="e.g. Site Visit, Workshop, Vendor Pickup"
             />
-            <Button size="sm" onClick={() => void add()} disabled={busy || !newLabel.trim()}>
+            <Button size="sm" onClick={() => add()} disabled={busy || !newLabel.trim()}>
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
             </Button>
           </div>

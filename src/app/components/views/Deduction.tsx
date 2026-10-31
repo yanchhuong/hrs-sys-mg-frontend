@@ -1161,7 +1161,7 @@ export function Deduction() {
                 variant="outline"
                 className="text-red-600 hover:text-red-700"
                 disabled={detailsTarget.status !== 'active'}
-                onClick={() => void handleStop(detailsTarget)}
+                onClick={() => handleStop(detailsTarget)}
               >
                 Stop
               </Button>

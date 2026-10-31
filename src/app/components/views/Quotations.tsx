@@ -324,7 +324,7 @@ export function Quotations() {
       <div className="page-header-strip">
         <h1 className="text-3xl font-bold km-title">{t('nav.quotations')}</h1>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -1715,7 +1715,7 @@ function QuotationDetailDialog({
             </div>
             {quotation && (
               <div className="flex gap-1.5 mr-10 print:hidden">
-                <Button size="sm" variant="outline" onClick={() => { void printWithKhmerFonts(); }}>
+                <Button size="sm" variant="outline" onClick={() => printWithKhmerFonts()}>
                   <Printer className="h-3.5 w-3.5 mr-1" /> Print
                 </Button>
                 <DropdownMenu>

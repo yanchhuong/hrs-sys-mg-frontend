@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import { Badge } from '../ui/badge';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -298,14 +298,14 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
               className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 pl-2.5 pr-1 py-0.5 text-xs text-sky-800"
             >
               {ev.label}
-              <button
+              <PlainButton
                 type="button"
                 aria-label={`Remove ${ev.label}`}
                 className="rounded-full p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
                 onClick={() => toggle(g.id, ev.key, false)}
               >
                 <X className="h-3 w-3" />
-              </button>
+              </PlainButton>
             </span>
           ))}
           {off.length > 0 && (

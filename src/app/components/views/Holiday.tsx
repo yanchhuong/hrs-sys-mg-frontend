@@ -603,7 +603,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                 </SelectContent>
               </Select>
             </div>
-            <Button size="sm" onClick={() => void handleCopyAll()}
+            <Button size="sm" onClick={() => handleCopyAll()}
               disabled={busy || availableSystemHolidays.length === 0} className="h-9">
               <CheckCheck className="h-3.5 w-3.5 mr-1.5" />
               Copy all to {targetYear}
@@ -659,7 +659,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                       </TableCell>
                       <TableCell className="text-right">
                         <Button size="sm" variant="outline" className="h-7"
-                          onClick={() => void handleCopyOne(src)} disabled={busy}>
+                          onClick={() => handleCopyOne(src)} disabled={busy}>
                           <Copy className="h-3 w-3 mr-1" /> Copy
                         </Button>
                       </TableCell>

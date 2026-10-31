@@ -203,7 +203,7 @@ export function Encounters() {
               Settings sits immediately to the left of the primary
               button so the gear reads as a modifier of that flow
               rather than a stray control on the far side. */}
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -357,7 +357,7 @@ export function Encounters() {
                             <Button
                               size="sm" variant="ghost"
                               className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                              onClick={() => void deleteEncounter(r)}
+                              onClick={() => deleteEncounter(r)}
                               title="Delete draft"
                             >
                               <Trash2 className="h-3 w-3" />

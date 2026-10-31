@@ -9,7 +9,7 @@ import * as rolesApi from '../../api/roles';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
@@ -639,6 +639,9 @@ export function UserManagement() {
 
   const [customRoles, setCustomRoles] = useState<RoleDef[]>([]);
   const [permissions, setPermissions] = useState<PermissionMatrix>(() => buildDefaultMatrix());
+  // True while Save Changes is in flight — disables the button so a
+  // double-click can't send two overlapping saves.
+  const [savingPerms, setSavingPerms] = useState(false);
   const [roleDescriptions, setRoleDescriptions] = useState<Record<string, string>>(() =>
     Object.fromEntries(BUILT_IN_ROLES.map(r => [r.key, r.description]))
   );
@@ -1280,9 +1283,11 @@ export function UserManagement() {
       toast.success('Permissions saved');
       return;
     }
+    if (savingPerms) return;
     // PUT one grid per role (admin row is always full access — backend
     // rejects writes against admin, so skip it client-side too).
     const targets = roles.filter(r => r.key !== 'admin');
+    setSavingPerms(true);
     try {
       await Promise.all(targets.map(role => {
         const grid: rolesApi.RolePermission[] = [];
@@ -1313,6 +1318,8 @@ export function UserManagement() {
       toast.success(`Saved permissions for ${targets.length} role${targets.length === 1 ? '' : 's'}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to save permissions');
+    } finally {
+      setSavingPerms(false);
     }
   };
 
@@ -1955,9 +1962,9 @@ export function UserManagement() {
                                     </span>
                                   </span>
                                 </button>
-                                <button
+                                <PlainButton
                                   type="button"
-                                  onClick={() => { void handleResetToDefault(user); }}
+                                  onClick={() => handleResetToDefault(user)}
                                   className="w-full flex items-start gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-gray-100"
                                 >
                                   <KeyRound className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
@@ -1973,7 +1980,7 @@ export function UserManagement() {
                                       — user must change on first sign-in.
                                     </span>
                                   </span>
-                                </button>
+                                </PlainButton>
                               </PopoverContent>
                             </Popover>
                             <Button
@@ -2114,12 +2121,12 @@ export function UserManagement() {
                   </CardTitle>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => void handleResetPermissions()}>
+                  <Button variant="outline" onClick={() => handleResetPermissions()}>
                     {USE_MOCKS ? 'Reset to Defaults' : 'Discard Changes'}
                   </Button>
-                  <Button onClick={handleSavePermissions}>
+                  <Button onClick={handleSavePermissions} disabled={savingPerms}>
                     <Save className="h-4 w-4 mr-2" />
-                    Save Changes
+                    {savingPerms ? 'Saving…' : 'Save Changes'}
                   </Button>
                 </div>
               </div>

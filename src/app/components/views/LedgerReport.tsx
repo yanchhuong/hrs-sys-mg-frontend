@@ -316,14 +316,14 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         className="h-9 w-36 text-sm"
         title="To date"
       />
-      <Button size="sm" onClick={() => { void load(); }} disabled={loading} className="h-9 shrink-0">
+      <Button size="sm" onClick={() => load()} disabled={loading} className="h-9 shrink-0">
         {loading ? 'Loading…' : 'Apply'}
       </Button>
       {(from !== defaultFrom || to !== defaultTo) && (
         <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={() => {
           setFrom(defaultFrom);
           setTo(defaultTo);
-          void load({ from: defaultFrom, to: defaultTo });
+          return load({ from: defaultFrom, to: defaultTo });
         }}>
           Clear
         </Button>

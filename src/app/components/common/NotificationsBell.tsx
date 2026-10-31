@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock, MessageCircle, ClipboardCheck, CircleCheck, CircleX, Send, ShoppingBag, Gift, Check, X, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from '../ui/popover';
@@ -244,10 +244,10 @@ export function NotificationsBell({ onNavigate }: {
             )}
           </div>
           {unread > 0 && (
-            <button type="button" onClick={() => void onMarkAll()}
+            <PlainButton type="button" onClick={() => onMarkAll()}
               className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-1">
               <CheckCheck className="h-3 w-3" /> Mark all read
-            </button>
+            </PlainButton>
           )}
         </div>
 
@@ -373,7 +373,7 @@ function ApprovalRowActions({ chain, onDecide }: {
           </Button>
           <Button size="sm" disabled={busy}
             className={`h-7 px-2.5 text-xs ${mode === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
-            onClick={() => void run(mode === 'approve' ? 'approved' : 'rejected')}>
+            onClick={() => run(mode === 'approve' ? 'approved' : 'rejected')}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : mode === 'approve' ? 'Approve' : 'Reject'}
           </Button>
         </>)}

@@ -824,7 +824,7 @@ function AgencyRequestTab() {
                 className="pl-7 h-9 w-64 text-sm"
               />
             </div>
-            <Button variant="outline" size="sm" className="shrink-0" onClick={() => void load()} disabled={loading}>
+            <Button variant="outline" size="sm" className="shrink-0" onClick={() => load()} disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>

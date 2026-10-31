@@ -157,7 +157,7 @@ export function RecordRowActions({ rec, onChanged, onEdit }: {
       {moves.map(to => (
         <Button key={to} variant="ghost" size="icon" className={`h-7 w-7 ${tone(to)}`}
           title={MOVE_LABEL[to] ?? to} aria-label={MOVE_LABEL[to] ?? to}
-          disabled={!!busy} onClick={() => void move(to)}>
+          disabled={!!busy} onClick={() => move(to)}>
           {busy === to ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : icon(to)}
         </Button>
       ))}
@@ -169,7 +169,7 @@ export function RecordRowActions({ rec, onChanged, onEdit }: {
       )}
       {canDelete('employee_records') && (
         <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50"
-          title="Delete" aria-label="Delete record" disabled={!!busy} onClick={() => void del()}>
+          title="Delete" aria-label="Delete record" disabled={!!busy} onClick={() => del()}>
           {busy === 'delete' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
         </Button>
       )}
@@ -443,7 +443,7 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={saving}>
+          <Button onClick={() => save()} disabled={saving}>
             {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
             {record ? 'Save changes' : 'Add record'}
           </Button>

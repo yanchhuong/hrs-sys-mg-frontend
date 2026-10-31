@@ -29,7 +29,7 @@ import {
   Plus, Pencil, Trash2, RefreshCw, Activity, BookOpen, Users2, Presentation, MoreHorizontal, Info, Search,
   Eye, CalendarDays, Clock, MapPin, ImageIcon, UserPlus, X, Check, Crown, Users, Video,
 } from 'lucide-react';
-import { Button } from '../../ui/button';
+import { Button, PlainButton } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
@@ -800,7 +800,7 @@ export function ReadingTracking() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -959,7 +959,7 @@ export function ReadingTracking() {
                             </Button>
                           )}
                           {canDelete('reading') && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void remove(r)} title="Delete" aria-label="Delete">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => remove(r)} title="Delete" aria-label="Delete">
                               <Trash2 className="h-3.5 w-3.5 text-red-600" />
                             </Button>
                           )}
@@ -1330,7 +1330,7 @@ export function ReadingTracking() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => void save()} disabled={saving || coverLoading}>
+            <Button onClick={() => save()} disabled={saving || coverLoading}>
               {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Activity'}
             </Button>
           </DialogFooter>
@@ -1442,25 +1442,25 @@ export function ReadingTracking() {
                                   {RSVP_CHOICES.map(c => {
                                     const on = p.rsvp === c.value;
                                     return (
-                                      <button
+                                      <PlainButton
                                         key={c.value}
                                         type="button"
                                         disabled={guestBusy === p.customerId}
                                         // Clicking the current answer resets it to "invited".
-                                        onClick={() => void setRsvp(p, on ? 'invited' : c.value)}
+                                        onClick={() => setRsvp(p, on ? 'invited' : c.value)}
                                         title={on ? 'Clear answer' : `Mark as ${c.label.toLowerCase()}`}
                                         className={`px-2 py-0.5 text-[11px] border-l first:border-l-0 transition-colors disabled:opacity-50 ${
                                           on ? c.active : 'bg-white text-gray-600 hover:bg-gray-50'
                                         }`}
                                       >
                                         {c.label}
-                                      </button>
+                                      </PlainButton>
                                     );
                                   })}
                                 </div>
                                 <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0"
                                         disabled={guestBusy === p.customerId}
-                                        onClick={() => void removeGuest(p)}
+                                        onClick={() => removeGuest(p)}
                                         title="Remove guest" aria-label="Remove guest">
                                   <X className="h-3.5 w-3.5 text-red-600" />
                                 </Button>

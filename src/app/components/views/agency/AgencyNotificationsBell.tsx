@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Bell, Briefcase, CheckCheck, FileText, Loader2, MailCheck } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { Button } from '../../ui/button';
+import { Button, PlainButton } from '../../ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import * as notifApi from '../../../api/agencyNotifications';
 import type { AgencyNotificationDto } from '../../../api/agencyNotifications';
@@ -95,10 +95,10 @@ export function AgencyNotificationsBell() {
             )}
           </div>
           {unread > 0 && (
-            <button type="button" onClick={() => void onMarkAll()}
+            <PlainButton type="button" onClick={() => onMarkAll()}
               className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-1">
               <CheckCheck className="h-3 w-3" /> Mark all read
-            </button>
+            </PlainButton>
           )}
         </div>
 
@@ -115,7 +115,7 @@ export function AgencyNotificationsBell() {
             </div>
           )}
           {!loading && items.map(n => (
-            <button key={n.id} type="button" onClick={() => void onItemClick(n)}
+            <PlainButton key={n.id} type="button" onClick={() => onItemClick(n)}
               className={`w-full text-left px-4 py-3 border-b border-gray-100 flex items-start gap-2.5
                           hover:bg-gray-50 transition-colors ${n.read ? '' : 'bg-blue-50/30'}`}>
               <TypeIcon type={n.type} />
@@ -138,7 +138,7 @@ export function AgencyNotificationsBell() {
                   )}
                 </div>
               </div>
-            </button>
+            </PlainButton>
           ))}
         </div>
       </PopoverContent>

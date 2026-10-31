@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import { Paperclip, Upload, Download, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import * as attachmentsApi from '../../api/attachments';
@@ -121,22 +121,22 @@ export function AttachmentsPanel({ docType, docId, readOnly }: Props) {
           {rows.map(a => (
             <li key={a.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
               <Paperclip className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-              <button
+              <PlainButton
                 type="button"
                 className="flex-1 text-left truncate hover:underline"
-                onClick={() => void handleDownload(a)}
+                onClick={() => handleDownload(a)}
                 title={a.filename}
               >
                 {a.filename}
-              </button>
+              </PlainButton>
               <span className="text-xs text-gray-400 shrink-0">{formatSize(a.sizeBytes)}</span>
               <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
-                      onClick={() => void handleDownload(a)} title="Download">
+                      onClick={() => handleDownload(a)} title="Download">
                 <Download className="h-3.5 w-3.5" />
               </Button>
               {!readOnly && (
                 <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600 hover:text-red-700"
-                        onClick={() => void handleDelete(a)} title="Delete">
+                        onClick={() => handleDelete(a)} title="Delete">
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               )}

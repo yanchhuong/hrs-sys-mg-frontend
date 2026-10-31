@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
 import { couponDaysLabel, fmtExpiry, wheelColors } from '../../utils/spinPrize';
 import { layoutWheelLabel, makeMeasure } from '../../utils/wheelLabels';
+import { PlainButton } from '../ui/button';
 
 /**
  * V358 — "Spin & Win" on the public shop page.
@@ -482,9 +483,9 @@ export function PublicShopSpin({ shopCode, lifted }: {
                     <div className="text-base font-bold text-pink-600">🎉 You won {result.label}!</div>
                     <div className="mt-2 inline-flex items-center gap-2 rounded-lg border-2 border-dashed border-pink-300 bg-pink-50 px-4 py-2">
                       <span className="font-mono text-xl font-bold tracking-wider text-gray-900">{result.couponCode}</span>
-                      <button type="button" onClick={() => copy(result.couponCode!)} className="text-pink-600" aria-label="Copy code">
+                      <PlainButton type="button" onClick={() => copy(result.couponCode!)} className="text-pink-600" aria-label="Copy code">
                         <Copy className="h-4 w-4" />
-                      </button>
+                      </PlainButton>
                     </div>
                     <div className="mt-2 text-xs text-gray-600">Show this code at the counter to claim your prize.</div>
                     {/* V362 — when it stops working. */}
@@ -596,21 +597,21 @@ export function PublicShopSpin({ shopCode, lifted }: {
                 </div>
                 <div className="mt-3 w-full truncate rounded-lg bg-gray-50 border px-3 py-1.5 font-mono text-[11px] text-gray-600" title={playUrl}>{playUrl}</div>
                 <div className="mt-3 flex w-full gap-2">
-                  <button
+                  <PlainButton
                     type="button"
                     onClick={copyPlayUrl}
                     className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
                     <Copy className="h-4 w-4" /> Copy link
-                  </button>
+                  </PlainButton>
                   {typeof navigator !== 'undefined' && 'share' in navigator && (
-                    <button
+                    <PlainButton
                       type="button"
                       onClick={sharePlayUrl}
                       className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
                     >
                       <Share2 className="h-4 w-4" /> Share
-                    </button>
+                    </PlainButton>
                   )}
                 </div>
               </div>

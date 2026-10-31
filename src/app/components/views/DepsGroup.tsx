@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
@@ -1045,7 +1045,7 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
                   </div>
                 );
                 return (
-                  <button
+                  <PlainButton
                     key={emp.id}
                     onClick={() => handleMoveMember(emp, isAdd ? addMemberFor.id : null)}
                     disabled={!!addingMemberId}
@@ -1065,7 +1065,7 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
                         {action_node}
                       </>
                     )}
-                  </button>
+                  </PlainButton>
                 );
               };
 

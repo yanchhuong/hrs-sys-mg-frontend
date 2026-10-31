@@ -467,7 +467,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
 
             <DialogFooter className="pt-2">
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={savingProfile}>Cancel</Button>
-              <Button onClick={() => { void handleSaveProfile(); }} disabled={savingProfile}>
+              <Button onClick={() => handleSaveProfile()} disabled={savingProfile}>
                 <Save className="h-4 w-4 mr-2" />
                 {savingProfile ? 'Saving…' : 'Save Profile'}
               </Button>

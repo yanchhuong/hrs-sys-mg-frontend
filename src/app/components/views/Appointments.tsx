@@ -220,7 +220,7 @@ export function Appointments() {
               Refresh → Settings gear → primary action. Gear opens
               the Staff Roles dialog so admins can tag Doctor /
               Cashier / Staff. */}
-          <Button variant="outline" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>

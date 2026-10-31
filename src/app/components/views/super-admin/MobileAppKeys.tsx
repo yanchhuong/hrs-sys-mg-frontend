@@ -305,7 +305,7 @@ export function MobileAppKeys() {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{fmtDate(k.createdAt)}</TableCell>
                       <TableCell className="text-right space-x-1">
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => void copy(k.appKey)} title="Copy key">
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => copy(k.appKey)} title="Copy key">
                           <Copy className="h-4 w-4" />
                         </Button>
                         {k.status === 'active' && (
@@ -392,7 +392,7 @@ export function MobileAppKeys() {
                       <TableCell className="text-xs text-muted-foreground">{fmtDate(d.createdAt)}</TableCell>
                       <TableCell className="text-right">
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600"
-                                onClick={() => void dropDomain(d)} title="Remove mapping">
+                                onClick={() => dropDomain(d)} title="Remove mapping">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </TableCell>

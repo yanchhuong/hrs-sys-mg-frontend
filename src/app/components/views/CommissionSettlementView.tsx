@@ -258,7 +258,7 @@ export function CommissionSettlementView() {
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingStatus(r)} title="Update status / payment">
                             <Edit3 className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => void doDelete(r)} title="Delete">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => doDelete(r)} title="Delete">
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>

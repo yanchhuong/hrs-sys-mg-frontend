@@ -279,7 +279,7 @@ export function TaskDialog({ open, onOpenChange, task, defaultTenantId, onSaved 
               variant="outline"
               size="sm"
               className="text-red-600 border-red-200 hover:bg-red-50"
-              onClick={() => void doDelete()}
+              onClick={() => doDelete()}
               disabled={deleting || saving}
             >
               {deleting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1.5" />}

@@ -639,7 +639,7 @@ export function CrossTenantUsers() {
                         )}
                         <Button
                           variant="ghost" size="icon" className="h-7 w-7"
-                          onClick={() => void handleResetPassword(u)}
+                          onClick={() => handleResetPassword(u)}
                           title="Reset password"
                           aria-label="Reset password"
                         >
@@ -648,7 +648,7 @@ export function CrossTenantUsers() {
                         <Button
                           variant="ghost" size="icon"
                           className={`h-7 w-7 ${u.isActive ? 'text-red-600 hover:bg-red-50' : 'text-green-700 hover:bg-green-50'}`}
-                          onClick={() => void handleToggleActive(u)}
+                          onClick={() => handleToggleActive(u)}
                           title={u.isActive ? 'Suspend' : 'Reactivate'}
                           aria-label={u.isActive ? 'Suspend' : 'Reactivate'}
                         >

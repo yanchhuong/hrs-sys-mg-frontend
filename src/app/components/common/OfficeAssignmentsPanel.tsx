@@ -160,7 +160,7 @@ export function OfficeAssignmentsPanel({ open }: Props) {
             </Tooltip>
           </TooltipProvider>
         </h3>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={() => load()} disabled={loading}>
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
         </Button>
       </div>

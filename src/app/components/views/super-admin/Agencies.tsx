@@ -58,7 +58,7 @@ export function Agencies() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={() => load()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>

@@ -299,7 +299,7 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => void askReset()} disabled={!canEdit || saving}>
+              <Button variant="outline" size="sm" onClick={() => askReset()} disabled={!canEdit || saving}>
                 <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
                 Reset to NBC
               </Button>

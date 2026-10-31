@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { NAV_LEAVES } from '../../config/nav';
@@ -392,7 +392,7 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
                     : 'bg-emerald-500 text-white';
                   const tileLocked = pending !== null && !isPending;
                   return (
-                    <button
+                    <PlainButton
                       key={leaf.id}
                       type="button"
                       disabled={tileLocked || isPending}
@@ -433,7 +433,7 @@ export function AppLauncher({ currentView, onSelect: _onSelect }: AppLauncherPro
                       <span className={`text-[11px] leading-tight line-clamp-2 ${labelClass}`}>
                         {t(leaf.labelKey)}
                       </span>
-                    </button>
+                    </PlainButton>
                   );
                 })}
               </div>

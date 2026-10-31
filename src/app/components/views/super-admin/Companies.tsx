@@ -1468,14 +1468,14 @@ export function Companies() {
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleOpenEdit(c)} title="Edit">
                         <Edit className="h-3.5 w-3.5" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-indigo-600 hover:text-indigo-700" onClick={() => void handleOpenCopy(c)} title="Copy as new company">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-indigo-600 hover:text-indigo-700" onClick={() => handleOpenCopy(c)} title="Copy as new company">
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
                         className={`h-7 w-7 ${c.status === 'suspended' ? 'text-green-700 hover:bg-green-50' : 'text-amber-700 hover:bg-amber-50'}`}
-                        onClick={() => void handleSuspendToggle(c)}
+                        onClick={() => handleSuspendToggle(c)}
                         title={c.status === 'suspended' ? 'Reactivate' : 'Suspend'}
                       >
                         {c.status === 'suspended' ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}

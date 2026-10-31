@@ -267,7 +267,7 @@ export function Transactions() {
             </Tooltip>
           </TooltipProvider>
         </h1>
-        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={() => load()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>

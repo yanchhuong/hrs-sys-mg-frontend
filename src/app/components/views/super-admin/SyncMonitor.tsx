@@ -406,14 +406,14 @@ export function SyncMonitor() {
                         </Button>
                         <Button
                           variant="ghost" size="sm" className="h-7 w-7 p-0 text-amber-700 hover:bg-amber-50"
-                          onClick={() => { void handleRotate(inst); }}
+                          onClick={() => handleRotate(inst)}
                           title="Rotate key"
                         >
                           <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
-                          onClick={() => { void handleRevoke(inst); }}
+                          onClick={() => handleRevoke(inst)}
                           title="Revoke"
                         >
                           <Trash2 className="h-3.5 w-3.5" />

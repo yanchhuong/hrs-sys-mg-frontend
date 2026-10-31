@@ -1,5 +1,5 @@
 import { useState, ReactNode } from 'react';
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import { Input } from '../ui/input';
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -291,7 +291,7 @@ export function SearchablePicker({
                       </Button>
                       <Button
                         type="button" size="icon" className="h-7 w-7"
-                        onClick={ev => { ev.preventDefault(); ev.stopPropagation(); void saveEdit(); }}
+                        onClick={ev => { ev.preventDefault(); ev.stopPropagation(); return saveEdit(); }}
                         disabled={busyOp || !editLabel.trim() || editLabel.trim() === o.label}
                         title="Save"
                       >
@@ -338,19 +338,19 @@ export function SearchablePicker({
                       </button>
                     )}
                     {onDelete && (
-                      <button
+                      <PlainButton
                         type="button"
                         onMouseDown={ev => ev.preventDefault()}
                         onClick={ev => {
                           ev.preventDefault(); ev.stopPropagation();
-                          if (confirm(`Delete "${o.label}"?`)) void doDelete(o.value);
+                          if (confirm(`Delete "${o.label}"?`)) return doDelete(o.value);
                         }}
                         className="ml-0.5 p-1 rounded text-red-500 opacity-0 group-hover:opacity-100 hover:text-red-700 hover:bg-red-50 focus:opacity-100"
                         title="Delete"
                         aria-label={`Delete ${o.label}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </PlainButton>
                     )}
                   </CommandItem>
                 );

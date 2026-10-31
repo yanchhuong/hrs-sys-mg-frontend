@@ -205,7 +205,7 @@ export function Approvals() {
             </TooltipProvider>
           </h1>
         </div>
-        <Button variant="outline" onClick={() => void load()} disabled={loading}>
+        <Button variant="outline" onClick={() => load()} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -320,7 +320,7 @@ export function Approvals() {
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
-                          onClick={() => { void quickApprove(r); }}
+                          onClick={() => quickApprove(r)}
                           title="Approve"
                           aria-label="Approve"
                         >

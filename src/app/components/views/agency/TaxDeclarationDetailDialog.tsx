@@ -209,7 +209,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
                     />
                   </div>
                   <div className="flex justify-end">
-                    <Button variant="outline" size="sm" onClick={() => void saveDraft()} disabled={saving || !draftDirty}>
+                    <Button variant="outline" size="sm" onClick={() => saveDraft()} disabled={saving || !draftDirty}>
                       {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
                       Save draft
                     </Button>
@@ -344,7 +344,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
           {row && !rejecting && !gdtSubmitting && (
             <>
               {isDraft && (
-                <Button onClick={() => void prepare()} disabled={saving}
+                <Button onClick={() => prepare()} disabled={saving}
                         title={draftDirty ? 'Saves your Amount / Notes edits, then sends for review' : undefined}>
                   {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Send className="h-4 w-4 mr-1.5" />}
                   {draftDirty ? 'Save & prepare' : 'Prepare (send for review)'}
@@ -390,7 +390,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
             <>
               <Button variant="outline" onClick={() => setGdtSubmitting(false)} disabled={saving}>Cancel</Button>
               <Button
-                onClick={() => void submitGdt()}
+                onClick={() => submitGdt()}
                 disabled={saving || !gdtRef.trim()}
                 className="bg-teal-600 hover:bg-teal-700"
               >
@@ -402,7 +402,7 @@ export function TaxDeclarationDetailDialog({ open, onOpenChange, declarationId, 
           {row && rejecting && (
             <>
               <Button variant="outline" onClick={() => setRejecting(false)} disabled={saving}>Cancel</Button>
-              <Button onClick={() => void doReject()} disabled={saving || !rejectNotes.trim()} className="bg-rose-600 hover:bg-rose-700">
+              <Button onClick={() => doReject()} disabled={saving || !rejectNotes.trim()} className="bg-rose-600 hover:bg-rose-700">
                 {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <XCircle className="h-4 w-4 mr-1.5" />}
                 Send back
               </Button>

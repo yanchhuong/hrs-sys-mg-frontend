@@ -38,20 +38,61 @@ const buttonVariants = cva(
   },
 );
 
+/**
+ * Click lock shared by <Button> and <PlainButton>. When onClick returns a
+ * promise (an async handler, or `() => save()`), the button disables
+ * itself until that promise settles, so a double-click can't run the
+ * action twice (e.g. two overlapping permission saves). Sync handlers are
+ * untouched. A handler written as `() => void save()` returns nothing, so
+ * it can't be locked — return the promise instead.
+ */
+function usePendingClick(onClick?: React.MouseEventHandler<HTMLButtonElement>) {
+  const [pending, setPending] = React.useState(false);
+  // The ref blocks a second click that lands before React re-renders
+  // the button as disabled.
+  const busy = React.useRef(false);
+  const mounted = React.useRef(true);
+  React.useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
+  const handleClick = React.useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    if (busy.current) { e.preventDefault(); return; }
+    const result: unknown = onClick?.(e);
+    if (result && typeof (result as PromiseLike<unknown>).then === "function") {
+      busy.current = true;
+      setPending(true);
+      const done = () => {
+        busy.current = false;
+        if (mounted.current) setPending(false);
+      };
+      // Re-throw so a failed action still reports like it did before.
+      (result as PromiseLike<unknown>).then(done, (err) => { done(); throw err; });
+    }
+  }, [onClick]);
+
+  return { pending, onClick: onClick ? handleClick : undefined };
+}
+
 const Button = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<"button"> &
     VariantProps<typeof buttonVariants> & {
       asChild?: boolean;
     }
->(({ className, variant, size, asChild = false, ...props }, ref) => {
+>(({ className, variant, size, asChild = false, onClick, disabled, ...props }, ref) => {
   const Comp = asChild ? Slot : "button";
+  const click = usePendingClick(onClick);
 
   return (
     <Comp
       ref={ref}
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      disabled={disabled || click.pending}
+      aria-busy={click.pending || undefined}
+      onClick={click.onClick}
       {...props}
     />
   );
@@ -59,4 +100,27 @@ const Button = React.forwardRef<
 
 Button.displayName = "Button";
 
-export { Button, buttonVariants };
+/**
+ * Unstyled <button> with the same click lock, for custom-styled buttons
+ * that can't take buttonVariants. Dims + shows a wait cursor while
+ * pending, since custom classes often don't style :disabled.
+ */
+const PlainButton = React.forwardRef<HTMLButtonElement, React.ComponentProps<"button">>(
+  ({ className, onClick, disabled, ...props }, ref) => {
+    const click = usePendingClick(onClick);
+    return (
+      <button
+        ref={ref}
+        className={cn(className, click.pending && "opacity-60 cursor-wait")}
+        disabled={disabled || click.pending}
+        aria-busy={click.pending || undefined}
+        onClick={click.onClick}
+        {...props}
+      />
+    );
+  },
+);
+
+PlainButton.displayName = "PlainButton";
+
+export { Button, PlainButton, buttonVariants };

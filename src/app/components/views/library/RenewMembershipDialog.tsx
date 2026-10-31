@@ -267,7 +267,7 @@ export function RenewMembershipDialog({ open, onOpenChange, member, onRenewed }:
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => void submit()} disabled={saving}>
+          <Button onClick={() => submit()} disabled={saving}>
             {saving ? 'Renewing…' : 'Confirm Renewal'}
           </Button>
         </DialogFooter>

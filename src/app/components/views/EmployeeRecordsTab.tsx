@@ -116,7 +116,7 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
           {hasFilters && (
             <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clear}>Clear</Button>
           )}
-          <Button variant="outline" size="sm" className="h-9 shrink-0" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" size="sm" className="h-9 shrink-0" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
           {canView('employee_records') && (
