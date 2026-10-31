@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ComponentProps, type MouseEvent } from 'react';
 import { cn } from '../ui/utils';
 import { startDragPan } from '../../utils/dragPan';
 
@@ -18,23 +18,19 @@ import { startDragPan } from '../../utils/dragPan';
  */
 export function FilterStrip({ className, children, onMouseDown, ...props }: ComponentProps<'div'>) {
   const ref = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState({ left: false, right: false });
-
-  const measure = () => {
-    const el = ref.current;
-    if (!el) return;
-    const max = el.scrollWidth - el.clientWidth;
-    const left = el.scrollLeft > 1;
-    const right = el.scrollLeft < max - 1;
-    setEdges(prev => (prev.left === left && prev.right === right ? prev : { left, right }));
-  };
 
   // Children change width as data loads (filters appear once rows do),
-  // so re-measure after every render, not only on resize.
-  useLayoutEffect(measure);
+  // so re-measure after every render, not only on scroll / resize.
+  // The fades go straight onto the element, not through state: a
+  // setState here re-rendered the strip, and a scroll update still
+  // pending when a sync render ran (swipe, then type in the search box)
+  // made React replay it from a stale base every pass, so the strip
+  // re-rendered forever — "Maximum update depth exceeded".
+  useLayoutEffect(() => updateFades(ref.current));
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const measure = () => updateFades(el);
     el.addEventListener('scroll', measure, { passive: true });
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -57,12 +53,18 @@ export function FilterStrip({ className, children, onMouseDown, ...props }: Comp
     <div
       ref={ref}
       className={cn('filter-strip py-1', className)}
-      data-fade-left={edges.left || undefined}
-      data-fade-right={edges.right || undefined}
       onMouseDown={handleMouseDown}
       {...props}
     >
       {children}
     </div>
   );
+}
+
+/** Marks the edges that have more to scroll to (`data-fade-left` / `data-fade-right`). */
+function updateFades(el: HTMLElement | null) {
+  if (!el) return;
+  const max = el.scrollWidth - el.clientWidth;
+  el.toggleAttribute('data-fade-left', el.scrollLeft > 1);
+  el.toggleAttribute('data-fade-right', el.scrollLeft < max - 1);
 }
