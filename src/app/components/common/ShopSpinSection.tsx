@@ -22,6 +22,9 @@ const SELECT_CLS = 'h-8 rounded-md border border-input bg-transparent px-1.5 tex
  * V358 — "Spin & Win" controls in the Share Shop dialog.
  *
  *   • On/Off switch — shows or hides the wheel on the public shop page.
+ *   • Mode (V387)   — Normal: the official wheel (one spin a day, real
+ *     coupons). Demo: a practice wheel with the same odds — spin as often
+ *     as you like, no coupon, nothing recorded.
  *   • Wheel editor  — the slices: label, type (V362: % off, $ off, gift
  *     or try again) with its value, and chance (relative odds). The
  *     label follows the type/value ("10% off") until the owner edits it.
@@ -92,6 +95,23 @@ export function ShopSpinSection() {
       : k === 'amount' ? (kindOf(cur) === 'amount' && cur.value ? cur.value : 1)
       : null;
     updateSlice(i, { kind: k, prize: k !== 'none', value });
+  };
+
+  const mode: shopApi.SpinMode = settings?.mode === 'demo' ? 'demo' : 'normal';
+  const setMode = async (next: shopApi.SpinMode) => {
+    if (!settings || next === mode) return;
+    const prev = settings;
+    setSettings({ ...settings, mode: next });
+    setBusy(true);
+    try {
+      setSettings(await shopApi.updateSpinSettings({ mode: next }));
+      toast.success(next === 'demo' ? 'Demo mode — practice spins, no coupons' : 'Normal mode — the official wheel is back');
+    } catch (e) {
+      setSettings(prev);
+      toast.error(e instanceof Error ? e.message : 'Failed to update');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const setCouponDays = async (days: number) => {
@@ -181,14 +201,50 @@ export function ShopSpinSection() {
           <div className="text-sm font-medium text-gray-800 inline-flex items-center gap-1.5">
             <Gift className="h-3.5 w-3.5 text-pink-600" />
             Spin &amp; Win
+            {mode === 'demo' && (
+              <span className="rounded-full bg-amber-100 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-700">Demo</span>
+            )}
           </div>
           <div className="text-[11px] text-gray-500 mt-0.5">
-            {settings.enabled
-              ? 'Customers can spin once a day on the shop page. Prizes give a code to show at the counter.'
-              : 'Off — the wheel is hidden on the shop page.'}
+            {!settings.enabled
+              ? 'Off — the wheel is hidden on the shop page.'
+              : mode === 'demo'
+                ? 'Demo on the shop page — customers can try the wheel. Prizes aren’t real.'
+                : 'Customers can spin once a day on the shop page. Prizes give a code to show at the counter.'}
           </div>
         </div>
         <Switch checked={settings.enabled} disabled={busy} onCheckedChange={toggle} aria-label="Spin & Win" />
+      </div>
+
+      {/* V387 — Normal is the official wheel; Demo is a practice one. */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-gray-700">Mode</div>
+          <div className="text-[10px] text-gray-500">
+            {mode === 'demo'
+              ? 'Practice wheel: spin as often as you like, same odds. No coupon is given and nothing is recorded.'
+              : 'Official wheel: one spin a day per phone, winners get a real coupon.'}
+          </div>
+        </div>
+        <div className="inline-flex shrink-0 rounded-md border p-0.5" role="radiogroup" aria-label="Spin & Win mode">
+          {(['normal', 'demo'] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={mode === m}
+              disabled={busy}
+              onClick={() => void setMode(m)}
+              className={`h-7 rounded px-2.5 text-xs font-medium transition-colors disabled:opacity-60 ${
+                mode === m
+                  ? (m === 'demo' ? 'bg-amber-500 text-white' : 'bg-blue-600 text-white')
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {m === 'normal' ? 'Normal' : 'Demo'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* V362 — how long a won coupon stays valid, from the moment it's won. */}

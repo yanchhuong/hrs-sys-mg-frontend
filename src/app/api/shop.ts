@@ -256,8 +256,11 @@ export type PrizeKind = 'percent' | 'amount' | 'gift' | 'none';
 /** One wheel slice. weight = relative odds; prize mirrors kind !== 'none'.
  *  value = 10 for "10% off" or "$10 off"; null for gift / none. */
 export interface SpinSlice { label: string; weight: number; prize: boolean; kind?: PrizeKind | null; value?: number | null }
+/** V387 — normal = the official wheel (coupons, one spin a day); demo = a
+ *  practice wheel with the same odds that issues and records nothing. */
+export type SpinMode = 'normal' | 'demo';
 /** couponDays = how long a won coupon stays valid (null = no expiry). */
-export interface SpinSettings { enabled: boolean; slices: SpinSlice[]; couponDays?: number | null }
+export interface SpinSettings { enabled: boolean; slices: SpinSlice[]; couponDays?: number | null; mode?: SpinMode }
 
 export interface SpinCoupon {
   code: string;
@@ -301,7 +304,7 @@ export async function getSpinSettings(): Promise<SpinSettings> {
 
 /** Any field may be omitted: { enabled } only flips the switch.
  *  couponDays 0 = no expiry. */
-export async function updateSpinSettings(req: { enabled?: boolean; slices?: SpinSlice[]; couponDays?: number }): Promise<SpinSettings> {
+export async function updateSpinSettings(req: { enabled?: boolean; slices?: SpinSlice[]; couponDays?: number; mode?: SpinMode }): Promise<SpinSettings> {
   return apiJson('/api/v1/pos/shop-link/spin', { method: 'PUT', json: req });
 }
 
@@ -319,8 +322,9 @@ export async function redeemSpinCoupon(code: string): Promise<SpinCoupon> {
 }
 
 /** Public: whether the wheel is on, and what to draw (no odds). */
-/** couponDays (V362): how long a prize stays valid — said before the spin. */
-export interface PublicSpinConfig { enabled: boolean; slices: { label: string; prize: boolean }[]; couponDays?: number | null }
+/** couponDays (V362): how long a prize stays valid — said before the spin.
+ *  demo (V387): a practice wheel — no coupon, spin as often as you like. */
+export interface PublicSpinConfig { enabled: boolean; slices: { label: string; prize: boolean }[]; couponDays?: number | null; demo?: boolean }
 
 export async function getPublicSpin(code: string): Promise<PublicSpinConfig> {
   return apiJson(`/api/v1/public/shop/${encodeURIComponent(code)}/spin`);
@@ -346,6 +350,8 @@ export interface SpinResult {
   prizeValue?: number | null;
   expiresAt?: string | null;
   expired?: boolean;
+  /** V387 — a practice spin: never saved, no coupon. */
+  demo?: boolean;
 }
 
 /** V361 — this device's spin today without spinning (null = not yet),

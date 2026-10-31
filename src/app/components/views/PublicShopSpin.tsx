@@ -17,6 +17,11 @@ import { layoutWheelLabel, makeMeasure } from '../../utils/wheelLabels';
  * the earlier result if the device already spun today. A prize comes with
  * a coupon code to show at the counter, and (V359) the winner can leave
  * their name and phone so the shop knows who won and can reach them.
+ *
+ * V387 — on a Demo wheel (the owner's choice) the same game is a practice
+ * one: labelled Demo, spin as often as you like, the result is shown as
+ * "you'd win…" with no coupon and no contact form. The server still picks
+ * with the real odds; it just issues and records nothing.
  */
 
 // One id per shop in this browser ("shop + browser" is the unique visitor),
@@ -61,6 +66,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
   lifted: boolean;
 }) {
   const [config, setConfig] = useState<shopApi.PublicSpinConfig | null>(null);
+  const demo = !!config?.demo;
   const [open, setOpen] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<shopApi.SpinResult | null>(null);
@@ -187,7 +193,8 @@ export function PublicShopSpin({ shopCode, lifted }: {
   // win or not, resting on its slice; the Spin button is only offered
   // when there is no spin yet.
   useEffect(() => {
-    if (!open || result || !config?.enabled || n < 2) return;
+    // A demo wheel has no "today's spin" to reopen.
+    if (!open || result || !config?.enabled || config.demo || n < 2) return;
     let live = true;
     setCheckingToday(true);
     shopApi.getMySpinToday(shopCode, deviceId(shopCode))
@@ -211,7 +218,10 @@ export function PublicShopSpin({ shopCode, lifted }: {
   };
 
   const spin = () => {
-    if (spinning || result || checkingToday) return;
+    if (spinning || checkingToday) return;
+    // Official: one spin, then the result stays. Demo: spin again freely.
+    if (result && !demo) return;
+    if (result) setResult(null);
     setSpinning(true);
     // Keep the numbers small: start from the same position within one turn.
     setAngle(((angleRef.current % 360) + 360) % 360);
@@ -320,6 +330,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
         aria-label="Spin and win"
       >
         <Gift className="h-4 w-4" /> Spin &amp; Win
+        {demo && <span className="rounded-full bg-white/25 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide">Demo</span>}
       </button>
 
       {open && (
@@ -366,11 +377,20 @@ export function PublicShopSpin({ shopCode, lifted }: {
               <QrCode className="h-5 w-5" />
             </button>
             <div className="text-center">
-              <div className="text-lg font-bold text-gray-900">Spin &amp; Win</div>
+              <div className="text-lg font-bold text-gray-900 inline-flex items-center gap-2">
+                Spin &amp; Win
+                {demo && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-amber-700">Demo</span>}
+              </div>
               <div className="text-xs text-gray-500">
-                One spin a day. Win a coupon to use at the counter.
-                {/* V362 — say up front how long a prize lasts. */}
-                {!!config.couponDays && <> Prizes are valid for {couponDaysLabel(config.couponDays)}.</>}
+                {demo ? (
+                  <>Demo wheel — just for fun. Spin as often as you like; prizes aren’t real and no coupon is given.</>
+                ) : (
+                  <>
+                    One spin a day. Win a coupon to use at the counter.
+                    {/* V362 — say up front how long a prize lasts. */}
+                    {!!config.couponDays && <> Prizes are valid for {couponDaysLabel(config.couponDays)}.</>}
+                  </>
+                )}
               </div>
             </div>
 
@@ -419,24 +439,43 @@ export function PublicShopSpin({ shopCode, lifted }: {
               <button
                 type="button"
                 onClick={spin}
-                disabled={spinning || !!result || checkingToday}
+                disabled={spinning || (!!result && !demo) || checkingToday}
                 aria-label="Spin the wheel"
                 className={`absolute left-1/2 top-1/2 z-10 ${maximized ? 'h-24 w-24 text-lg' : 'h-20 w-20'} -translate-x-1/2 -translate-y-1/2 rounded-full ring-4 ring-white font-extrabold tracking-wider text-white transition-transform active:scale-95 disabled:cursor-default ${
-                  result ? 'bg-gray-300' : 'bg-blue-600 hover:bg-blue-700 shadow-[0_6px_18px_rgba(37,99,235,0.45)]'
+                  result && !demo ? 'bg-gray-300' : 'bg-blue-600 hover:bg-blue-700 shadow-[0_6px_18px_rgba(37,99,235,0.45)]'
                 }`}
               >
                 {/* An invitation to tap, until the spin starts. */}
-                {!spinning && !result && !checkingToday && (
+                {!spinning && (!result || demo) && !checkingToday && (
                   <span aria-hidden className="absolute inset-0 -z-10 rounded-full bg-blue-500/40 animate-ping" />
                 )}
                 {checkingToday
                   ? <Loader2 className="mx-auto h-6 w-6 animate-spin" />
-                  : result ? <Gift className="mx-auto h-6 w-6 text-gray-500" />
+                  : result && !demo ? <Gift className="mx-auto h-6 w-6 text-gray-500" />
                   : spinning ? null : 'SPIN'}
               </button>
             </div>
 
-            {result ? (
+            {result?.demo ? (
+              <div className="mt-4 text-center">
+                {result.prize
+                  ? <div className="text-base font-bold text-pink-600">🎉 You’d win {result.label}!</div>
+                  : <div className="text-base font-semibold text-gray-700">{result.label} — no prize this time.</div>}
+                <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+                  Demo only — not a real prize, no coupon is given.
+                </div>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={spin}
+                    disabled={spinning}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    <Gift className="h-4 w-4" /> Spin again
+                  </button>
+                </div>
+              </div>
+            ) : result ? (
               <div className="mt-4 text-center">
                 {result.prize && result.couponCode ? (
                   <>
@@ -552,8 +591,8 @@ export function PublicShopSpin({ shopCode, lifted }: {
                 </div>
                 <div className="mt-2 text-sm font-semibold text-blue-600">Scan to Play</div>
                 <div className="mt-1 text-[11px] text-gray-400">
-                  Each phone gets one spin a day.
-                  {!!config.couponDays && <> Prizes are valid for {couponDaysLabel(config.couponDays)}.</>}
+                  {demo ? 'Anyone can try the demo wheel.' : 'Each phone gets one spin a day.'}
+                  {!demo && !!config.couponDays && <> Prizes are valid for {couponDaysLabel(config.couponDays)}.</>}
                 </div>
                 <div className="mt-3 w-full truncate rounded-lg bg-gray-50 border px-3 py-1.5 font-mono text-[11px] text-gray-600" title={playUrl}>{playUrl}</div>
                 <div className="mt-3 flex w-full gap-2">
