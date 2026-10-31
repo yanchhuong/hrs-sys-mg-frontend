@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   User as UserIcon, Mail, Phone, MapPin, Calendar, KeyRound, Shield,
   Eye, EyeOff, Save, CheckCircle, AlertTriangle, Lock, Bell, BellOff,
-  Paperclip, Upload, Download, Trash2, Users, Camera,
+  Paperclip, Upload, Download, Trash2, Users, Camera, X,
 } from 'lucide-react';
 import { useMyProfileImage } from '../../hooks/useMyProfileImage';
 import { invalidateProfileImage, markProfileImageUploaded } from '../../api/profileImageCache';
@@ -59,7 +59,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   const myPhoto = useMyProfileImage();
   const photoInputRef = useRef<HTMLInputElement>(null);
   // The upload runs from the input's onChange, which the button's own
-  // click lock can't see — so the camera button is held off here.
+  // click lock can't see — so the Upload tile is held off here.
   const [photoBusy, setPhotoBusy] = useState(false);
   const afterPhotoChange = async (uploaded: boolean) => {
     if (myPhoto.key) {
@@ -404,48 +404,16 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
 
         {/* Identity strip = the visible header */}
         <div className="px-6 pt-6 pb-4 flex items-center gap-4 border-b">
-          <div className="relative shrink-0">
-            <Avatar className="h-14 w-14 rounded-lg border border-gray-200">
-              <AvatarImage src={myPhoto.src} className="rounded-lg object-cover" />
-              <AvatarFallback className="rounded-lg bg-blue-100 text-blue-700 text-sm font-semibold">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            {/* The picker opens synchronously (a browser only allows it
-                straight from the click); the upload runs from onChange. */}
-            <PlainButton
-              type="button"
-              onClick={() => photoInputRef.current?.click()}
-              disabled={photoBusy}
-              title="Change photo"
-              aria-label="Change photo"
-              className="absolute -bottom-1.5 -right-1.5 h-6 w-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-            >
-              {photoBusy
-                ? <span className="h-3 w-3 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
-                : <Camera className="h-3.5 w-3.5" />}
-            </PlainButton>
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className="hidden"
-              onChange={onPickPhoto}
-            />
-          </div>
+          {/* Display only — the photo is changed in the Profile tab. */}
+          <Avatar className="h-14 w-14 rounded-lg border border-gray-200 shrink-0">
+            <AvatarImage src={myPhoto.src} className="rounded-lg object-cover" />
+            <AvatarFallback className="rounded-lg bg-blue-100 text-blue-700 text-sm font-semibold">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold truncate">{profile.name || currentUser?.email}</p>
-            <p className="text-xs text-gray-500 truncate">
-              {currentUser?.email}
-              {currentUser?.profileImage && (
-                <>
-                  {' · '}
-                  <PlainButton type="button" onClick={removePhoto} className="text-xs text-red-600 hover:underline">
-                    Remove photo
-                  </PlainButton>
-                </>
-              )}
-            </p>
+            <p className="text-xs text-gray-500 truncate">{currentUser?.email}</p>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap text-xs">
               <Badge variant="outline" className="capitalize">
                 <Shield className="h-2.5 w-2.5 mr-1" />
@@ -492,6 +460,56 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
 
           {/* Profile tab */}
           <TabsContent value="profile" className="space-y-4 pt-4 pb-2">
+            {/* Profile photo. With a photo: the picture plus a × to remove it,
+                and no upload control (remove first to put up a new one).
+                Without: one dashed tile that opens the picker. */}
+            <FieldBox label="Profile Photo">
+              <div className="flex items-center gap-3">
+                {currentUser?.profileImage ? (
+                  <div className="relative h-20 w-20 shrink-0">
+                    <Avatar className="h-20 w-20 rounded-lg border border-gray-200">
+                      <AvatarImage src={myPhoto.src} className="rounded-lg object-cover" alt="Profile photo" />
+                      <AvatarFallback className="rounded-lg bg-gray-100" />
+                    </Avatar>
+                    <PlainButton
+                      type="button"
+                      onClick={removePhoto}
+                      title="Remove photo"
+                      aria-label="Remove photo"
+                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </PlainButton>
+                  </div>
+                ) : (
+                  // The picker opens synchronously (a browser only allows
+                  // it straight from the click); the upload runs from onChange.
+                  <PlainButton
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={photoBusy}
+                    title="Upload photo"
+                    aria-label="Upload photo"
+                    className="h-20 w-20 shrink-0 rounded-lg border-2 border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 flex flex-col items-center justify-center gap-1 text-[11px] font-medium"
+                  >
+                    {photoBusy
+                      ? <span className="h-4 w-4 rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin" />
+                      : <><Camera className="h-5 w-5" />Upload</>}
+                  </PlainButton>
+                )}
+                <p className="text-xs text-gray-500">
+                  JPEG, PNG, WEBP or GIF, up to 5 MB.
+                  {currentUser?.employeeId && <> Same photo as on your employee record.</>}
+                </p>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={onPickPhoto}
+                />
+              </div>
+            </FieldBox>
             <div className="grid grid-cols-2 gap-4">
               <FieldBox label="Full Name" required>
                 <Input
