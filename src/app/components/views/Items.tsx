@@ -1470,14 +1470,16 @@ export function Items() {
       )}
 
       <Card>
-        {/* One row, ALWAYS — matches the POS top action bar: filters
-            on the left, search form on the right, and on narrow
-            displays the whole strip becomes a horizontal-scroll
-            container so a swipe left/right reaches whatever's off
-            screen. Children use `shrink-0` so nothing gets squished
-            into unreadable widths. */}
-        <CardHeader className="flex flex-row items-end justify-between gap-x-4 gap-y-3 overflow-x-auto hover-scroll-x space-y-0">
-          <div className="flex items-end gap-x-4 gap-y-3 shrink-0">
+        {/* Filters on the left, search on the right — and when they
+            don't fit, the row WRAPS: the filters flow onto as many
+            lines as they need and the search form drops below, still
+            right-aligned. It used to stay one row and scroll sideways,
+            but the scrollbar is hidden (no cue anything is off screen)
+            and on a touch screen the swipe didn't move it, so the
+            search box and Search button sat cut off at the card edge
+            (iPad, 1194px). Each control keeps its natural width. */}
+        <CardHeader className="flex flex-row flex-wrap items-end justify-between gap-x-4 gap-y-3 space-y-0">
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-3 min-w-0">
             {rows.length > 0 && (
               <>
                 <select
@@ -1644,7 +1646,7 @@ export function Items() {
               </>
             )}
           </div>
-          <form onSubmit={onSearchSubmit} className="flex items-center gap-2 shrink-0">
+          <form onSubmit={onSearchSubmit} className="flex items-center gap-2 shrink-0 ml-auto">
             {/* Warehouse filter — shown only when the feature gate is
                 on. "All" = empty value, picks one warehouse otherwise.
                 Re-runs the list call via the warehouseFilter useEffect. */}
