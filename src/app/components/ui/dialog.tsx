@@ -149,7 +149,11 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
       // can never take effect. Also add `overflow-hidden` so anything
       // else placed in the header (e.g. a badge row) can't push the
       // header wider than the content column either.
-      className={cn("flex flex-col gap-2 text-center sm:text-left min-w-0 overflow-hidden", className)}
+      // `shrink-0` because `overflow-hidden` also drops the header's
+      // min-height to 0: in a `flex flex-col` dialog with a tall
+      // `flex-1` body (Templates preview), the header got squeezed
+      // and the title was cut in half.
+      className={cn("flex flex-col gap-2 text-center sm:text-left min-w-0 overflow-hidden shrink-0", className)}
       {...props}
     />
   );
