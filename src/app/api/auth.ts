@@ -1,4 +1,4 @@
-import { apiJson, setToken, setActiveClientTenant, USER_KEY, TOKEN_KEY, TENANT_KEY } from './client';
+import { apiJson, apiFetch, ApiError, setToken, setActiveClientTenant, USER_KEY, TOKEN_KEY, TENANT_KEY } from './client';
 
 export interface LoginRequest {
   email: string;
@@ -67,6 +67,11 @@ export interface AuthUser {
   createdAt?: string | null;
   /** GET /auth/me: most recent successful sign-in (ISO). */
   lastLogin?: string | null;
+  /** V388 — storage path of the profile photo, null when none: the
+   *  linked employee's photo when linked, else the user's own. Not
+   *  loadable — it is the "has a photo" flag; the bytes come from
+   *  GET /auth/me/profile-image (see useMyProfileImage). */
+  profileImage?: string | null;
 }
 
 export interface LoginResponse {
@@ -167,6 +172,40 @@ export async function updateProfile(req: UpdateProfileRequest): Promise<AuthUser
     localStorage.setItem(USER_KEY, JSON.stringify(user));
   }
   return user;
+}
+
+/** V388 — upload / replace the current user's profile photo. Linked to
+ *  an employee, this IS the employee's photo (same picture on the
+ *  Employee screens). Returns the refreshed AuthUser. */
+export async function uploadMyProfileImage(file: File): Promise<AuthUser> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await apiFetch('/api/v1/auth/me/profile-image', { method: 'POST', body: fd });
+  if (!res.ok) {
+    const ct = res.headers.get('content-type') ?? '';
+    const body = ct.includes('application/json') ? await res.json().catch(() => null) : null;
+    throw new ApiError(body?.message ?? `Upload failed (${res.status})`, res.status,
+      '/api/v1/auth/me/profile-image', body);
+  }
+  const user = await res.json() as AuthUser;
+  if (typeof localStorage !== 'undefined') localStorage.setItem(USER_KEY, JSON.stringify(user));
+  return user;
+}
+
+/** V388 — remove the current user's profile photo. */
+export async function removeMyProfileImage(): Promise<AuthUser> {
+  const user = await apiJson<AuthUser>('/api/v1/auth/me/profile-image', { method: 'DELETE' });
+  if (typeof localStorage !== 'undefined') localStorage.setItem(USER_KEY, JSON.stringify(user));
+  return user;
+}
+
+/** Blob URL of the current user's photo, null on 404 (none). */
+export async function fetchMyProfileImageBlobUrl(): Promise<string | null> {
+  // no-cache — see fetchProfileImageBlobUrl (documents.ts).
+  const res = await apiFetch('/api/v1/auth/me/profile-image', { cache: 'no-cache' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(`Profile image fetch failed (${res.status})`, res.status, '/api/v1/auth/me/profile-image');
+  return URL.createObjectURL(await res.blob());
 }
 
 /** V-fcm-3-user-pref — flip the server-side per-user push toggle and

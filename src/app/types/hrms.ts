@@ -80,6 +80,9 @@ export interface User {
   lastLogin?: string;
   /** The linked employee's number (Employee No); null when unlinked. */
   employeeNo?: string | null;
+  /** V388 — profile photo storage path ("has a photo" flag), null when
+   *  none. Load the bytes with useMyProfileImage. */
+  profileImage?: string | null;
   isActive: boolean;
 }
 

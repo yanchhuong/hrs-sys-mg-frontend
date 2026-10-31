@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Button } from '../ui/button';
+import { Button, PlainButton } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
@@ -12,8 +12,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   User as UserIcon, Mail, Phone, MapPin, Calendar, KeyRound, Shield,
   Eye, EyeOff, Save, CheckCircle, AlertTriangle, Lock, Bell, BellOff,
-  Paperclip, Upload, Download, Trash2, Users,
+  Paperclip, Upload, Download, Trash2, Users, Camera,
 } from 'lucide-react';
+import { useMyProfileImage } from '../../hooks/useMyProfileImage';
+import { invalidateProfileImage, markProfileImageUploaded } from '../../api/profileImageCache';
 import { Switch } from '../ui/switch';
 // V-fcm-3-user-pref — re-registers the browser's FCM token when the
 // user flips push notifications back on within the same session.
@@ -49,6 +51,56 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
   const { formatDate } = useDateFormat();
   const { currentUser, currentEmployee, refreshUser } = useAuth();
   const employeeRef = currentEmployee ?? BLANK_EMPLOYEE;
+
+  // V388 — profile photo. Linked to an employee it IS the employee's
+  // photo (one picture, same on the Employee screens); see
+  // useMyProfileImage. Uploads go through /auth/me, so any user can set
+  // their own without the employees:update permission.
+  const myPhoto = useMyProfileImage();
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  // The upload runs from the input's onChange, which the button's own
+  // click lock can't see — so the camera button is held off here.
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const afterPhotoChange = async (uploaded: boolean) => {
+    if (myPhoto.key) {
+      if (uploaded) markProfileImageUploaded(myPhoto.key);
+      invalidateProfileImage(myPhoto.key);
+    }
+    await refreshUser();
+  };
+  const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+      toast.error('Profile photo must be a JPEG, PNG, WEBP, or GIF');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Photo too large — keep it under 5 MB');
+      return;
+    }
+    setPhotoBusy(true);
+    try {
+      await authApi.uploadMyProfileImage(file);
+      await afterPhotoChange(true);
+      toast.success('Profile photo updated');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+  const removePhoto = async () => {
+    if (!(await confirm({ title: 'Remove your profile photo?', variant: 'destructive', confirmLabel: 'Remove' }))) return;
+    try {
+      await authApi.removeMyProfileImage();
+      await afterPhotoChange(false);
+      toast.success('Profile photo removed');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not remove the photo');
+    }
+  };
 
   // Profile tab state. Display name preference: explicit user.name
   // (set via this dialog, V140) → linked employee name → empty. The
@@ -352,15 +404,48 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
 
         {/* Identity strip = the visible header */}
         <div className="px-6 pt-6 pb-4 flex items-center gap-4 border-b">
-          <Avatar className="h-14 w-14 rounded-lg border border-gray-200">
-            <AvatarImage src={profile.profileImage} className="rounded-lg object-cover" />
-            <AvatarFallback className="rounded-lg bg-blue-100 text-blue-700 text-sm font-semibold">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative shrink-0">
+            <Avatar className="h-14 w-14 rounded-lg border border-gray-200">
+              <AvatarImage src={myPhoto.src} className="rounded-lg object-cover" />
+              <AvatarFallback className="rounded-lg bg-blue-100 text-blue-700 text-sm font-semibold">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            {/* The picker opens synchronously (a browser only allows it
+                straight from the click); the upload runs from onChange. */}
+            <PlainButton
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={photoBusy}
+              title="Change photo"
+              aria-label="Change photo"
+              className="absolute -bottom-1.5 -right-1.5 h-6 w-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+            >
+              {photoBusy
+                ? <span className="h-3 w-3 rounded-full border-2 border-gray-300 border-t-gray-600 animate-spin" />
+                : <Camera className="h-3.5 w-3.5" />}
+            </PlainButton>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={onPickPhoto}
+            />
+          </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold truncate">{profile.name || currentUser?.email}</p>
-            <p className="text-xs text-gray-500 truncate">{currentUser?.email}</p>
+            <p className="text-xs text-gray-500 truncate">
+              {currentUser?.email}
+              {currentUser?.profileImage && (
+                <>
+                  {' · '}
+                  <PlainButton type="button" onClick={removePhoto} className="text-xs text-red-600 hover:underline">
+                    Remove photo
+                  </PlainButton>
+                </>
+              )}
+            </p>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap text-xs">
               <Badge variant="outline" className="capitalize">
                 <Shield className="h-2.5 w-2.5 mr-1" />

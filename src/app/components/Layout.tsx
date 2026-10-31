@@ -1,7 +1,8 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
-import { Avatar, AvatarFallback } from './ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { useMyProfileImage } from '../hooks/useMyProfileImage';
 import { UserProfileDialog } from './common/UserProfileDialog';
 import { LanguageSwitcher } from './common/LanguageSwitcher';
 import { AppLauncher } from './common/AppLauncher';
@@ -95,6 +96,8 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
   const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  // V388 — the signed-in user's photo for the top-bar avatar.
+  const myPhoto = useMyProfileImage();
   /** Foldable sidebar — when true, the desktop sidebar shrinks to an
    *  icon-only rail. Persisted to localStorage so the operator's
    *  preference survives a refresh / tab close. Off by default on
@@ -495,6 +498,7 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                         <Avatar>
+                          <AvatarImage src={myPhoto.src} className="object-cover" />
                           <AvatarFallback>{initials}</AvatarFallback>
                         </Avatar>
                       </Button>

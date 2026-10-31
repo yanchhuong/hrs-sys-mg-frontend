@@ -103,7 +103,11 @@ export async function remove(documentId: string): Promise<void> {
  * synthesizing a URL is the auth-friendly pattern.
  */
 export async function fetchProfileImageBlobUrl(employeeId: string): Promise<string | null> {
-  const res = await apiFetch(`/api/v1/employees/${employeeId}/profile-image`);
+  // no-cache: the server sends max-age=300, so without it a re-fetch after
+  // replacing or removing the photo got the OLD picture from the browser
+  // cache for five minutes. profileImageCache already keeps one copy per
+  // session, so skipping the HTTP cache costs nothing.
+  const res = await apiFetch(`/api/v1/employees/${employeeId}/profile-image`, { cache: 'no-cache' });
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new ApiError(`Profile image fetch failed (${res.status})`, res.status,

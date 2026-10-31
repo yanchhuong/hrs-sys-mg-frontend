@@ -167,6 +167,7 @@ function fromApi(apiUser: authApi.AuthUser): User {
     createdAt: apiUser.createdAt ?? '',
     lastLogin: apiUser.lastLogin ?? undefined,
     employeeNo: apiUser.employeeNo ?? null,
+    profileImage: apiUser.profileImage ?? null,
     isActive: true,
   };
 }
