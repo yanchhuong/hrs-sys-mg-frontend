@@ -1375,6 +1375,13 @@ function InvoiceFormDialog({
    *  up any newly-typed values. Empty list is fine — the picker's
    *  inline "create" affordance handles first-use tenants. */
   const [purposeOptions, setPurposeOptions] = useState<string[]>([]);
+  /** The active template's default note — a new invoice's Notes start
+   *  with it, so it can be read and edited per invoice before it
+   *  prints. Empty when the template has none or hides notes. */
+  const [templateNote, setTemplateNote] = useState('');
+  /** The note last filled in automatically — Notes still holding it
+   *  means nothing was typed, so a newer template note may replace it. */
+  const autoNoteRef = useRef('');
   const [saving, setSaving] = useState(false);
 
   // Reset whenever the dialog opens. In edit mode, hydrate from the
@@ -1435,7 +1442,8 @@ function InvoiceFormDialog({
       setTaxAmount(String(copyFrom.taxAmount));
       setDiscountType(copyFrom.discountType ?? 'amount');
       setDiscountValue(String(copyFrom.discountValue ?? copyFrom.discountAmount));
-      setNotes(copyFrom.notes ?? '');
+      setNotes(copyFrom.notes || templateNote);
+      autoNoteRef.current = copyFrom.notes ? '' : templateNote;
       setTerms(copyFrom.terms ?? '');
       setPurpose(copyFrom.purpose ?? '');
       let cancelled = false;
@@ -1462,7 +1470,8 @@ function InvoiceFormDialog({
       setTaxAmount('0');
       setDiscountType('amount');
       setDiscountValue('0');
-      setNotes('');
+      setNotes(templateNote);
+      autoNoteRef.current = templateNote;
       setTerms('');
       setPurpose('');
       // Fetch the preview after state resets — race-protected so a
@@ -1473,7 +1482,34 @@ function InvoiceFormDialog({
         .catch(() => { /* non-fatal — user can type their own */ });
       return () => { cancelled = true; };
     }
+    // templateNote is left out on purpose: when it arrives late, the
+    // follow-up below fills it in instead of resetting the whole form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, kind, editing, copyFrom, parentPrefill, invoices]);
+
+  // The active template's note, fetched each time the dialog opens so
+  // a note just changed in Templates is the one used.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    invoiceTemplates.getDefault('invoice')
+      .then(t => {
+        const f = t.config?.footer;
+        if (live) setTemplateNote(f?.showNotes === false ? '' : (f?.notesText ?? '').trim());
+      })
+      .catch(() => { if (live) setTemplateNote(''); });
+    return () => { live = false; };
+  }, [open]);
+
+  // Follow-up sync: the note arrives after the reset above ran. A new
+  // invoice whose Notes are empty or still the auto-filled text gets
+  // it; typed notes, and an invoice being edited, keep their own.
+  useEffect(() => {
+    if (!open || editing) return;
+    const prev = autoNoteRef.current;
+    autoNoteRef.current = templateNote;
+    setNotes(n => (!n || n === prev ? templateNote : n));
+  }, [open, editing, templateNote]);
 
   // Follow-up sync: when the tenant currency settings arrive AFTER
   // the reset effect above ran (network race on first open), pin the
@@ -1698,7 +1734,8 @@ function InvoiceFormDialog({
       setItems([{ ...blankItem }]);
       setTaxAmount('0');
       setDiscountValue('0');
-      setNotes('');
+      setNotes(templateNote);
+      autoNoteRef.current = templateNote;
       setTerms('');
       setPurpose('');
     } catch (e) {
@@ -4414,22 +4451,22 @@ export function PrintTaxInvoice({
           flex: 1, minWidth: 0,
           textAlign: cfgFooter.qrPosition === 'left' ? 'right' : 'left',
         }}>
-          {/* The notes block is the heading, the template's own note,
-              then the document's notes. The exchange rate below is not
-              part of it — the invoice has to state the rate whatever
-              the template says about notes. */}
+          {/* The notes block is the heading and the invoice's notes —
+              which a new invoice starts from the template's note — or,
+              when it has none (older invoices, POS sales), the
+              template's note itself. Printed as a remark: fine print,
+              smaller and greyer than the body. The exchange rate below
+              is not part of it — the invoice has to state the rate
+              whatever the template says about notes. */}
           {cfgFooter.showNotes !== false && (
             <>
               <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
-              {/* The template's note is a standing remark (exchange
-                  policy and the like): fine print, smaller and greyer
-                  than the document's own note under it. */}
-              {!!cfgFooter.notesText?.trim() && (
-                <div style={{ whiteSpace: 'pre-wrap', fontSize: '9px', lineHeight: 1.45, color: '#444' }}>{cfgFooter.notesText}</div>
-              )}
-              {invoice.notes && (
-                <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
-              )}
+              {(() => {
+                const remark = (invoice.notes ?? '').trim() || (cfgFooter.notesText ?? '').trim();
+                return !!remark && (
+                  <div style={{ whiteSpace: 'pre-wrap', fontSize: '9px', lineHeight: 1.45, color: '#444' }}>{remark}</div>
+                );
+              })()}
             </>
           )}
           {(invoice.exchangeRate || 0) > 0 && (
