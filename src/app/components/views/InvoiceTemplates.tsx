@@ -1678,8 +1678,9 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
           {f.showNotes !== false && (
             <>
               <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
+              {/* Fine print, as on the printed page (Invoices.tsx). */}
               {!!f.notesText?.trim() && (
-                <div style={{ whiteSpace: 'pre-wrap' }}>{f.notesText}</div>
+                <div style={{ whiteSpace: 'pre-wrap', fontSize: 8, lineHeight: 1.45, color: '#444' }}>{f.notesText}</div>
               )}
             </>
           )}

@@ -4421,8 +4421,11 @@ export function PrintTaxInvoice({
           {cfgFooter.showNotes !== false && (
             <>
               <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
+              {/* The template's note is a standing remark (exchange
+                  policy and the like): fine print, smaller and greyer
+                  than the document's own note under it. */}
               {!!cfgFooter.notesText?.trim() && (
-                <div style={{ whiteSpace: 'pre-wrap' }}>{cfgFooter.notesText}</div>
+                <div style={{ whiteSpace: 'pre-wrap', fontSize: '9px', lineHeight: 1.45, color: '#444' }}>{cfgFooter.notesText}</div>
               )}
               {invoice.notes && (
                 <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
