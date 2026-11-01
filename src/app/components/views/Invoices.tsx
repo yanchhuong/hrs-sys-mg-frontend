@@ -3513,6 +3513,7 @@ function InvoiceDetailDialog({
              *  shrunk to fit, so A5 comes out the same there too. 650px
              *  sits between the A5 (≈525–560px) and A4 / Letter
              *  (≈745–816px) page widths both engines lay out at.
+             *  Text prints 30% larger, see largerText().
              *  Mobile mirrors this: hrs-pro-appl src/lib/print.web.ts. */}
             <style>{`
               @media print {
@@ -3561,14 +3562,16 @@ function InvoiceDetailDialog({
                 }
                 /* Room under the content for the band, which sits in
                    the bottom padding: on a long invoice it follows the
-                   last line instead of covering it. Sized for a band
-                   that wraps to two lines. */
+                   last line instead of covering it. The 14mm margin
+                   plus the band; one that wraps to two lines reaches
+                   only into the signatures' bottom margin. */
                 body > .print-tax-invoice:has(> .thank-you-band) { padding-bottom: 34mm !important; }
                 body > .print-tax-invoice > .thank-you-band {
                   position: absolute !important;
                   left: 14mm; right: 14mm; bottom: 14mm;
                   margin: 0 !important;
                 }
+                ${largerText('body > .print-tax-invoice')}
                 @container (max-width: 650px) {
                   body > .print-tax-invoice { zoom: ${148 / 210}; }
                 }
@@ -3684,6 +3687,30 @@ function InvoiceDetailDialog({
 /* -------------------------------------------------------------------------- */
 /* Cambodian Tax Invoice print template (bilingual print layout)              */
 /* -------------------------------------------------------------------------- */
+
+/** Text prints 30% larger than the template's own size (the forwarded
+ *  image keeps that). Only the text: widths, spacing and margins stay —
+ *  zooming the whole template squeezed the columns and pushed the
+ *  signatures onto a second sheet. The template sets its sizes inline
+ *  in px, so each one it uses is restated here, with the label columns'
+ *  widths so the bigger labels still fit; the PAID stamp and the VAT
+ *  TIN boxes keep theirs. To keep a short invoice on one sheet, the
+ *  customer column takes what the invoice-number column leaves and the
+ *  signing space shrinks from 110px to 70px, its bottom margin left to
+ *  the band's reserve. Padding, not margin, and unbroken, so a signature
+ *  row pushed onto the next sheet keeps the space to sign above its
+ *  lines. Mobile has the same rules (hrs-pro-appl lib/print.web.ts). */
+const PRINT_TEXT_SCALE = 1.3;
+const scaled = (px: number) => `${+(px * PRINT_TEXT_SCALE).toFixed(1)}px`;
+const largerText = (root: string) => [
+  `${root} { font-size: ${scaled(12)} !important; }`,
+  ...[9, 10, 11, 12, 14, 15, 18, 20].map(px =>
+    `${root} [style*="font-size: ${px}px"] { font-size: ${scaled(px)} !important; }`),
+  ...[12, 15].map(px => `${root} [style*="line-height: ${px}px"] { line-height: ${scaled(px)} !important; }`),
+  ...[120, 140].map(px => `${root} [style*="min-width: ${px}px"] { min-width: ${scaled(px)} !important; }`),
+  `${root} .info-grid { grid-template-columns: minmax(0, 1fr) auto !important; }`,
+  `${root} .signature-row { margin: 0 !important; padding-top: 70px; break-inside: avoid; }`,
+].join('\n');
 
 /**
  * Rubber-stamp PAID overlay. Used in both the on-screen invoice
@@ -4097,7 +4124,7 @@ export function PrintTaxInvoice({
       })()}
 
       {/* Customer block (left) + Invoice meta (right) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: '32px', rowGap: '6px', fontSize: '11px', marginBottom: '12px' }}>
+      <div className="info-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: '32px', rowGap: '6px', fontSize: '11px', marginBottom: '12px' }}>
         {/* Two stacked columns, not a left/right-interleaved grid, so a
             row with no value (no address, no phone…) can drop out —
             label included — without shifting the other side. */}
@@ -4433,7 +4460,7 @@ export function PrintTaxInvoice({
         const showSell = cfgFooter.showSellerSignature   !== false;
         if (!showCust && !showSell) return null;
         return (
-          <div style={{
+          <div className="signature-row" style={{
             display: 'grid',
             gridTemplateColumns: (showCust && showSell) ? '1fr 1fr' : '1fr',
             // marginBottom guarantees a gap above the thank-you band:
