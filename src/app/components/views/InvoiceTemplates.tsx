@@ -29,7 +29,7 @@ import { ListError } from '../common/ListStates';
 import { hexToRgb, toBandTint } from '../../utils/logoColor';
 import { useCompanyLogo, useCompanyInfo } from '../../hooks/useCompanyLogo';
 import {
-  invoiceTemplates, defaultTemplateConfig,
+  invoiceTemplates, defaultTemplateConfig, withDefaults,
 } from '../../api/invoiceTemplates';
 import type {
   InvoiceTemplate, TemplateKind, TemplateConfig, UpsertInvoiceTemplate,
@@ -766,7 +766,12 @@ function TemplateEditorDialog({
       const k = editing?.kind ?? 'invoice';
       setDefault(editing?.id ? editing.isDefault
         : (editing?.isDefault || !rows.some(r => r.kind === k && r.isDefault)));
-      setConfig({ ...defaultTemplateConfig(), ...(editing?.config ?? {}) });
+      // An invoice template opens as it prints (withDefaults), so a
+      // switch reads off only when the print leaves the part out. The
+      // receipt prints through its own path and keeps the plain merge.
+      setConfig(k === 'invoice'
+        ? withDefaults(editing?.config)
+        : { ...defaultTemplateConfig(), ...(editing?.config ?? {}) });
     }
   }, [open, editing]);
 
@@ -1362,7 +1367,10 @@ function FitToPage({ children }: { children: React.ReactNode }) {
   );
 }
 
-function A4InvoicePreview({ config }: { config: TemplateConfig }) {
+function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
+  // As the print reads it: the list thumbnails pass a stored config,
+  // where an unsaved key must still show as its default.
+  const config = withDefaults(stored);
   const h = config.header  ?? {};
   const c = config.columns ?? {};
   const l = config.columnLabels ?? {};

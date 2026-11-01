@@ -212,6 +212,26 @@ export function defaultTemplateConfig(): TemplateConfig {
   };
 }
 
+/**
+ * A stored invoice config completed with the defaults group by group —
+ * exactly how the print reads it (Invoices.tsx PrintTaxInvoice). A key
+ * a template never saved prints as its default, so the editor and the
+ * preview have to show it that way. Merged only at the top level, a
+ * stored `footer` without showThankYou dropped the default and the
+ * switch read off, while the print still drew the band.
+ */
+export function withDefaults(cfg?: TemplateConfig | null): TemplateConfig {
+  const d = defaultTemplateConfig();
+  const c = cfg ?? {};
+  return {
+    ...d, ...c,
+    header:       { ...d.header,       ...(c.header ?? {}) },
+    columns:      { ...d.columns,      ...(c.columns ?? {}) },
+    columnLabels: { ...d.columnLabels, ...(c.columnLabels ?? {}) },
+    footer:       { ...d.footer,       ...(c.footer ?? {}) },
+  };
+}
+
 export const invoiceTemplates = {
   list: (kind?: TemplateKind) =>
     apiJson<InvoiceTemplate[]>('/api/v1/invoice-templates', {
