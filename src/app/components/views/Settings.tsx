@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { ImageDropZone } from '../common/ImageDropZone';
+import { LogoCropDialog } from '../common/LogoCropDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import {
   Dialog,
@@ -228,6 +229,9 @@ function CompanyInformationCard() {
   }, []);
 
   const patch = (p: Partial<CompanyInfo>) => { setInfo({ ...info, ...p }); setDirty(true); };
+  /** The logo in the crop dialog — a fresh upload, or the current logo
+   *  when Crop is pressed. Nothing changes until Save crop. */
+  const [logoCrop, setLogoCrop] = useState<string | null>(null);
 
   const handleSave = async () => {
     if (!info.name.trim()) { toast.error('Company name is required'); return; }
@@ -303,13 +307,24 @@ function CompanyInformationCard() {
                 surfaces (invoice / quotation / POS receipt) already
                 render `company.logoUrl` as a plain <img src>, so a
                 data URL works everywhere without a follow-up upload
-                round-trip. */}
+                round-trip. A new upload opens the crop box first
+                (an SVG is kept as drawn), and Crop trims the current
+                one — the templates size the whole image, margin
+                included. */}
             <ImageDropZone
               value={info.logoUrl}
-              onChange={(v) => patch({ logoUrl: v ?? '' })}
+              onChange={(v) => !v ? patch({ logoUrl: '' })
+                : v.startsWith('data:image/svg') ? patch({ logoUrl: v })
+                : setLogoCrop(v)}
+              onCrop={() => setLogoCrop(info.logoUrl || null)}
               hint="PNG / JPG / SVG · prints at the top of invoices, quotations, and POS receipts"
               height={120}
               disabled={loading}
+            />
+            <LogoCropDialog
+              src={logoCrop}
+              onCancel={() => setLogoCrop(null)}
+              onConfirm={(url) => { patch({ logoUrl: url }); setLogoCrop(null); }}
             />
             {/* Fallback text input for operators who prefer pasting
                 a CDN link instead of uploading. Blanks itself out

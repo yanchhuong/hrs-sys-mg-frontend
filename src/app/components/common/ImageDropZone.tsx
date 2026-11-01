@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { Upload, X as XIcon, ImageIcon } from 'lucide-react';
+import { Upload, X as XIcon, ImageIcon, Crop } from 'lucide-react';
 import { toast } from 'sonner';
 import { readImageAsDataUrl } from '../../utils/imageUpload';
 
@@ -15,6 +15,8 @@ interface Props {
   /** Max upload size in bytes (default 1 MB via the helper). */
   maxBytes?: number;
   disabled?: boolean;
+  /** When set, the image gets a Crop button beside Remove. */
+  onCrop?: () => void;
 }
 
 /**
@@ -26,7 +28,7 @@ interface Props {
  * <p>Used for the POS shop logo (V138) and the Items image (V132 →
  * drag-drop). One component keeps the UX consistent across both.</p>
  */
-export function ImageDropZone({ value, onChange, hint, height = 140, maxBytes, disabled }: Props) {
+export function ImageDropZone({ value, onChange, hint, height = 140, maxBytes, disabled, onCrop }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
   /** v-imgdz-broken-image — flip to true when the <img> onError
@@ -83,6 +85,17 @@ export function ImageDropZone({ value, onChange, hint, height = 140, maxBytes, d
             aria-label="Remove image"
           >
             <XIcon className="h-3 w-3" />
+          </button>
+        )}
+        {!disabled && onCrop && (
+          <button
+            type="button"
+            onClick={onCrop}
+            className="absolute -top-1.5 right-5 h-5 w-5 rounded-full bg-white border shadow-sm text-gray-500 hover:text-gray-900 flex items-center justify-center z-10"
+            title="Crop image"
+            aria-label="Crop image"
+          >
+            <Crop className="h-3 w-3" />
           </button>
         )}
         <div className="mt-1 text-[11px] text-gray-500">
