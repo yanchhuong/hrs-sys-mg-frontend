@@ -838,20 +838,17 @@ function TemplateEditorDialog({
             </div>
 
             {/* Paper size — segmented picker, showing only what the
-                chosen kind supports: A4 for invoices, 80mm/58mm for
-                receipts.
+                chosen kind supports: A4 / A5 for invoices, 80mm/58mm
+                for receipts.
 
-                A5 is deliberately absent. It was offered here, but
-                every print path hardcodes A4 in its @page rule and
-                the preview routes A4 and A5 to the same component,
-                so picking it changed nothing anywhere. The value
-                stays in the PaperSize type so a config that already
-                carries it still loads; it just isn't offered until
-                the layout is actually refitted for 148x210mm. */}
+                A5 prints the A4 layout scaled down to the sheet, not a
+                separate design (the invoice print <style> in
+                Invoices.tsx), which is why the preview routes both to
+                the same component. */}
             <div className="space-y-1">
               <Label className="text-xs">Paper size</Label>
               <div className="inline-flex items-center gap-1 rounded-md border p-1 bg-white">
-                {(kind === 'receipt' ? (['80mm', '58mm'] as const) : (['A4'] as const)).map(sz => {
+                {(kind === 'receipt' ? (['80mm', '58mm'] as const) : (['A4', 'A5'] as const)).map(sz => {
                   const active = (config.paperSize ?? (kind === 'receipt' ? '80mm' : 'A4')) === sz;
                   return (
                     <button

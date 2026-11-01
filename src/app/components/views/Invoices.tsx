@@ -3500,26 +3500,47 @@ function InvoiceDetailDialog({
              *  Screen renders the editable dashboard above; window.print()
              *  swaps to the body-level portal below via @media print:
              *  display:none on everything else lets a long invoice flow
-             *  top-to-bottom and paginate naturally across A4 sheets. */}
+             *  top-to-bottom and paginate naturally across sheets.
+             *
+             *  One layout on any sheet: the template is always laid out
+             *  210mm wide and scaled to the paper, so an A5 invoice is
+             *  the A4 one shrunk — same lines, same columns — not the
+             *  markup squeezed into 148mm. Chrome honours @page size
+             *  (the template's paper) and the container query zooms
+             *  the column to fit an A5 page. Safari / iOS ignore @page
+             *  size and print on the paper picked in the print sheet;
+             *  a page narrower than the column is laid out wider and
+             *  shrunk to fit, so A5 comes out the same there too. 650px
+             *  sits between the A5 (≈525–560px) and A4 / Letter
+             *  (≈745–816px) page widths both engines lay out at.
+             *  Mobile mirrors this: hrs-pro-appl src/lib/print.web.ts. */}
             <style>{`
               @media print {
-                html, body { background: white !important; }
+                /* height / overflow: the open dialog locks scrolling
+                   with a viewport-tall overflow:hidden body, which
+                   cut a long invoice off after the first sheet. */
+                html, body { background: white !important; height: auto !important; overflow: visible !important; }
+                body { container-type: inline-size; }
                 body > *:not(.print-tax-invoice) { display: none !important; }
                 body > .print-tax-invoice {
-                  /* A column at least one page tall, so the thank-you
-                     band can be pushed to the foot of the paper with
-                     margin-top:auto instead of stopping wherever the
-                     content happens to end. A short invoice used to
+                  /* At least one page tall, with the thank-you band
+                     pinned to its foot below. A short invoice used to
                      leave the band floating mid-page above a third of
                      a page of white.
                      min-height, not height: a long invoice still grows
                      and paginates, and the band lands at the bottom of
                      the last sheet. border-box so the 14mm padding
-                     counts inside the 297mm rather than pushing a
-                     second, nearly-empty page. */
-                  display: flex !important;
-                  flex-direction: column !important;
-                  min-height: 297mm !important;
+                     counts inside it. 296mm, not 297: Safari rounds
+                     the page down a fraction of a pixel, and a full
+                     297mm pushed a second, empty sheet.
+                     A block, not a flex column with the band pushed
+                     down by margin-top:auto: Safari paginates a flex
+                     column wrongly — the template's grids (the header,
+                     the VAT TIN row) were drawn a third of a page too
+                     low and a blank sheet was added. */
+                  display: block !important;
+                  width: 210mm !important;
+                  min-height: 296mm !important;
                   box-sizing: border-box !important;
                   position: relative !important;
                   padding: 14mm !important;
@@ -3538,12 +3559,25 @@ function InvoiceDetailDialog({
                    *  text falls through to the system stack. */
                   font-family: 'Battambang', 'Noto Sans Khmer', system-ui, sans-serif !important;
                 }
+                /* Room under the content for the band, which sits in
+                   the bottom padding: on a long invoice it follows the
+                   last line instead of covering it. Sized for a band
+                   that wraps to two lines. */
+                body > .print-tax-invoice:has(> .thank-you-band) { padding-bottom: 34mm !important; }
+                body > .print-tax-invoice > .thank-you-band {
+                  position: absolute !important;
+                  left: 14mm; right: 14mm; bottom: 14mm;
+                  margin: 0 !important;
+                }
+                @container (max-width: 650px) {
+                  body > .print-tax-invoice { zoom: ${148 / 210}; }
+                }
                 .print-tax-invoice .kh-title {
                   font-family: 'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif !important;
                   font-weight: 400 !important;
                   letter-spacing: 0.5px;
                 }
-                @page { margin: 0; size: A4; }
+                @page { margin: 0; size: ${invoiceTemplate?.config?.paperSize === 'A5' ? 'A5' : 'A4'}; }
               }
             `}</style>
             <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} currencySettings={currencySettings} template={invoiceTemplate} />
@@ -4430,12 +4464,14 @@ export function PrintTaxInvoice({
           when the template turns the message off, so nothing prints
           an empty stripe. */}
       {cfgFooter.showThankYou !== false && !!((cfgFooter.thankYouText ?? '').trim()) && (
-        <div style={{
-          // Pushed to the foot of the sheet by the flex column above.
-          // 'auto' collapses to 0 on a full page, so the gap above is
-          // the signature block's marginBottom rather than a margin
-          // here — a margin-top of both auto and a length is not a
-          // thing CSS can express.
+        <div className="thank-you-band" style={{
+          // Printing pins the band to the foot of the sheet by its class
+          // (the print <style> above); 'auto' pushes it there wherever
+          // the template is laid out as a flex column instead (the
+          // mobile app's image capture). It collapses to 0 on a full
+          // page, so the gap above is the signature block's
+          // marginBottom rather than a margin here — a margin-top of
+          // both auto and a length is not a thing CSS can express.
           marginTop: 'auto',
           padding: '10px 14px',
           background: bandBackground,
