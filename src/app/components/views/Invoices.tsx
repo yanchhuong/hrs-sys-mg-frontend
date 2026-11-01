@@ -3771,7 +3771,7 @@ const largerText = (root: string) => [
   ...[12, 15].map(px => `${root} [style*="line-height: ${px}px"] { line-height: ${scaled(px)} !important; }`),
   `${root} [style*="tabular-nums"][style*="height: 18px"] { font-size: ${+(11 * TIN_TEXT_SCALE).toFixed(1)}px !important; }`,
   `${root} .info-grid { grid-template-columns: minmax(0, 1fr) auto !important; }`,
-  `${root} .info-grid > div:not([style*="grid-column"]) { display: grid !important; grid-template-columns: auto 1fr; gap: 6px 8px !important; align-content: start; }`,
+  `${root} .info-grid > div:not([style*="grid-column"]) { display: grid !important; grid-template-columns: auto auto 1fr; gap: 6px 8px !important; align-content: start; }`,
   `${root} .info-grid > div:not([style*="grid-column"]) > div { display: contents !important; }`,
   `${root} .info-grid [style*="min-width"] { min-width: 0 !important; }`,
   `${root} .signature-row { margin: 0 !important; padding-top: 70px; break-inside: avoid; }`,
@@ -4131,20 +4131,23 @@ export function PrintTaxInvoice({
                   )}
                   {(company?.taxId || company?.address || company?.phone) && (
                     <div style={{
-                      display: 'grid', gridTemplateColumns: 'auto 1fr',
-                      columnGap: '16px', rowGap: '4px', alignItems: 'start',
+                      display: 'grid', gridTemplateColumns: 'auto auto 1fr',
+                      columnGap: '8px', rowGap: '4px', alignItems: 'start',
                       marginTop: '6px', fontSize: '11px', lineHeight: '15px',
                     }}>
                       {company?.taxId && (<>
                         <BiLabel kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
+                        <div style={{ alignSelf: 'center' }}>:</div>
                         <div style={{ alignSelf: 'center' }}><VatTinBoxes tin={company.taxId} /></div>
                       </>)}
                       {company?.address && (<>
                         <BiLabel kh="អាសយដ្ឋាន" en="Address" />
+                        <div>:</div>
                         <div style={{ whiteSpace: 'pre-line' }}>{company.address}</div>
                       </>)}
                       {company?.phone && (<>
                         <BiLabel kh="ទូរស័ព្ទលេខ" en="Telephone" />
+                        <div>:</div>
                         <div>{company.phone}</div>
                       </>)}
                     </div>
@@ -4238,18 +4241,21 @@ export function PrintTaxInvoice({
           {!!String(customer?.name ?? '').trim() && (
             <div style={{ display: 'flex', gap: '8px' }}>
               <div style={{ minWidth: '140px' }}><BiLabel kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" /></div>
+              <div>:</div>
               <div style={{ fontWeight: 600 }}>{customer?.name ?? ''}</div>
             </div>
           )}
           {!!String(customer?.address ?? '').trim() && (
             <div style={{ display: 'flex', gap: '8px' }}>
               <div style={{ minWidth: '140px' }}><BiLabel kh="អាសយដ្ឋាន" en="Address" /></div>
+              <div>:</div>
               <div>{customer?.address ?? ''}</div>
             </div>
           )}
           {!!String([customer?.phone, customer?.representative].filter(Boolean).join(', ')).trim() && (
             <div style={{ display: 'flex', gap: '8px' }}>
               <div style={{ minWidth: '140px' }}><BiLabel kh="ទូរស័ព្ទលេខ , ឈ្មោះអ្នកតំណាង" en="Telephone No. , Representative" /></div>
+              <div>:</div>
               <div>{[customer?.phone, customer?.representative].filter(Boolean).join(', ')}</div>
             </div>
           )}
@@ -4258,18 +4264,21 @@ export function PrintTaxInvoice({
           {!!String(invoice.invoiceNo).trim() && (
             <div style={{ display: 'flex', gap: '8px' }}>
               <div style={{ minWidth: '120px' }}><BiLabel kh="លេខរៀងវិក្កយបត្រ" en="Invoice N°" /></div>
+              <div>:</div>
               <div style={{ fontFamily: 'monospace' }}>{invoice.invoiceNo}</div>
             </div>
           )}
           {!!String(fmtDate(invoice.issueDate)).trim() && (
             <div style={{ display: 'flex', gap: '8px' }}>
               <div style={{ minWidth: '120px' }}><BiLabel kh="កាលបរិច្ឆេទ" en="Issue Date" /></div>
+              <div>:</div>
               <div>{fmtDate(invoice.issueDate)}</div>
             </div>
           )}
           {!!String(fmtDate(invoice.dueDate)).trim() && (
             <div style={{ display: 'flex', gap: '8px' }}>
               <div style={{ minWidth: '120px' }}><BiLabel kh="ថ្ងៃផុតកំណត់បង់ប្រាក់" en="Payment Due Date" /></div>
+              <div>:</div>
               <div>{fmtDate(invoice.dueDate)}</div>
             </div>
           )}
@@ -4277,6 +4286,7 @@ export function PrintTaxInvoice({
         {customer?.tin && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', gridColumn: '1 / span 2' }}>
             <BiLabel kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
+            <span>:</span>
             <VatTinBoxes tin={customer.tin} />
           </div>
         )}

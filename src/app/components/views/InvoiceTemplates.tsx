@@ -1567,15 +1567,18 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
                   }}>ហាងគំរូ</div>
                   <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>Store-Demo</div>
                   <div style={{
-                    display: 'grid', gridTemplateColumns: 'auto 1fr',
-                    columnGap: 12, rowGap: 3, alignItems: 'start',
+                    display: 'grid', gridTemplateColumns: 'auto auto 1fr',
+                    columnGap: 6, rowGap: 3, alignItems: 'start',
                     marginTop: 5, fontSize: 10, lineHeight: 1.4,
                   }}>
                     <BiLbl kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
+                    <div style={{ alignSelf: 'center' }}>:</div>
                     <div style={{ alignSelf: 'center' }}><TinBoxes tin="L001-105018384" /></div>
                     <BiLbl kh="អាសយដ្ឋាន" en="Address" />
+                    <div>:</div>
                     <div>#C168 (Tela Office Building 2nd Floor), Russian Federation Blvd, Phnom Penh</div>
                     <BiLbl kh="ទូរស័ព្ទលេខ" en="Telephone" />
+                    <div>:</div>
                     <div>(+855) 23 900 530</div>
                   </div>
                 </div>
@@ -1611,18 +1614,22 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 24, rowGap: 4, fontSize: 10, marginBottom: 10 }}>
         <div style={{ display: 'flex', gap: 6 }}>
           <div style={{ minWidth: 120 }}><BiLbl kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company / Customer" /></div>
+          <div>:</div>
           <div style={{ fontWeight: 600 }}>Enterprise Corp.</div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <div style={{ minWidth: 100 }}><BiLbl kh="លេខរៀងវិក្កយបត្រ" en="Invoice N°" /></div>
+          <div>:</div>
           <div style={{ fontFamily: 'monospace' }}>INV-2026-001</div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <div style={{ minWidth: 120 }}><BiLbl kh="អាសយដ្ឋាន" en="Address" /></div>
+          <div>:</div>
           <div>Chamkarmon, Phnom Penh</div>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <div style={{ minWidth: 100 }}><BiLbl kh="កាលបរិច្ឆេទ" en="Issue Date" /></div>
+          <div>:</div>
           <div>20-07-2026</div>
         </div>
       </div>
