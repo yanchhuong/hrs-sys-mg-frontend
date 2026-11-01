@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button, PlainButton } from '../ui/button';
@@ -1272,7 +1272,38 @@ function SwitchRow({ label, checked, onChange, disabled, title }: {
 function TemplatePreview({ config, kind = 'invoice' }: { config: TemplateConfig; kind?: TemplateKind }) {
   const size = effectivePaperSize(config, kind);
   if (isThermal(size)) return <ThermalReceiptPreview config={config} paperSize={size} />;
-  return <A4InvoicePreview config={config} />;
+  return <FitToPage><A4InvoicePreview config={config} /></FitToPage>;
+}
+
+/**
+ * Width the A4 preview is laid out at, padding included — the page the
+ * print styles are calibrated against: 459px inside the padding prints
+ * as 688px with text x1.3 and the logo x1.5 (Invoices.tsx largerText,
+ * mobile lib/print.web.ts). The preview is laid out at this width and
+ * zoomed to the space it is given. Laid out at the container's width
+ * instead, the wide Preview dialog showed the logo and text far smaller
+ * against the page than they print, and wrapped lines differently.
+ */
+const PREVIEW_PAGE_W = 459 + 48;
+
+/** Lays `children` out PREVIEW_PAGE_W wide and zooms them to fill the width given. */
+function FitToPage({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => { if (el.clientWidth > 0) setZoom(el.clientWidth / PREVIEW_PAGE_W); };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div ref={ref}>
+      <div style={{ width: PREVIEW_PAGE_W, zoom }}>{children}</div>
+    </div>
+  );
 }
 
 function A4InvoicePreview({ config }: { config: TemplateConfig }) {
