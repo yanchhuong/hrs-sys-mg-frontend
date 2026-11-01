@@ -1396,21 +1396,13 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
         aspectRatio: '210 / 297',
       }}
     >
-      {/* Company header — three fixed slots so:
-       *    · left  slot reserves space (no overlap with the centered
-       *            company block even at max logo size)
-       *    · centre slot always renders the company info
-       *    · right slot reserves symmetric space
-       *  Logo drops into whichever slot the operator picked. When
-       *  logoPosition === 'middle' the logo sits ABOVE the company
-       *  block inside the centre slot (that's the only way to keep
-       *  the text truly centred on the page). */}
+      {/* Company header — MIRROR OF: Invoices.tsx PrintTaxInvoice.
+       *  Logo left or right: flush to that edge, company block
+       *  left-aligned beside it with labelled VAT TIN / Address /
+       *  Telephone rows. Middle, or no logo: the logo sits ABOVE the
+       *  centred company block. */}
       {(() => {
         const logoPos = h.logoPosition ?? 'left';
-        // Reserve the wider of "logo width + gutter" and 60px so
-        // small logos don't leave the middle awkwardly narrow, but a
-        // 120px circle still gets the room it needs.
-        const slot = h.showLogo ? Math.max(60, logoDims.width + 16) : 0;
         const LogoBox = () => (
           <div
             style={{
@@ -1450,24 +1442,44 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
             </div>
           </div>
         );
+        if (h.showLogo && logoPos !== 'middle') {
+          return (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              flexDirection: logoPos === 'right' ? 'row-reverse' : 'row',
+            }}>
+              <div style={{ flexShrink: 0 }}><LogoBox /></div>
+              {h.showCompanyBlock && (
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 18, fontWeight: 400, lineHeight: 1.15,
+                    fontFamily: "'Khmer OS Muol Light','Moul','Battambang','Noto Sans Khmer',serif",
+                  }}>ហាងគំរូ</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>Store-Demo</div>
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: 'auto 1fr',
+                    columnGap: 12, rowGap: 3, alignItems: 'start',
+                    marginTop: 5, fontSize: 10, lineHeight: 1.4,
+                  }}>
+                    <BiLbl kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
+                    <div style={{ alignSelf: 'center' }}><TinBoxes tin="L001-105018384" /></div>
+                    <BiLbl kh="អាសយដ្ឋាន" en="Address" />
+                    <div>#C168 (Tela Office Building 2nd Floor), Russian Federation Blvd, Phnom Penh</div>
+                    <BiLbl kh="ទូរស័ព្ទលេខ" en="Telephone" />
+                    <div>(+855) 23 900 530</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
         return (
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: `${slot}px 1fr ${slot}px`,
-            alignItems: 'center',
-            gap: 12,
-            minHeight: Math.max(50, logoDims.height + 4),
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', gap: 6, minHeight: 50,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-              {h.showLogo && logoPos === 'left' && <LogoBox />}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              {h.showLogo && logoPos === 'middle' && <LogoBox />}
-              <CompanyBlock />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-              {h.showLogo && logoPos === 'right' && <LogoBox />}
-            </div>
+            {h.showLogo && <LogoBox />}
+            <CompanyBlock />
           </div>
         );
       })()}

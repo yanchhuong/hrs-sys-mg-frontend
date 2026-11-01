@@ -3,6 +3,7 @@
 // bundle; users who never Send-as-image never download it.
 
 import { withHtml2canvasBaselineFix } from './html2canvasBaselineFix';
+import { khmerPrintFontsReady } from './printFonts';
 
 /**
  * Capture the currently-mounted sale-document print template (the
@@ -50,6 +51,8 @@ export async function capturePrintImage(): Promise<string | null> {
     el.style.background = 'white';
     el.style.width = '794px';
     el.style.padding = '14mm';
+
+    await khmerPrintFontsReady();
 
     const canvas = await withHtml2canvasBaselineFix(() => html2canvas(el, {
       backgroundColor: '#ffffff',

@@ -3701,9 +3701,14 @@ function InvoiceDetailDialog({
  *  row pushed onto the next sheet keeps the space to sign above its
  *  lines. Mobile has the same rules (hrs-pro-appl lib/print.web.ts). */
 const PRINT_TEXT_SCALE = 1.3;
+/** The logo, sized against the sheet the way the template preview shows
+ *  it: the preview's page is 459px across inside its padding, the
+ *  printed one 688px, so a logo of N px there prints N × 1.5 — which
+ *  also keeps it in step with the larger text. */
+const PRINT_LOGO_SCALE = 1.5;
 const scaled = (px: number) => `${+(px * PRINT_TEXT_SCALE).toFixed(1)}px`;
 const largerText = (root: string) => [
-  `${root} { font-size: ${scaled(12)} !important; }`,
+  `${root} { font-size: ${scaled(12)} !important; --logo-scale: ${PRINT_LOGO_SCALE}; }`,
   ...[9, 10, 11, 12, 14, 15, 18, 20].map(px =>
     `${root} [style*="font-size: ${px}px"] { font-size: ${scaled(px)} !important; }`),
   ...[12, 15].map(px => `${root} [style*="line-height: ${px}px"] { line-height: ${scaled(px)} !important; }`),
@@ -4014,29 +4019,77 @@ export function PrintTaxInvoice({
           stamp lower on the page so it sits over the Invoice N° /
           Issue Date / Payment Due Date block on the right column. */}
       <PaidStamp show={!!paid} variant="print" />
-      {/* Header — three-slot grid driven by the template config so
-       *  logo position (left/middle/right) + size + shape reflect the
-       *  operator's Templates choices. Company block centres on the
-       *  full page width regardless of slot occupancy. */}
+      {/* Header — driven by the template config so logo position
+       *  (left/middle/right) + size + shape reflect the operator's
+       *  Templates choices. A logo on the left or right sits flush to
+       *  that edge with the company block left-aligned beside it, VAT
+       *  TIN / Address / Telephone as labelled rows (the GDT-style
+       *  letterhead). Middle, or no logo, keeps the centred stack. */}
       {(() => {
         const logoPos   = cfgHeader.logoPosition ?? 'left';
         const logoShape = cfgHeader.logoShape    ?? 'rectangle';
         const logoSize  = Math.min(120, Math.max(24, cfgHeader.logoSize ?? 60));
-        const logoDims  =
-          logoShape === 'circle'   ? { width: logoSize, height: logoSize, borderRadius: 9999 }
-          : logoShape === 'square' ? { width: logoSize, height: logoSize, borderRadius: 4 }
-          :                          { width: Math.round(logoSize * 90 / 40), height: logoSize, borderRadius: 4 };
-        const slot   = cfgHeader.showLogo && company?.logoUrl ? Math.max(60, logoDims.width + 16) : 0;
-        const Logo   = () => cfgHeader.showLogo && company?.logoUrl ? (
+        const hasLogo   = !!(cfgHeader.showLogo && company?.logoUrl);
+        // Rectangle takes logoSize as the height and lets the width
+        // follow the image, capped at the old 90:40 box. That box used
+        // to be the fixed size with the image centred in it, so a
+        // square mark floated small in a wide empty slot.
+        // Printed, --logo-scale (set by the print styles) grows the logo
+        // with the text, to the share of the sheet the template preview
+        // shows; 1 on screen and in the forwarded image.
+        const sized = (n: number) => `calc(${n}px * var(--logo-scale, 1))`;
+        const logoStyle: React.CSSProperties =
+          logoShape === 'circle'   ? { width: sized(logoSize), height: sized(logoSize), borderRadius: 9999 }
+          : logoShape === 'square' ? { width: sized(logoSize), height: sized(logoSize), borderRadius: 4 }
+          :                          { width: 'auto', height: sized(logoSize), maxWidth: sized(Math.round(logoSize * 90 / 40)), borderRadius: 4 };
+        const Logo   = () => hasLogo ? (
           <img
-            src={company.logoUrl}
+            src={company!.logoUrl!}
             alt=""
-            style={{
-              width: logoDims.width, height: logoDims.height,
-              borderRadius: logoDims.borderRadius, objectFit: 'contain',
-            }}
+            style={{ ...logoStyle, objectFit: 'contain', flexShrink: 0 }}
           />
         ) : null;
+        if (hasLogo && logoPos !== 'middle') {
+          return (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '16px',
+              flexDirection: logoPos === 'right' ? 'row-reverse' : 'row',
+            }}>
+              <Logo />
+              {cfgHeader.showCompanyBlock && (
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="kh-title" style={{
+                    fontSize: '20px', fontWeight: 400, lineHeight: 1.15,
+                    fontFamily: "'Khmer OS Muol Light', 'Moul', 'Battambang', 'Noto Sans Khmer', serif",
+                  }}>{companyKh}</div>
+                  {companyEn && companyEn !== companyKh && (
+                    <div style={{ fontSize: '15px', fontWeight: 700, marginTop: '2px' }}>{companyEn}</div>
+                  )}
+                  {(company?.taxId || company?.address || company?.phone) && (
+                    <div style={{
+                      display: 'grid', gridTemplateColumns: 'auto 1fr',
+                      columnGap: '16px', rowGap: '4px', alignItems: 'start',
+                      marginTop: '6px', fontSize: '11px', lineHeight: '15px',
+                    }}>
+                      {company?.taxId && (<>
+                        <BiLabel kh="លេខអត្តសញ្ញាណកម្ម អតប" en="VAT TIN" />
+                        <div style={{ alignSelf: 'center' }}><VatTinBoxes tin={company.taxId} /></div>
+                      </>)}
+                      {company?.address && (<>
+                        <BiLabel kh="អាសយដ្ឋាន" en="Address" />
+                        <div style={{ whiteSpace: 'pre-line' }}>{company.address}</div>
+                      </>)}
+                      {company?.phone && (<>
+                        <BiLabel kh="ទូរស័ព្ទលេខ" en="Telephone" />
+                        <div>{company.phone}</div>
+                      </>)}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        }
         const CompanyBlock = () => !cfgHeader.showCompanyBlock ? null : (
           <div style={{ textAlign: 'center' }}>
             <div className="kh-title" style={{
@@ -4068,22 +4121,11 @@ export function PrintTaxInvoice({
         );
         return (
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: `${slot}px 1fr ${slot}px`,
-            alignItems: 'center',
-            gap: '12px',
-            minHeight: Math.max(60, logoDims.height + 4),
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', gap: '6px', minHeight: 60,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-              {logoPos === 'left' && <Logo />}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-              {logoPos === 'middle' && <Logo />}
-              <CompanyBlock />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-              {logoPos === 'right' && <Logo />}
-            </div>
+            <Logo />
+            <CompanyBlock />
           </div>
         );
       })()}

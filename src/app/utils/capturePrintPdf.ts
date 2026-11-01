@@ -4,6 +4,7 @@
 // demand keeps them out of the initial bundle entirely.
 
 import { withHtml2canvasBaselineFix } from './html2canvasBaselineFix';
+import { khmerPrintFontsReady } from './printFonts';
 
 /**
  * V271 — capture the currently-mounted sale-document print template
@@ -61,6 +62,8 @@ export async function capturePrintPdf(defaultFilename = 'document.pdf'): Promise
     el.style.background = 'white';
     el.style.width = '794px';  // ~210mm @ 96dpi
     el.style.padding = '14mm';
+
+    await khmerPrintFontsReady();
 
     const canvas = await withHtml2canvasBaselineFix(() => html2canvas(el, {
       backgroundColor: '#ffffff',
