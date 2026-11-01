@@ -984,9 +984,9 @@ function TemplateEditorDialog({
                   </div>
                 </div>
               )}
-              {/* Logo size — pixel slider (24..120). Circle/Square use
-                  this for w+h; Rectangle uses it as HEIGHT and scales
-                  width by the natural 90:40 aspect of today's print. */}
+              {/* Logo size — pixel slider (24..160). Circle/Square use
+                  this for w+h; Rectangle uses it as HEIGHT, the width
+                  following the logo up to 90:40. */}
               {config.header?.showLogo && (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
@@ -998,7 +998,7 @@ function TemplateEditorDialog({
                   <input
                     type="range"
                     min={24}
-                    max={120}
+                    max={160}
                     step={2}
                     value={config.header?.logoSize ?? 60}
                     onChange={e => patchHeader({ logoSize: Number(e.target.value) })}
@@ -1345,9 +1345,8 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
 
   /* The same chain the printed document uses, fed the same logo, so
    * the band previews in the colour it will actually print. The
-   * header above still draws a dashed LOGO placeholder — the preview
-   * is about layout — but the colour is the real one, because that
-   * is the thing being configured here. */
+   * header draws that logo too, at its printed size; a dashed LOGO
+   * box stands in only when the company has none. */
   const companyLogo = useCompanyLogo();
   const logoTint = useLogoTint(companyLogo, f.bandColorMode === 'logo');
   /* Explicit override → a wash of the template's accent → the stock
@@ -1375,7 +1374,7 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
   /** Base size scales the logo box. Circle/Square use it for both
    *  dimensions; Rectangle treats it as HEIGHT and derives width
    *  from the 90:40 landscape aspect used by today's print output. */
-  const size = Math.min(120, Math.max(24, h.logoSize ?? 60));
+  const size = Math.min(160, Math.max(24, h.logoSize ?? 60));
   const logoDims =
     logoShape === 'circle'   ? { width: size, height: size, borderRadius: 9999 }
     : logoShape === 'square' ? { width: size, height: size, borderRadius: 4 }
@@ -1445,15 +1444,18 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
 
   return (
     <div
-      className="border rounded-md bg-white overflow-hidden"
+      className="border rounded-md bg-white overflow-clip"
       style={{
         padding: '20px 24px', color: '#000', fontSize: 11,
         fontFamily: "'Battambang','Noto Sans Khmer',system-ui,sans-serif",
         // Paper-shaped and a column, so the thank-you band can be
         // pushed to the foot with margin-top:auto exactly as it is on
         // the printed sheet. aspect-ratio yields to content, so a
-        // preview with more rows than fit simply grows instead of
-        // clipping.
+        // preview with more than fits simply grows, as the printed
+        // invoice runs onto a second sheet — but only while the box is
+        // not a scroll container: overflow-hidden pinned it to the
+        // ratio and cut off the notes and payment block. overflow-clip
+        // keeps the rounded corners without that.
         display: 'flex', flexDirection: 'column',
         aspectRatio: '210 / 297',
       }}
@@ -1465,7 +1467,20 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
        *  centred company block. */}
       {(() => {
         const logoPos = h.logoPosition ?? 'left';
-        const LogoBox = () => (
+        // The company's own logo, sized by the print's rule (Invoices.tsx
+        // PrintTaxInvoice): Rectangle is the height, the width following
+        // the image up to the 90:40 box. The full-width dashed box made a
+        // square logo look twice as wide as it prints, so a size chosen
+        // here came out small on paper. The box stays for no logo.
+        const LogoBox = () => companyLogo ? (
+          <img
+            src={companyLogo}
+            alt=""
+            style={logoShape === 'rectangle'
+              ? { width: 'auto', height: size, maxWidth: logoDims.width, borderRadius: 4, objectFit: 'contain' }
+              : { ...logoDims, objectFit: 'contain' }}
+          />
+        ) : (
           <div
             style={{
               ...logoDims,

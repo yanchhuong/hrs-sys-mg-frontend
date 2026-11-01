@@ -4055,7 +4055,7 @@ export function PrintTaxInvoice({
       {(() => {
         const logoPos   = cfgHeader.logoPosition ?? 'left';
         const logoShape = cfgHeader.logoShape    ?? 'rectangle';
-        const logoSize  = Math.min(120, Math.max(24, cfgHeader.logoSize ?? 60));
+        const logoSize  = Math.min(160, Math.max(24, cfgHeader.logoSize ?? 60));
         const hasLogo   = !!(cfgHeader.showLogo && company?.logoUrl);
         // Rectangle takes logoSize as the height and lets the width
         // follow the image, capped at the old 90:40 box. That box used

@@ -40,7 +40,7 @@ export interface TemplateConfig {
     logoShape?: LogoShape;
     /** Rendered logo size on the printed page, in CSS pixels.
      *  Circle/Square use it for both width & height; Rectangle uses
-     *  it for HEIGHT and scales width proportionally. Range 24–120.
+     *  it for HEIGHT and scales width proportionally. Range 24–160.
      *  Default: 60 (matches current print behaviour). */
     logoSize?: number;
     /** Print company name / address / tax id block. */
