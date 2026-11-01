@@ -6,6 +6,8 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { Switch } from '../ui/switch';
+import { Textarea } from '../ui/textarea';
+import { LEN } from '../../utils/validation';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../ui/select';
@@ -1072,6 +1074,20 @@ function TemplateEditorDialog({
                       disabled={isReceipt}
                       title={noThermal}
                     />
+                    {!isReceipt && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">Default note</Label>
+                        <Textarea
+                          rows={2}
+                          value={config.footer?.notesText ?? ''}
+                          onChange={e => patchFooter({ notesText: e.target.value })}
+                          disabled={config.footer?.showNotes === false}
+                          placeholder="Printed under Notes on every invoice, above the invoice's own note"
+                          maxLength={LEN.longText}
+                          className="resize-none text-sm"
+                        />
+                      </div>
+                    )}
                     <SwitchRow
                       label="Show terms & conditions"
                       checked={isReceipt ? false : !!config.footer?.showTerms}
@@ -1286,6 +1302,20 @@ function TemplatePreview({ config, kind = 'invoice' }: { config: TemplateConfig;
  */
 const PREVIEW_PAGE_W = 459 + 48;
 
+/**
+ * The print's text runs 1.69x the template's sizes (Invoices.tsx
+ * PRINT_TEXT_SCALE) — 1.3x more than the 1.3x this page width is
+ * calibrated for — so the preview's text is raised by that much too, the
+ * same way (each inline size restated), or it would show smaller text
+ * than prints. The VAT TIN digits stay, as they do in print.
+ */
+const PREVIEW_TEXT_BOOST = 1.69 / 1.3;
+const PREVIEW_TEXT_CSS = [
+  ...[8, 9, 10, 11, 12, 13, 18].map(px =>
+    `.tpl-a4-page [style*="font-size: ${px}px"] { font-size: ${+(px * PREVIEW_TEXT_BOOST).toFixed(1)}px !important; }`),
+  '.tpl-a4-page [style*="tabular-nums"] { font-size: 9px !important; }',
+].join('\n');
+
 /** Lays `children` out PREVIEW_PAGE_W wide and zooms them to fill the width given. */
 function FitToPage({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -1301,7 +1331,8 @@ function FitToPage({ children }: { children: React.ReactNode }) {
   }, []);
   return (
     <div ref={ref}>
-      <div style={{ width: PREVIEW_PAGE_W, zoom }}>{children}</div>
+      <style>{PREVIEW_TEXT_CSS}</style>
+      <div className="tpl-a4-page" style={{ width: PREVIEW_PAGE_W, zoom }}>{children}</div>
     </div>
   );
 }
@@ -1630,7 +1661,12 @@ function A4InvoicePreview({ config }: { config: TemplateConfig }) {
           textAlign: f.qrPosition === 'left' ? 'right' : 'left',
         }}>
           {f.showNotes !== false && (
-            <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
+            <>
+              <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
+              {!!f.notesText?.trim() && (
+                <div style={{ whiteSpace: 'pre-wrap' }}>{f.notesText}</div>
+              )}
+            </>
           )}
           <div>អត្រាប្តូរប្រាក់ / Exchange rate : 4050.0000</div>
           {f.showTerms && (

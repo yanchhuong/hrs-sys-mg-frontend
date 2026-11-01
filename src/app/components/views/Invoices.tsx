@@ -2317,12 +2317,11 @@ function InvoiceFormDialog({
             </div>
           )}
 
-          {/* Two-column layout: Notes on the left (internal memo),
-              Terms + Summary stacked on the right (customer-facing
-              terms above the totals card). Same shape on create,
+          {/* Two-column layout: Notes on the left (prints under the
+              template's Notes heading), Terms + Summary stacked on the
+              right (terms above the totals card). Same shape on create,
               edit, and detail surfaces. */}
-          {/* Notes / Terms 2-col + summary. Notes is the internal memo,
-              Terms is customer-facing. Either or both can be hidden
+          {/* Notes / Terms 2-col + summary. Either or both can be hidden
               via the Accountant Settings popup. When only one is on
               we drop to a single-column layout so the visible textarea
               gets full width. */}
@@ -2335,7 +2334,7 @@ function InvoiceFormDialog({
               <Textarea
                 rows={8}
                 value={notes} onChange={e => setNotes(e.target.value)}
-                placeholder="Internal note or memo (not printed on the invoice)"
+                placeholder="Printed under Notes on the invoice"
                 maxLength={LEN.longText}
                 className="flex-1 resize-none"
               />
@@ -2773,6 +2772,19 @@ function InvoiceDetailDialog({
         .catch(() => setInvoiceTemplate(null)),
     ]).then(() => setTemplatesSettled(true));
   }, []);
+
+  // Item codes (SKU) for the print template's lines, which carry only
+  // the stock item's id. A line without one prints its name alone.
+  const [skuById, setSkuById] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const ids = [...new Set((invoice?.items ?? []).map(l => l.stockItemId).filter((v): v is string => !!v))];
+    if (ids.length === 0) { setSkuById({}); return; }
+    let live = true;
+    itemsApi.lookup(ids)
+      .then(found => { if (live) setSkuById(Object.fromEntries(found.filter(i => i.sku).map(i => [i.id, i.sku as string]))); })
+      .catch(() => { if (live) setSkuById({}); });
+    return () => { live = false; };
+  }, [invoice]);
 
   /** Auto-send-Telegram one-shot — used by the Save & Close create
    *  path. Waits for the invoice + company info to load (the print
@@ -3583,7 +3595,7 @@ function InvoiceDetailDialog({
                 @page { margin: 0; size: ${invoiceTemplate?.config?.paperSize === 'A5' ? 'A5' : 'A4'}; }
               }
             `}</style>
-            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} currencySettings={currencySettings} template={invoiceTemplate} />
+            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} currencySettings={currencySettings} template={invoiceTemplate} skuById={skuById} />
           </>
         )}
 
@@ -3688,19 +3700,27 @@ function InvoiceDetailDialog({
 /* Cambodian Tax Invoice print template (bilingual print layout)              */
 /* -------------------------------------------------------------------------- */
 
-/** Text prints 30% larger than the template's own size (the forwarded
- *  image keeps that). Only the text: widths, spacing and margins stay —
- *  zooming the whole template squeezed the columns and pushed the
- *  signatures onto a second sheet. The template sets its sizes inline
- *  in px, so each one it uses is restated here, with the label columns'
- *  widths so the bigger labels still fit; the PAID stamp and the VAT
- *  TIN boxes keep theirs. To keep a short invoice on one sheet, the
- *  customer column takes what the invoice-number column leaves and the
- *  signing space shrinks from 110px to 70px, its bottom margin left to
- *  the band's reserve. Padding, not margin, and unbroken, so a signature
- *  row pushed onto the next sheet keeps the space to sign above its
- *  lines. Mobile has the same rules (hrs-pro-appl lib/print.web.ts). */
-const PRINT_TEXT_SCALE = 1.3;
+/** Text prints 1.69x the template's own size — 30% larger, then 30%
+ *  more (the forwarded image keeps the template's). Only the text:
+ *  widths, spacing and margins stay — zooming the whole template
+ *  squeezed the columns and pushed the signatures onto a second sheet.
+ *  The template sets its sizes inline in px, so each one it uses is
+ *  restated here; the PAID stamp keeps its own, and the VAT TIN digits
+ *  stay at 1.3x so the fixed boxes still hold them and the row still
+ *  fits beside its label.
+ *
+ *  Each info column becomes a label | value grid whose labels are as
+ *  wide as its widest one: fixed label widths, scaled up, squeezed the
+ *  customer column until a phone number ran into the date label. The
+ *  customer column takes what the invoice-number column leaves.
+ *
+ *  To keep a short invoice on one sheet the signing space shrinks from
+ *  110px to 70px, its bottom margin left to the band's reserve.
+ *  Padding, not margin, and unbroken, so a signature row pushed onto
+ *  the next sheet keeps the space to sign above its lines. Mobile has
+ *  the same rules (hrs-pro-appl lib/print.web.ts). */
+const PRINT_TEXT_SCALE = 1.69;
+const TIN_TEXT_SCALE = 1.3;
 /** The logo, sized against the sheet the way the template preview shows
  *  it: the preview's page is 459px across inside its padding, the
  *  printed one 688px, so a logo of N px there prints N × 1.5 — which
@@ -3712,8 +3732,11 @@ const largerText = (root: string) => [
   ...[9, 10, 11, 12, 14, 15, 18, 20].map(px =>
     `${root} [style*="font-size: ${px}px"] { font-size: ${scaled(px)} !important; }`),
   ...[12, 15].map(px => `${root} [style*="line-height: ${px}px"] { line-height: ${scaled(px)} !important; }`),
-  ...[120, 140].map(px => `${root} [style*="min-width: ${px}px"] { min-width: ${scaled(px)} !important; }`),
+  `${root} [style*="tabular-nums"][style*="height: 18px"] { font-size: ${+(11 * TIN_TEXT_SCALE).toFixed(1)}px !important; }`,
   `${root} .info-grid { grid-template-columns: minmax(0, 1fr) auto !important; }`,
+  `${root} .info-grid > div:not([style*="grid-column"]) { display: grid !important; grid-template-columns: auto 1fr; gap: 6px 8px !important; align-content: start; }`,
+  `${root} .info-grid > div:not([style*="grid-column"]) > div { display: contents !important; }`,
+  `${root} .info-grid [style*="min-width"] { min-width: 0 !important; }`,
   `${root} .signature-row { margin: 0 !important; padding-top: 70px; break-inside: avoid; }`,
 ].join('\n');
 
@@ -3857,7 +3880,7 @@ function VatTinBoxes({ tin }: { tin: string }) {
  *  each line an explicit block display + a floor line-height + a
  *  1px marginTop on the English row so the two never collide even
  *  when Khmer's rendered box shrinks below its expected metrics. */
-function BiLabel({ kh, en }: { kh: string; en: string }) {
+function BiLabel({ kh, en, wrapEn = false }: { kh: string; en: string; wrapEn?: boolean }) {
   return (
     <div style={{ lineHeight: 1.35 }}>
       <div style={{
@@ -3868,14 +3891,14 @@ function BiLabel({ kh, en }: { kh: string; en: string }) {
         // v-print-accent — falls back to the old grey outside the
         // print root, where the property is not defined.
         fontSize: '9px', color: 'var(--tpl-accent, #555)', display: 'block',
-        lineHeight: '12px', marginTop: '1px', whiteSpace: 'nowrap',
+        lineHeight: '12px', marginTop: '1px', whiteSpace: wrapEn ? 'normal' : 'nowrap',
       }}>{en}</div>
     </div>
   );
 }
 
 export function PrintTaxInvoice({
-  invoice, customer, company, paid, currencySettings, template,
+  invoice, customer, company, paid, currencySettings, template, skuById = {},
 }: {
   invoice: invoicesApi.Invoice;
   customer?: customersApi.Customer;
@@ -3892,6 +3915,10 @@ export function PrintTaxInvoice({
    *  config so the print output stays identical to the pre-template
    *  behaviour. */
   template?: InvoiceTemplate | null;
+  /** Item code (SKU) by stock item id, printed ahead of each line's
+   *  name. The lines carry only the id; a line without one, or a
+   *  free-text line, prints its name alone. */
+  skuById?: Record<string, string>;
 }) {
   /* Merge the tenant template config with the built-in defaults so
    * every knob has a value regardless of whether the tenant has a
@@ -4240,34 +4267,39 @@ export function PrintTaxInvoice({
               only in the per-line context, not as a togglable
               column). */}
           <tr>
-            <th style={thStyle}><BiLabel kh="ល.រ." en="N°" /></th>
+            <th style={{ ...thStyle, ...fitHeadStyle }}><BiLabel kh="ល.រ." en="N°" wrapEn /></th>
             {cfgCols.item      && <th style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={cfgLabels.item ?? 'Description'} /></th>}
             {/* Qty and UOM share one column — "1 m" reads as the quantity it
                 is. The template's two toggles still decide what goes in it. */}
-            {cfgCols.quantity  && <th style={thStyle}><BiLabel kh="បរិមាណ" en={cfgLabels.quantity ?? 'Quantity'} /></th>}
-            {!cfgCols.quantity && cfgCols.uom && <th style={thStyle}><BiLabel kh="ឯកតា" en={cfgLabels.uom ?? 'UOM'} /></th>}
-            {cfgCols.unitPrice && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃឯកតា" en={cfgLabels.unitPrice ?? 'Unit Price'} /></th>}
-            {cfgCols.total     && <th style={{ ...thStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃទំនិញ" en={cfgLabels.total ?? 'Amount'} /></th>}
+            {cfgCols.quantity  && <th style={{ ...thStyle, ...fitHeadStyle }}><BiLabel kh="បរិមាណ" en={cfgLabels.quantity ?? 'Quantity'} wrapEn /></th>}
+            {!cfgCols.quantity && cfgCols.uom && <th style={{ ...thStyle, ...fitHeadStyle }}><BiLabel kh="ឯកតា" en={cfgLabels.uom ?? 'UOM'} wrapEn /></th>}
+            {cfgCols.unitPrice && <th style={{ ...thStyle, ...fitHeadStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃឯកតា" en={cfgLabels.unitPrice ?? 'Unit Price'} wrapEn /></th>}
+            {cfgCols.total     && <th style={{ ...thStyle, ...fitHeadStyle, textAlign: 'right' }}><BiLabel kh="ថ្លៃទំនិញ" en={cfgLabels.total ?? 'Amount'} wrapEn /></th>}
           </tr>
         </thead>
         <tbody>
           {invoice.items.map((it, idx) => (
             <tr key={it.id}>
-              <td style={{ ...tdStyle, textAlign: 'center' }}>{idx + 1}</td>
+              <td style={{ ...tdStyle, ...fitStyle, textAlign: 'center' }}>{idx + 1}</td>
               {cfgCols.item && (
                 <td style={tdStyle}>
-                  <div>{it.name}</div>
+                  <div>
+                    {it.stockItemId && skuById[it.stockItemId] && (
+                      <span style={{ fontFamily: 'monospace', color: '#555', marginRight: '8px' }}>{skuById[it.stockItemId]}</span>
+                    )}
+                    {it.name}
+                  </div>
                   {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
                 </td>
               )}
               {(cfgCols.quantity || cfgCols.uom) && (
-                <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                <td style={{ ...tdStyle, ...fitStyle, textAlign: 'center' }}>
                   {[cfgCols.quantity ? it.quantity : null, cfgCols.uom ? it.unit : null]
                     .filter(v => v != null && v !== '').join(' ')}
                 </td>
               )}
-              {cfgCols.unitPrice && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>}
-              {cfgCols.total     && <td style={{ ...tdStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>}
+              {cfgCols.unitPrice && <td style={{ ...tdStyle, ...fitStyle, textAlign: 'right' }}>{fmtPrimary(it.unitPrice)}</td>}
+              {cfgCols.total     && <td style={{ ...tdStyle, ...fitStyle, textAlign: 'right' }}>{fmtPrimary(it.lineTotal)}</td>}
             </tr>
           ))}
           {/* Totals folded into the same table. colSpan tracks how
@@ -4282,7 +4314,7 @@ export function PrintTaxInvoice({
             const totalsSpan = cfgCols.total ? dataCols : Math.max(1, dataCols);
             const AmountCell = ({ value, bold }: { value: string; bold?: boolean }) =>
               cfgCols.total
-                ? <td style={{ ...tdStyle, textAlign: 'right', ...(bold ? { fontWeight: 700 } : {}) }}>{value}</td>
+                ? <td style={{ ...tdStyle, ...fitStyle, textAlign: 'right', ...(bold ? { fontWeight: 700 } : {}) }}>{value}</td>
                 : null;
             return (
               <>
@@ -4382,13 +4414,16 @@ export function PrintTaxInvoice({
           flex: 1, minWidth: 0,
           textAlign: cfgFooter.qrPosition === 'left' ? 'right' : 'left',
         }}>
-          {/* The notes block is the heading plus the document's own
-              notes. The exchange rate below is not part of it — the
-              invoice has to state the rate whatever the template
-              says about notes. */}
+          {/* The notes block is the heading, the template's own note,
+              then the document's notes. The exchange rate below is not
+              part of it — the invoice has to state the rate whatever
+              the template says about notes. */}
           {cfgFooter.showNotes !== false && (
             <>
               <div style={{ fontWeight: 600 }}>សម្គាល់ / Notes</div>
+              {!!cfgFooter.notesText?.trim() && (
+                <div style={{ whiteSpace: 'pre-wrap' }}>{cfgFooter.notesText}</div>
+              )}
               {invoice.notes && (
                 <div style={{ whiteSpace: 'pre-wrap' }}>{invoice.notes}</div>
               )}
@@ -4589,6 +4624,12 @@ const tdStyle: React.CSSProperties = {
   verticalAlign: 'middle',
   boxSizing: 'border-box',
 };
+/** N°, Qty, Unit Price and Amount: as narrow as their widest value, on
+ *  tighter padding, so the item column takes the rest of the row and long
+ *  names wrap less. Their headings may fold the English line ("Unit /
+ *  Price") — the heading, not the figures, was what held them wide. */
+const fitStyle: React.CSSProperties = { width: '1%', whiteSpace: 'nowrap', paddingLeft: '4px', paddingRight: '4px' };
+const fitHeadStyle: React.CSSProperties = { ...fitStyle, whiteSpace: 'normal' };
 
 /* -------------------------------------------------------------------------- */
 /* Send-invoice-by-email dialog                                                */

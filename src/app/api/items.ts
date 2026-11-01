@@ -355,6 +355,14 @@ export async function get(id: string): Promise<Item> {
   return apiJson(`/api/v1/stock-items/${id}`);
 }
 
+/** Several items by id in one call — e.g. the codes (SKU) behind a
+ *  document's lines, which carry only the stock item's id. Comma-joined:
+ *  the server binds `ids` as a list either way. */
+export async function lookup(ids: string[]): Promise<Item[]> {
+  if (ids.length === 0) return [];
+  return apiJson('/api/v1/stock-items/lookup', { query: { ids: ids.join(',') } });
+}
+
 /** V302 — scanner lookup. Returns 404 when nothing matches; callers
  *  wrap in try/catch to surface a "not found" toast. Route uses the
  *  raw barcode verbatim — encodeURIComponent to survive '/' or ' '. */

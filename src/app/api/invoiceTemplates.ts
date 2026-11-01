@@ -99,6 +99,9 @@ export interface TemplateConfig {
      * terms have their own toggle.
      */
     showNotes?: boolean;
+    /** The template's own note — printed under the Notes heading on
+     *  every document, above that document's notes. Needs showNotes. */
+    notesText?: string;
     /** T&C block from the doc. */
     showTerms?: boolean;
     /** "Thank you for your business" line. */
