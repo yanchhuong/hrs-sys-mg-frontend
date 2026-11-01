@@ -565,6 +565,7 @@ export function InvoiceTemplates() {
         open={open}
         onOpenChange={setOpen}
         editing={editing}
+        rows={rows}
         onSaved={() => { setOpen(false); void load(); }}
       />
 
@@ -740,11 +741,13 @@ export function InvoiceTemplates() {
 /* ------------------------------------------------------------ */
 
 function TemplateEditorDialog({
-  open, onOpenChange, editing, onSaved,
+  open, onOpenChange, editing, rows, onSaved,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   editing: InvoiceTemplate | null;
+  /** The saved templates — to name the one that prints when this one is not active. */
+  rows: InvoiceTemplate[];
   onSaved: () => void;
 }) {
   const [name, setName] = useState('');
@@ -757,7 +760,12 @@ function TemplateEditorDialog({
     if (open) {
       setName(editing?.name ?? 'New template');
       setKind(editing?.kind ?? 'invoice');
-      setDefault(editing?.isDefault ?? false);
+      // Documents print with the active template only. A new one starts
+      // active when its kind has none yet: saved inactive, it never
+      // printed and nothing said so.
+      const k = editing?.kind ?? 'invoice';
+      setDefault(editing?.id ? editing.isDefault
+        : (editing?.isDefault || !rows.some(r => r.kind === k && r.isDefault)));
       setConfig({ ...defaultTemplateConfig(), ...(editing?.config ?? {}) });
     }
   }, [open, editing]);
@@ -874,11 +882,28 @@ function TemplateEditorDialog({
               </p>
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Switch checked={isDefault} onCheckedChange={setDefault} />
-              <span className="text-sm">Default for {kind}</span>
-              <span className="text-xs text-gray-500">(promoting demotes the current default)</span>
-            </label>
+            {(() => {
+              const docs = kind === 'invoice' ? 'Invoices' : 'Receipts';
+              const other = rows.find(r => r.kind === kind && r.isDefault && r.id !== editing?.id);
+              return (
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Switch checked={isDefault} onCheckedChange={setDefault} />
+                    <span className="text-sm">Active for {kind}</span>
+                  </label>
+                  {isDefault ? (
+                    <p className="text-xs text-gray-500">
+                      {docs} print with this template{other ? ` — it replaces “${other.name}” when saved` : ''}.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-700">
+                      Not active — {docs.toLowerCase()} print with {other ? `“${other.name}”` : 'the built-in layout'}.
+                      Turn this on to print with this template.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="border rounded-md p-3 space-y-3">
               <div className="text-xs uppercase tracking-wide text-gray-500 font-semibold">Header</div>
