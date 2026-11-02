@@ -221,10 +221,10 @@ const BILL_PRINT_TEMPLATE = { config: { footer: { showBanking: false } } } as ne
 const BILL_PARTY_LABEL = { kh: 'ឈ្មោះអ្នកលក់ ឬបញ្ចាំ', en: 'Vendor Name' };
 
 /** A bill's printed title. Credit / debit notes keep the template's own. */
-function billPrintTitle(kind: string): { kh: string; en: string } | undefined {
+function billPrintTitle(kind: string, purpose?: string | null): { kh: string; en: string } | undefined {
   return kind === 'credit_note' || kind === 'debit_note'
     ? undefined
-    : { kh: 'ទិញចូល', en: 'PURCHASE BILL' };
+    : billsApi.BILL_PURPOSE_TITLE[billsApi.billPurposeOf(purpose)];
 }
 
 function VendorInfoCard({ vendor }: { vendor: vendorsApi.Vendor | undefined }) {
@@ -1095,13 +1095,6 @@ function BillFormDialog({
     if (!open) return;
     currencyApi.get().then(setCurrencySettings).catch(() => setCurrencySettings(null));
   }, [open]);
-  // V-bill-receipt-purpose — load tenant's prior purposes each
-  // time the dialog opens so freshly-typed ones show up as one-
-  // click options in the picker.
-  useEffect(() => {
-    if (!open) return;
-    billsApi.listPurposes().then(setPurposeOptions).catch(() => setPurposeOptions([]));
-  }, [open]);
   const currencyOptions = currencyApi.enabledCurrencies(currencySettings);
   const [items, setItems] = useState<FormItem[]>([{ ...blankItem }]);
   // Stock-catalog picker (parity with Invoices / Quotations). Loaded
@@ -1147,11 +1140,9 @@ function BillFormDialog({
   const [discountValue, setDiscountValue] = useState('0');
   const [notes, setNotes] = useState('');
   const [terms, setTerms] = useState('');
-  /** V-bill-receipt-purpose — controlled by the purchase-scope
-   *  `showPurpose` toggle in Accountant Settings. Same shape as
-   *  Invoice's purpose picker. */
-  const [purpose, setPurpose] = useState('');
-  const [purposeOptions, setPurposeOptions] = useState<string[]>([]);
+  /** v-bill-purpose — Purchase (default) or Pawn; drives the printed
+   *  title. Always shown, whatever the showPurpose toggle says. */
+  const [purpose, setPurpose] = useState<billsApi.BillPurpose>('purchase');
   const [saving, setSaving] = useState(false);
   // Chain-approver picker state (V172, Phase 3b). Empty = skip chain,
   // bill flows through legacy draft → issued → paid states.
@@ -1190,7 +1181,7 @@ function BillFormDialog({
       setDiscountValue(String(editing.discountValue ?? editing.discountAmount));
       setNotes(editing.notes ?? '');
       setTerms(editing.terms ?? '');
-      setPurpose(editing.purpose ?? '');
+      setPurpose(billsApi.billPurposeOf(editing.purpose));
     } else {
       // For a CN/DN opened via the inline dropdown, seed the parent
       // (and customer + currency + taxType) from the parent invoice
@@ -1212,7 +1203,7 @@ function BillFormDialog({
       setDiscountValue('0');
       setNotes('');
       setTerms('');
-      setPurpose('');
+      setPurpose('purchase');
       setApprover1('');
       setApprover2('');
       setApprover3('');
@@ -1333,7 +1324,7 @@ function BillFormDialog({
       notes: notes || undefined,
       terms: terms || undefined,
       // V-bill-receipt-purpose — blank-to-undefined normalisation.
-      purpose: purpose.trim() || undefined,
+      purpose,
       items: items.map(it => ({
         name: it.name.trim(),
         description: it.description?.trim() || undefined,
@@ -1432,7 +1423,7 @@ function BillFormDialog({
       setDiscountValue('0');
       setNotes('');
       setTerms('');
-      setPurpose('');
+      setPurpose('purchase');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to create bill');
     } finally {
@@ -1899,32 +1890,27 @@ function BillFormDialog({
           </div>
           )}
 
-          {/* V-bill-receipt-purpose — Purpose picker above Notes.
-              Same SearchablePicker pattern the Invoice form uses:
-              existing purposes as one-click options; a novel value
-              falls through to the inline "Create" affordance. Gated
-              on the purchase-scope `showPurpose` toggle. */}
-          {settings.showPurpose && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Purpose</Label>
-              <SearchablePicker
-                value={purpose}
-                onChange={setPurpose}
-                placeholder='Pick or type a purpose — e.g. "Monthly rent"'
-                searchPlaceholder="Search or type a new purpose…"
-                emptyResultsLabel="No match — type a new purpose to add."
-                createLabel={q => `Add "${q}" as a new purpose`}
-                onCreate={async label => {
-                  const trimmed = label.trim();
-                  setPurposeOptions(prev =>
-                    prev.includes(trimmed) ? prev : [...prev, trimmed].sort(),
-                  );
-                  return { value: trimmed, label: trimmed };
-                }}
-                options={purposeOptions.map(p => ({ value: p, label: p }))}
-              />
+          {/* v-bill-purpose — Purchase (default) or Pawn. Always shown:
+              it decides the printed title (ទិញចូល / PURCHASE BILL, or
+              ទទួលបញ្ចាំ / PAWN). */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Purpose</Label>
+            <div className="inline-flex rounded-md border bg-white p-0.5 gap-0.5">
+              {([['purchase', 'Purchase', 'ទិញចូល'], ['pawn', 'Pawn', 'ទទួលបញ្ចាំ']] as const).map(([key, en, kh]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPurpose(key)}
+                  aria-pressed={purpose === key}
+                  className={`h-8 px-3 rounded text-sm ${purpose === key
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  {en} <span className={purpose === key ? 'text-blue-100' : 'text-gray-400'}>· {kh}</span>
+                </button>
+              ))}
             </div>
-          )}
+          </div>
 
           {/* Notes / Terms 2-col + summary. Either or both can be
               hidden via the Accountant Settings popup. When only one
@@ -2763,7 +2749,7 @@ function BillDetailDialog({
               // document would invite someone to pay us for our own
               // purchase.
               template={BILL_PRINT_TEMPLATE}
-              title={billPrintTitle(invoice.kind)}
+              title={billPrintTitle(invoice.kind, invoice.purpose)}
               partyLabel={BILL_PARTY_LABEL}
             />
           </>

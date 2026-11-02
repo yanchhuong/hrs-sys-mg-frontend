@@ -62,6 +62,17 @@ export type BillTaxType = '1' | '2' | '3' | '11' | '12';
 /** Discount shape — "amount" (flat money-off) or "percent" (of subtotal). */
 export type DiscountType = 'amount' | 'percent';
 
+/** v-bill-purpose — a bill is either a Purchase (the default) or a Pawn
+ *  (goods received as a pledge, ទទួលបញ្ចាំ). Stored in `purpose`; any
+ *  other value — older free text — reads as Purchase. */
+export type BillPurpose = 'purchase' | 'pawn';
+export const billPurposeOf = (p?: string | null): BillPurpose => (p === 'pawn' ? 'pawn' : 'purchase');
+/** The printed title per purpose — credit / debit notes keep their own. */
+export const BILL_PURPOSE_TITLE: Record<BillPurpose, { kh: string; en: string }> = {
+  purchase: { kh: 'ទិញចូល',    en: 'PURCHASE BILL' },
+  pawn:     { kh: 'ទទួលបញ្ចាំ', en: 'PAWN' },
+};
+
 export interface Bill {
   id: string;
   billNo: string;

@@ -897,7 +897,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                            :                                          yyyy;
               const seqWidth = Math.max(2, Math.min(6, draft.numberSeqWidth || 3));
               const seqExample = '1'.padStart(seqWidth, '0');
-              const previewNo = `${draft.prefixCommercial || 'INV'}-${dateStr}-${seqExample}`;
+              const previewNo = `${draft.prefixCommercial || (scope === 'purchase' ? 'BILL' : 'INV')}-${dateStr}-${seqExample}`;
               return (
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
@@ -928,7 +928,9 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                 ) : (
                   <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                     {prefixRow(prefixLabels.commercial, 'prefixCommercial')}
-                    {!isSingleKind && prefixRow(prefixLabels.tax,        'prefixTax')}
+                    {/* Bills have no separate Tax numbering — a Tax bill
+                        takes the Bill prefix and counter (v-bill-numbering). */}
+                    {!isSingleKind && scope !== 'purchase' && prefixRow(prefixLabels.tax, 'prefixTax')}
                     {!isSingleKind && prefixRow(prefixLabels.creditNote, 'prefixCreditNote')}
                     {!isSingleKind && prefixRow(prefixLabels.debitNote,  'prefixDebitNote')}
                   </div>
@@ -938,7 +940,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                  *  segment, seq dropdown drives the trailing pad width.
                  *  Preview below updates live so HR sees the exact
                  *  shape they're committing to. */}
-                {scope === 'sale' && (
+                {(scope === 'sale' || scope === 'purchase') && (
                   <div className="grid grid-cols-[1fr_1fr] gap-3 pt-3 mt-1 border-t">
                     <div className="space-y-1">
                       <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
