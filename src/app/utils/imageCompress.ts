@@ -32,15 +32,15 @@
 //     at QUALITY as before. Protects the DB from a 25 MB phone photo
 //     while leaving normal shop pictures untouched.
 //
-// Downscaled pipeline sits at 768px / Q78 (previously 512/Q70). A
-// 224 px POS tile at 2× DPR is ~448 px, which the old 512 pipeline
-// barely covered; 768 covers desktop zooms + product-detail overlays.
-// Thumbnails (`makeThumbnailFromUrl` below) now emit 400/Q80 so the
-// grid tile is crisp on high-DPI displays — see the bumped defaults
-// on the export.
+// Downscaled pipeline sits at 1280px / Q85 (previously 768/Q78, and
+// 512/Q70 before that). 768 read as soft once a phone photo opened
+// full size on a 3× screen (~1170 px across); 1280 covers it, and the
+// same photo taken on mobile is kept at that size too (item-edit).
+// Thumbnails (`makeThumbnailFromUrl` below) emit 512/Q85 — the mobile
+// POS tile is ~170 dp, ~510 px at 3× — see the defaults on the export.
 const BYPASS_COMPRESS_BYTES = 2 * 1024 * 1024;
-const MAX_EDGE = 768;
-const QUALITY  = 0.78;
+const MAX_EDGE = 1280;
+const QUALITY  = 0.85;
 const HARD_MAX_BYTES = 25 * 1024 * 1024;
 
 /** File formats we refuse to compress because Canvas.toBlob can't
@@ -77,19 +77,20 @@ function edges(source: HTMLImageElement | ImageBitmap): { w: number; h: number }
  * full-size cover per row.
  *
  * Defaults bumped from 200/Q65 (v-image-sharpen) to 400/Q80
- * (v-image-sharpen-v2). A POS tile is ~200 px CSS and displays at
- * ~400 px on a 2× DPR panel; anything smaller than the display size
- * gets upscaled by the browser and reads as blur. Bytes go from
- * ~10 KB to ~35 KB per thumbnail — the list-JSON payload cost is
- * manageable up to a few hundred items and disappears in gzip.
+ * (v-image-sharpen-v2), then to 512/Q85: the mobile POS tile is
+ * ~170 dp across two columns, ~510 px on a 3× phone, and anything
+ * smaller than the display size gets upscaled and reads as blur.
+ * The API generates its own thumbnails at the same 512 px
+ * (StockItemImageService). Lists load thumbnails by URL, not inline,
+ * so the larger bytes cost nothing until a tile is shown.
  *
  * Returns the original URL unchanged if it's already smaller than
  * the thumbnail edge — no point re-encoding a 128 px icon.
  */
 export async function makeThumbnailFromUrl(
   src: string,
-  edge = 400,
-  quality = 0.8,
+  edge = 512,
+  quality = 0.85,
 ): Promise<string> {
   if (!src) return src;
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {

@@ -158,6 +158,22 @@ function lineUnitPrice(line: CartLine): number {
   return Number(line.item.unitPrice) + line.modifiers.reduce((s, m) => s + Number(m.priceAdj || 0), 0);
 }
 
+/** The extra prices an item's options add, positive ones only. */
+function optionPrices(item: shopApi.PublicShopItem): number[] {
+  return (parseModifiers(item.modifiers)?.groups ?? [])
+    .flatMap(g => g.options.map(o => Number(o.priceAdj) || 0))
+    .filter(p => p > 0);
+}
+
+/** The price a shop card shows. An item at $0.00 whose options carry the
+ *  price (Size S +$1.50 / M +$2.00) shows its cheapest option — a $0.00
+ *  on the card reads as free, or as not priced yet. */
+function shopPriceLabel(item: shopApi.PublicShopItem): string {
+  const base = Number(item.unitPrice) || 0;
+  const adds = base > 0 ? [] : optionPrices(item);
+  return adds.length ? `From $${Math.min(...adds).toFixed(2)}` : `$${base.toFixed(2)}`;
+}
+
 export function PublicShopPage() {
   /** V315 — the pathname can now take two shapes:
    *    /shop/{tenantCode}           — tenant-wide QR
@@ -393,8 +409,11 @@ export function PublicShopPage() {
   // Browse page is shopper-facing: hide anything we couldn't actually
   // sell right now. Out-of-stock items add noise without a use case —
   // the customer can't order them and the cashier can't fulfil them.
+  // Nor can an item priced $0.00 — usually one not priced yet — unless
+  // its options carry the price (Size S +$1.50 / M +$2.00).
   const inStockItems = useMemo(() => {
-    return data ? data.items.filter(it => it.inStock) : [];
+    const priced = (it: shopApi.PublicShopItem) => Number(it.unitPrice) > 0 || optionPrices(it).length > 0;
+    return data ? data.items.filter(it => it.inStock && priced(it)) : [];
   }, [data]);
 
   const filtered = useMemo(() => {
@@ -944,7 +963,7 @@ export function PublicShopPage() {
               </span>
             </div>
             {/* V266 — company profile row (address / phone / email)
-                + trailing "Powered by SMRT HRMS" brand link on the
+                + trailing "Powered by hr-share.com" brand link on the
                 right. Always renders (even when no contact info is
                 set) so the powered-by attribution is visible on
                 every shop. Each contact chip is a link when the
@@ -986,7 +1005,7 @@ export function PublicShopPage() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 hover:text-white"
               >
-                Powered by <b className="text-white">SMRT HRMS</b>
+                Powered by <b className="text-white">hr-share.com</b>
               </a>
             </div>
           </div>
@@ -1851,7 +1870,7 @@ function PublicShopCard({
         </div>
         <div className="mt-1 flex items-center justify-between gap-2">
           <span className="text-sm font-semibold text-emerald-700">
-            ${Number(item.unitPrice).toFixed(2)}
+            {shopPriceLabel(item)}
           </span>
           {/* Quick-add button — stopPropagation so tapping the "+" only
               adds one and doesn't also open the detail dialog. Items with
@@ -2097,7 +2116,7 @@ function ItemDetailDialog({
           </div>
           <div className="flex items-baseline gap-3">
             <span className="text-2xl font-semibold text-emerald-700">
-              ${Number(item.unitPrice).toFixed(2)}
+              {shopPriceLabel(item)}
             </span>
             {item.unit && (
               <span className="text-xs text-gray-500">per {item.unit}</span>
