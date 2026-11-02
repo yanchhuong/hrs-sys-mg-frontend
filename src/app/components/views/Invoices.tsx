@@ -3935,7 +3935,7 @@ function BiLabel({ kh, en, wrapEn = false }: { kh: string; en: string; wrapEn?: 
 }
 
 export function PrintTaxInvoice({
-  invoice, customer, company, paid, currencySettings, template, skuById = {},
+  invoice, customer, company, paid, currencySettings, template, skuById = {}, title,
 }: {
   invoice: invoicesApi.Invoice;
   customer?: customersApi.Customer;
@@ -3956,6 +3956,9 @@ export function PrintTaxInvoice({
    *  name. The lines carry only the id; a line without one, or a
    *  free-text line, prints its name alone. */
   skuById?: Record<string, string>;
+  /** Overrides the per-kind title — Bills print as "PURCHASE BILL" /
+   *  ទិញចូល (v-bill-print-title). Omitted, the kind decides as before. */
+  title?: { kh: string; en: string };
 }) {
   /* Merge the tenant template config with the built-in defaults so
    * every knob has a value regardless of whether the tenant has a
@@ -4209,7 +4212,9 @@ export function PrintTaxInvoice({
          * CN / DN keep their fixed banners so the recipient still
          * sees at a glance which document this is. */
         const templateTitle = (cfgHeader.title ?? '').trim();
-        const kindTitle = invoice.kind === 'tax'
+        // A caller-set title (a Bill: "PURCHASE BILL") wins over the kind's.
+        const kindTitle = title ? title
+          : invoice.kind === 'tax'
           ? { kh: 'វិក្កយបត្រអាករ',     en: 'TAX INVOICE' }
           : invoice.kind === 'credit_note'
           ? { kh: 'លិខិតឥណទាន',         en: 'CREDIT NOTE' }

@@ -179,47 +179,26 @@ const TAX_TYPES_FOR_KIND = (_kind: billsApi.BillKind, _parentKind?: billsApi.Bil
  */
 /* ────────── Print adapters ──────────
  *
- * A Bill prints through the Sale side's PrintTaxInvoice, because it is
- * the same document seen from the other side of the trade. Only the
- * parties swap:
- *
- *   issuer slot  ← the VENDOR   (their name, address, TIN in the VAT boxes)
- *   bill-to slot ← OUR company
- *
- * That mapping is the whole reason this works without a second 500-line
- * template to keep in sync. The three adapters below are deliberately
- * dumb — if the print layout gains a field, it gains it for bills too.
+ * A Bill prints through the Sale side's PrintTaxInvoice, exactly as an
+ * invoice does — same title, same layout, OUR company at the head
+ * (v-bill-print-as-invoice). The one difference is the party block: an
+ * invoice fills it from the customer, a bill from the VENDOR. The
+ * adapters below are deliberately dumb — if the print layout gains a
+ * field, it gains it for bills too.
  */
 
-/** The vendor, shaped as the issuing company. */
-function vendorAsIssuer(v: vendorsApi.Vendor | undefined): settingsApi.CompanyInfo | null {
-  if (!v) return null;
+/** The vendor, shaped as the party block an invoice fills from its customer. */
+function vendorAsParty(v: vendorsApi.Vendor | undefined): customersApi.Customer | undefined {
+  if (!v) return undefined;
   return {
+    id: v.id,
+    type: v.type,
     name: v.name,
-    legalName: v.name,
-    // Lands in the issuer's VAT-TIN boxes — on a supplier's tax invoice
-    // that is the supplier's TIN, which is exactly what a vendor record
-    // holds. Blank when the vendor is an individual with no TIN.
-    taxId: v.tin ?? null,
+    tin: v.tin ?? null,
     address: v.address ?? null,
     phone: v.phone ?? null,
-    email: null,
-    website: v.site ?? null,
-    // Vendors carry no logo, so the header's logo slot renders empty.
-    logoUrl: null,
-  };
-}
-
-/** Our own company, shaped as the party being billed. */
-function companyAsParty(c: settingsApi.CompanyInfo | null): customersApi.Customer | undefined {
-  if (!c) return undefined;
-  return {
-    id: 'self',
-    type: 'business',
-    name: c.name,
-    tin: c.taxId ?? null,
-    address: c.address ?? null,
-    phone: c.phone ?? null,
+    representative: v.representative ?? null,
+    site: v.site ?? null,
   } as customersApi.Customer;
 }
 
@@ -237,6 +216,13 @@ function billAsPrintable(b: billsApi.Bill): invoicesApi.Invoice {
  *  banking: those cards are OUR receiving accounts and have no business
  *  on a document a supplier issued to us. */
 const BILL_PRINT_TEMPLATE = { config: { footer: { showBanking: false } } } as never;
+
+/** A bill's printed title. Credit / debit notes keep the template's own. */
+function billPrintTitle(kind: string): { kh: string; en: string } | undefined {
+  return kind === 'credit_note' || kind === 'debit_note'
+    ? undefined
+    : { kh: 'ទិញចូល', en: 'PURCHASE BILL' };
+}
 
 function VendorInfoCard({ vendor }: { vendor: vendorsApi.Vendor | undefined }) {
   if (!vendor) return null;
@@ -2765,8 +2751,8 @@ function BillDetailDialog({
             `}</style>
             <PrintTaxInvoice
               invoice={billAsPrintable(invoice)}
-              customer={companyAsParty(companyInfo)}
-              company={vendorAsIssuer(vendor)}
+              customer={vendorAsParty(vendor)}
+              company={companyInfo}
               paid={invoice.status === 'paid'}
               currencySettings={currencySettings}
               // Suppresses the bank-account footer. Those cards are OUR
@@ -2774,6 +2760,7 @@ function BillDetailDialog({
               // document would invite someone to pay us for our own
               // purchase.
               template={BILL_PRINT_TEMPLATE}
+              title={billPrintTitle(invoice.kind)}
             />
           </>
         )}
