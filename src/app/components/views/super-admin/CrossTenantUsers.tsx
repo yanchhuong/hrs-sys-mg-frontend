@@ -456,13 +456,6 @@ export function CrossTenantUsers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end gap-2">
-        <Button onClick={() => { resetAddForm(); setAddOpen(true); }}>
-          <UserPlus className="h-4 w-4 mr-2" />
-          Add User
-        </Button>
-      </div>
-
       <div className="stat-strip">
         <StatCard label="Total Users" value={counts.all}      icon={UsersRound} tone="blue" />
         <StatCard label="Admins"      value={counts.admin}    icon={Shield}     tone="red" />
@@ -481,6 +474,16 @@ export function CrossTenantUsers() {
                 <TabsTrigger value="employee">Employee <Badge className="ml-1.5 h-5 px-1.5 text-[10px] bg-gray-100 text-gray-700">{counts.employee}</Badge></TabsTrigger>
               </TabsList>
             </Tabs>
+            {/* Add User rides the tab row rather than a strip of its
+                own above the stat cards: it belongs to the list it
+                adds to, and the row was already justify-between with
+                nothing on its right. flex-wrap on the parent drops it
+                under the tabs on a narrow viewport instead of
+                squeezing them. */}
+            <Button className="shrink-0" onClick={() => { resetAddForm(); setAddOpen(true); }}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add User
+            </Button>
           </div>
           <div className="filter-strip">
             <div className="relative shrink-0">
