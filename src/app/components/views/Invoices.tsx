@@ -3935,7 +3935,7 @@ function BiLabel({ kh, en, wrapEn = false }: { kh: string; en: string; wrapEn?: 
 }
 
 export function PrintTaxInvoice({
-  invoice, customer, company, paid, currencySettings, template, skuById = {}, title,
+  invoice, customer, company, paid, currencySettings, template, skuById = {}, title, partyLabel,
 }: {
   invoice: invoicesApi.Invoice;
   customer?: customersApi.Customer;
@@ -3959,6 +3959,9 @@ export function PrintTaxInvoice({
   /** Overrides the per-kind title — Bills print as "PURCHASE BILL" /
    *  ទិញចូល (v-bill-print-title). Omitted, the kind decides as before. */
   title?: { kh: string; en: string };
+  /** Overrides the party-name label — a Bill's party is the vendor:
+   *  "ឈ្មោះអ្នកលក់ ឬបញ្ចាំ / Vendor Name" (v-bill-print-vendor-label). */
+  partyLabel?: { kh: string; en: string };
 }) {
   /* Merge the tenant template config with the built-in defaults so
    * every knob has a value regardless of whether the tenant has a
@@ -4245,7 +4248,7 @@ export function PrintTaxInvoice({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {!!String(customer?.name ?? '').trim() && (
             <div style={{ display: 'flex', gap: '8px' }}>
-              <div style={{ minWidth: '140px' }}><BiLabel kh="ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន" en="Company Name / Customer" /></div>
+              <div style={{ minWidth: '140px' }}><BiLabel kh={partyLabel?.kh ?? 'ឈ្មោះក្រុមហ៊ុន ឬ អតិថិជន'} en={partyLabel?.en ?? 'Company Name / Customer'} /></div>
               <div>:</div>
               <div style={{ fontWeight: 600 }}>{customer?.name ?? ''}</div>
             </div>

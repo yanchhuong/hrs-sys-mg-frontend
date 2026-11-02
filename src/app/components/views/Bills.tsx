@@ -217,6 +217,9 @@ function billAsPrintable(b: billsApi.Bill): invoicesApi.Invoice {
  *  on a document a supplier issued to us. */
 const BILL_PRINT_TEMPLATE = { config: { footer: { showBanking: false } } } as never;
 
+/** The party block holds the vendor on a bill. */
+const BILL_PARTY_LABEL = { kh: 'ឈ្មោះអ្នកលក់ ឬបញ្ចាំ', en: 'Vendor Name' };
+
 /** A bill's printed title. Credit / debit notes keep the template's own. */
 function billPrintTitle(kind: string): { kh: string; en: string } | undefined {
   return kind === 'credit_note' || kind === 'debit_note'
@@ -2761,6 +2764,7 @@ function BillDetailDialog({
               // purchase.
               template={BILL_PRINT_TEMPLATE}
               title={billPrintTitle(invoice.kind)}
+              partyLabel={BILL_PARTY_LABEL}
             />
           </>
         )}
