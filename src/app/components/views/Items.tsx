@@ -50,6 +50,12 @@ const CameraBarcodeScanner = lazy(() =>
   import('../common/CameraBarcodeScanner')
     .then(m => ({ default: m.CameraBarcodeScanner })),
 );
+// Same deal for printing labels: jsbarcode + jspdf ride in this
+// chunk, and neither is touched until somebody opens the sheet.
+const BarcodeLabelsDialog = lazy(() =>
+  import('../common/BarcodeLabelsDialog')
+    .then(m => ({ default: m.BarcodeLabelsDialog })),
+);
 import { SearchablePicker } from '../common/SearchablePicker';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import { FilterStrip } from '../common/FilterStrip';
@@ -750,6 +756,10 @@ export function Items() {
   /** V302 — camera-scan dialog open state for the Item edit form.
    *  Decoded value drops into form.barcode. */
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  /** Item whose barcode is being turned into a label sheet, or null.
+   *  Only ever set for a row that HAS a barcode — there is nothing to
+   *  print otherwise, so the action does not render. */
+  const [labelsFor, setLabelsFor] = useState<itemsApi.Item | null>(null);
   /** v-items-scan-to-stock-in — separate scanner state for the
    *  toolbar barcode icon (as opposed to the one inside the edit
    *  form). Decoded value routes through itemsApi.getByBarcode; on
@@ -1376,6 +1386,18 @@ export function Items() {
               setForm(f => ({ ...f, barcode: code.trim() }));
               setBarcodeScannerOpen(false);
             }}
+          />
+        </Suspense>
+      )}
+
+      {/* Barcode label sheet. Suspense-mounted beside the scanner
+          dialogs for the same reason: jsbarcode + jspdf are a few
+          hundred KB that only matter once somebody prints labels. */}
+      {labelsFor?.barcode && (
+        <Suspense fallback={null}>
+          <BarcodeLabelsDialog
+            item={{ name: labelsFor.name, sku: labelsFor.sku, barcode: labelsFor.barcode }}
+            onClose={() => setLabelsFor(null)}
           />
         </Suspense>
       )}
@@ -2049,6 +2071,18 @@ export function Items() {
                               <Button size="sm" variant="ghost" className="h-7"
                                 onClick={() => openEdit(it)} title="Edit" aria-label="Edit item">
                                 <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            {/* Barcode labels — only where there is
+                                a barcode to print, and only while the
+                                barcode feature is on, matching the
+                                column and the form field. */}
+                            {barcodeFeatureOn && !!it.barcode && (
+                              <Button size="sm" variant="ghost" className="h-7"
+                                onClick={() => setLabelsFor(it)}
+                                title="Download barcode labels"
+                                aria-label={`Download barcode labels for ${it.name}`}>
+                                <ScanBarcode className="h-3.5 w-3.5" />
                               </Button>
                             )}
                             {canRemove && (

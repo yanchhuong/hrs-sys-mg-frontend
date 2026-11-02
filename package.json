@@ -66,6 +66,7 @@
     "firebase": "^12.17.1",
     "html2canvas": "^1.4.1",
     "input-otp": "1.4.2",
+    "jsbarcode": "^3.12.1",
     "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "lucide-react": "0.487.0",
