@@ -216,7 +216,18 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
   // and there is still ONE bot per tenant behind it.
   const telegramInLens    = !isPatient;
   const canViewTelegram   = telegramInLens && canView('telegram');
-  const canShareTelegram  = telegramInLens && canCreate('telegram');
+  // v-customer-bot-gate — Share also needs a customer bot to exist
+  // (own or platform fallback); with none the link would be refused.
+  // An unreadable status keeps Share as before (server still refuses).
+  const [customerBotReady, setCustomerBotReady] = useState(true);
+  useEffect(() => {
+    let live = true;
+    telegramApi.getStatus()
+      .then(s => { if (live) setCustomerBotReady(s.source !== 'none'); })
+      .catch(() => { /* unknown — keep Share */ });
+    return () => { live = false; };
+  }, []);
+  const canShareTelegram  = telegramInLens && canCreate('telegram') && customerBotReady;
   const canUnlinkTelegram = telegramInLens && canDelete('telegram');
   const canManageTelegramBot = telegramInLens && canUpdate('telegram');
 

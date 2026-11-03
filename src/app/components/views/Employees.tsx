@@ -623,7 +623,18 @@ export function Employees() {
   // the Customer page split: 'view' gates the column itself, 'create'
   // gates Share-link, 'delete' gates Unlink, 'update' gates the gear.
   const canViewHrTelegram   = canView('hr_telegram');
-  const canShareHrTelegram  = canCreate('hr_telegram');
+  // v-hr-bot-gate — Share also needs the company's HR bot to be set up
+  // and on (there is no platform fallback for it); without one the link
+  // would be refused. An unreadable status keeps Share as before.
+  const [hrBotReady, setHrBotReady] = useState(true);
+  useEffect(() => {
+    let live = true;
+    hrBotApi.myBotAvailable()
+      .then(a => { if (live) setHrBotReady(a); })
+      .catch(() => { /* unknown — keep Share */ });
+    return () => { live = false; };
+  }, []);
+  const canShareHrTelegram  = canCreate('hr_telegram') && hrBotReady;
   const canUnlinkHrTelegram = canDelete('hr_telegram');
   const canManageHrTelegramBot = canUpdate('hr_telegram');
   const [searchTerm, setSearchTerm] = useState('');

@@ -619,6 +619,18 @@ export function UserManagement() {
     ?? (u.employeeId ? tgLinks.find(l => l.employeeId === u.employeeId) : undefined)
     ?? null;
   const tgCols = canViewHrTelegram ? 10 : 9;
+  // v-hr-bot-gate — Share also needs the company's HR bot to be set up
+  // and on (there is no platform fallback for it); without one the link
+  // would be refused. An unreadable status keeps Share as before.
+  const [hrBotReady, setHrBotReady] = useState(true);
+  useEffect(() => {
+    let live = true;
+    hrBotApi.myBotAvailable()
+      .then(a => { if (live) setHrBotReady(a); })
+      .catch(() => { /* unknown — keep Share */ });
+    return () => { live = false; };
+  }, []);
+
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   /** V-user-email-editable — pop-up dialog behind the popover's
    *  "Email reset link" action. Holds the user we're resetting plus
@@ -1965,7 +1977,7 @@ export function UserManagement() {
                               name={user.name?.trim() || employee?.name || user.email}
                               noun="user"
                               linked={tgLinkFor(user)}
-                              canShare={canCreate('hr_telegram')}
+                              canShare={canCreate('hr_telegram') && hrBotReady}
                               canUnlink={canDelete('hr_telegram')}
                               generate={() => hrBotApi.generateUserLink(user.id)}
                               unlink={async () => {
