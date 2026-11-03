@@ -29,6 +29,7 @@ import { Users, Search, RefreshCw, Loader2 } from 'lucide-react';
 import { TableRowsSkeleton } from './LoadingSkeletons';
 import { HrTelegramLinkCell } from './HrTelegramLinkCell';
 import * as hrBotApi from '../../api/hrTelegramBots';
+import { ApiError } from '../../api/client';
 
 type Filter = 'all' | 'connected' | 'not-connected';
 
@@ -50,13 +51,27 @@ export function HrTelegramConnectionsCard({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  /** The server is older than this screen — see load(). */
+  const [unavailable, setUnavailable] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       setRows(await hrBotApi.listConnections());
+      setUnavailable(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load Telegram connections');
+      // The browser can be a release ahead of the API: the web
+      // deploys from Vercel on push, the droplet's jar is rebuilt by
+      // hand. A 404 here means exactly that, and a red toast reads as
+      // "this is broken" when the rest of the tab — registering the
+      // bot, the group card — works fine off endpoints that have been
+      // there since V117. Say which half is behind instead.
+      if (e instanceof ApiError && e.status === 404) {
+        setUnavailable(true);
+        setRows([]);
+      } else {
+        toast.error(e instanceof Error ? e.message : 'Failed to load Telegram connections');
+      }
     } finally {
       setLoading(false);
     }
@@ -96,12 +111,20 @@ export function HrTelegramConnectionsCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {!bot && (
+        {unavailable && (
+          <div className="rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-[11px] text-amber-800 leading-snug">
+            This API server doesn't have <span className="tabular-nums">GET /api/v1/hr-telegram/connections</span> yet,
+            so the list can't be built. Deploy the current API build to see it. Registering the bot
+            above and the group settings below work either way; until then, connect people from the
+            Employees roster and User Management.
+          </div>
+        )}
+        {!unavailable && !bot && (
           <div className="rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-[11px] text-amber-800 leading-snug">
             Register the bot above first — connect links are minted from its token.
           </div>
         )}
-        {bot && !bot.enabled && (
+        {!unavailable && bot && !bot.enabled && (
           <div className="rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-[11px] text-amber-800 leading-snug">
             The bot is disabled, so new links won't be generated and messages won't be delivered.
             Existing connections are kept.
@@ -110,7 +133,7 @@ export function HrTelegramConnectionsCard({
 
         {/* One horizontal line that scrolls rather than stacking —
             the filter-row pattern the list pages use. */}
-        <div className="flex items-center gap-2 overflow-x-auto hover-scroll-x">
+        <div className={`flex items-center gap-2 overflow-x-auto hover-scroll-x ${unavailable ? 'hidden' : ''}`}>
           <div className="relative shrink-0">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
             <Input
@@ -145,7 +168,7 @@ export function HrTelegramConnectionsCard({
           </Button>
         </div>
 
-        <div className="rounded-md border overflow-hidden">
+        <div className={`rounded-md border overflow-hidden ${unavailable ? 'hidden' : ''}`}>
           <Table>
             <TableHeader>
               <TableRow>
