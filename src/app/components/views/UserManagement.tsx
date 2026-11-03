@@ -67,6 +67,8 @@ import {
 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { toast } from 'sonner';
+import * as hrBotApi from '../../api/hrTelegramBots';
+import { HrTelegramLinkCell } from '../common/HrTelegramLinkCell';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -599,8 +601,24 @@ export function UserManagement() {
   const { t } = useI18n();
   const { formatDate, formatDateTime } = useDateFormat();
   const confirm = useConfirm();
-  const { isModuleAvailable, isModuleEnabled } = useAuth();
+  const { isModuleAvailable, isModuleEnabled, canView, canCreate, canDelete } = useAuth();
   const [users, setUsers] = useState<User[]>(USE_MOCKS ? mockUsers : []);
+  /* v-hr-bot-users — the HR Telegram bot is shared with system users:
+   * each row can share a /start link and shows whether that user's chat
+   * is connected (their own user link, else their employee's). Same
+   * hr_telegram permissions as the Employees column. */
+  const canViewHrTelegram = canView('hr_telegram');
+  const [tgLinks, setTgLinks] = useState<hrBotApi.HrTelegramEmployee[]>([]);
+  const loadTgLinks = async () => {
+    if (!canViewHrTelegram) { setTgLinks([]); return; }
+    try { setTgLinks(await hrBotApi.listLinkedEmployees()); }
+    catch { setTgLinks([]); }
+  };
+  useEffect(() => { void loadTgLinks(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [canViewHrTelegram]);
+  const tgLinkFor = (u: User) => tgLinks.find(l => l.userId === u.id)
+    ?? (u.employeeId ? tgLinks.find(l => l.employeeId === u.employeeId) : undefined)
+    ?? null;
+  const tgCols = canViewHrTelegram ? 10 : 9;
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   /** V-user-email-editable — pop-up dialog behind the popover's
    *  "Email reset link" action. Holds the user we're resetting plus
@@ -1888,16 +1906,17 @@ export function UserManagement() {
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Last Login</TableHead>
+                    {canViewHrTelegram && <TableHead>Telegram</TableHead>}
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {usersPagination.paginatedItems.length === 0 && (
                     loading && users.length === 0
-                      ? <TableBodySkeletonRows rows={6} columns={9} />
+                      ? <TableBodySkeletonRows rows={6} columns={tgCols} />
                       : usersError
-                        ? <ListError message={usersError} onRetry={() => void loadUsers()} colSpan={9} />
-                        : <ListEmpty noun="users" colSpan={9} />
+                        ? <ListError message={usersError} onRetry={() => void loadUsers()} colSpan={tgCols} />
+                        : <ListEmpty noun="users" colSpan={tgCols} />
                   )}
                   {usersPagination.paginatedItems.map((user) => {
                     const employee = employees.find(
@@ -1940,6 +1959,24 @@ export function UserManagement() {
                         <TableCell className="text-sm">
                           {user.lastLogin ? formatDateTime(user.lastLogin) : '-'}
                         </TableCell>
+                        {canViewHrTelegram && (
+                          <TableCell className="w-[160px]">
+                            <HrTelegramLinkCell
+                              name={user.name?.trim() || employee?.name || user.email}
+                              noun="user"
+                              linked={tgLinkFor(user)}
+                              canShare={canCreate('hr_telegram')}
+                              canUnlink={canDelete('hr_telegram')}
+                              generate={() => hrBotApi.generateUserLink(user.id)}
+                              unlink={async () => {
+                                const l = tgLinkFor(user);
+                                if (l?.userId === user.id) await hrBotApi.unlinkUser(user.id);
+                                else if (user.employeeId) await hrBotApi.unlinkEmployee(user.employeeId);
+                              }}
+                              onChanged={() => { void loadTgLinks(); }}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="flex gap-1">
                             <Button

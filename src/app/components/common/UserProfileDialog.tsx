@@ -34,6 +34,7 @@ import { makeDeptName } from '../../utils/deptName';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from '../views/documentExtension';
 import { useConfirm } from '../../context/ConfirmContext';
 import { MyClubsPanel } from './ClubPrograms';
+import { MyTelegramCard } from './MyTelegramCard';
 
 interface Props {
   open: boolean;
@@ -663,6 +664,9 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                 }}
               />
             </div>
+
+            {/* v-hr-bot-users — link your own Telegram to the HR bot. */}
+            <MyTelegramCard />
 
             <DialogFooter className="pt-2">
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

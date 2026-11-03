@@ -35,7 +35,9 @@ export interface HrTelegramLinkResponse {
  *  clicks /start on the HR bot. Mirrors {@code TelegramCustomer}. */
 export interface HrTelegramEmployee {
   id: string;
-  employeeId: string;
+  employeeId: string | null;
+  /** v-hr-bot-users — the user this chat belongs to. */
+  userId?: string | null;
   chatId: number;
   telegramUsername?: string | null;
   displayName?: string | null;
@@ -81,4 +83,35 @@ export async function listLinkedEmployees(): Promise<HrTelegramEmployee[]> {
 
 export async function unlinkEmployee(employeeId: string): Promise<void> {
   return apiVoid(`/api/v1/hr-telegram/employees/${employeeId}`, { method: 'DELETE' });
+}
+
+/* ── v-hr-bot-users — the HR bot is shared with system users ── */
+
+/** A /start link for a user (User Management). */
+export async function generateUserLink(userId: string): Promise<HrTelegramLinkResponse> {
+  return apiJson('/api/v1/hr-telegram/user-links', { method: 'POST', json: { userId } });
+}
+
+/** Whether the company has an enabled HR bot to link to. */
+export async function myBotAvailable(): Promise<boolean> {
+  const r = await apiJson<{ available: boolean }>('/api/v1/hr-telegram/me/available');
+  return !!r?.available;
+}
+
+/** A /start link for the signed-in user (Your Profile). */
+export async function generateMyLink(): Promise<HrTelegramLinkResponse> {
+  return apiJson('/api/v1/hr-telegram/me/link', { method: 'POST' });
+}
+
+/** The chat the signed-in user linked, or null. */
+export async function getMyLink(): Promise<HrTelegramEmployee | null> {
+  return (await apiJson<HrTelegramEmployee | null>('/api/v1/hr-telegram/me')) ?? null;
+}
+
+export async function unlinkMe(): Promise<void> {
+  return apiVoid('/api/v1/hr-telegram/me', { method: 'DELETE' });
+}
+
+export async function unlinkUser(userId: string): Promise<void> {
+  return apiVoid(`/api/v1/hr-telegram/users/${userId}`, { method: 'DELETE' });
 }
