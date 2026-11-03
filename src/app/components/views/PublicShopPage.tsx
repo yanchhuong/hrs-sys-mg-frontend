@@ -166,12 +166,16 @@ function optionPrices(item: shopApi.PublicShopItem): number[] {
 }
 
 /** The price a shop card shows. An item at $0.00 whose options carry the
- *  price (Size S +$1.50 / M +$2.00) shows its cheapest option — a $0.00
- *  on the card reads as free, or as not priced yet. */
+ *  price (Size S +$1.50 / M +$2.00) shows its cheapest option. One with
+ *  no price at all shows none ('') — a $0.00 on the card reads as free.
+ *  Some shops price at the counter (jewellery by weight and the day's
+ *  gold rate), so those items stay listed, just unpriced
+ *  (v-shop-unpriced). */
 function shopPriceLabel(item: shopApi.PublicShopItem): string {
   const base = Number(item.unitPrice) || 0;
-  const adds = base > 0 ? [] : optionPrices(item);
-  return adds.length ? `From $${Math.min(...adds).toFixed(2)}` : `$${base.toFixed(2)}`;
+  if (base > 0) return `$${base.toFixed(2)}`;
+  const adds = optionPrices(item);
+  return adds.length ? `From $${Math.min(...adds).toFixed(2)}` : '';
 }
 
 export function PublicShopPage() {
@@ -409,11 +413,11 @@ export function PublicShopPage() {
   // Browse page is shopper-facing: hide anything we couldn't actually
   // sell right now. Out-of-stock items add noise without a use case —
   // the customer can't order them and the cashier can't fulfil them.
-  // Nor can an item priced $0.00 — usually one not priced yet — unless
-  // its options carry the price (Size S +$1.50 / M +$2.00).
+  // A $0.00 item stays listed: some shops price at the counter
+  // (jewellery by weight), and hiding them emptied those shops
+  // entirely. Its card just shows no price (shopPriceLabel).
   const inStockItems = useMemo(() => {
-    const priced = (it: shopApi.PublicShopItem) => Number(it.unitPrice) > 0 || optionPrices(it).length > 0;
-    return data ? data.items.filter(it => it.inStock && priced(it)) : [];
+    return data ? data.items.filter(it => it.inStock) : [];
   }, [data]);
 
   const filtered = useMemo(() => {
@@ -2118,7 +2122,8 @@ function ItemDetailDialog({
             <span className="text-2xl font-semibold text-emerald-700">
               {shopPriceLabel(item)}
             </span>
-            {item.unit && (
+            {/* "per pcs" means nothing without a price beside it. */}
+            {item.unit && !!shopPriceLabel(item) && (
               <span className="text-xs text-gray-500">per {item.unit}</span>
             )}
           </div>
