@@ -56,8 +56,14 @@ Press `y` for each prompt.
 if you're pointing at a different server:
 
 ```env
-VITE_API_BASE=http://198.211.108.211:4000
+VITE_API_BASE=https://api.hr-share.com
 ```
+
+The hostname, not the droplet's raw IP on port 4000, which earlier
+versions of this page showed. Two reasons it has to be the HTTPS
+host: Android 9+ blocks cleartext HTTP unless the manifest opts in,
+and port 4000 speaks plain HTTP only — a client that upgrades the
+scheme to https:// on its own gets a failed TLS handshake.
 
 Local dev tip — put your API dev machine's LAN IP (e.g.
 `http://192.168.1.42:4000`) and phones on the same Wi-Fi can reach

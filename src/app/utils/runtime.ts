@@ -34,7 +34,9 @@ export function isTauri(): boolean {
  *  without reissuing installers. */
 export const DESKTOP_ONLINE_API_BASE = 'https://api.hr-share.com';
 
-/** Older values that {@link DESKTOP_ONLINE_API_BASE} has had.
+/** Retired online URLs an install may still have persisted —
+ *  {@link DESKTOP_ONLINE_API_BASE} as it used to be, and the 8081
+ *  form that .env.example shipped before the HTTPS move.
  *
  *  This matters because `hrms:apiBaseOverride` in localStorage takes
  *  PRECEDENCE over the build-time `VITE_API_BASE` (see client.ts). An
@@ -45,7 +47,36 @@ export const DESKTOP_ONLINE_API_BASE = 'https://api.hr-share.com';
  *  {@link migrateLegacyApiBaseOverride}. */
 export const LEGACY_DESKTOP_ONLINE_API_BASES: readonly string[] = [
   'http://198.211.108.211:4000',
+  'http://198.211.108.211:8081',
 ];
+
+/** The droplet's raw IPv4. {@link DESKTOP_ONLINE_API_BASE} resolves to
+ *  it, so an override that addresses the address itself is a retired
+ *  value whatever scheme or port it carries. */
+const LEGACY_ONLINE_HOST = '198.211.108.211';
+
+/**
+ * Is this persisted override one of the retired online URLs?
+ *
+ * <p>Matched on host, not on the exact strings above. Those are the
+ * two this repo is known to have shipped, but an install can hold a
+ * third: a trailing slash, the 8081 form from an older .env, or the
+ * https:// variant a browser's HTTP-to-HTTPS upgrade leaves behind —
+ * and that last one is worse than the plain one, because it opens a
+ * TLS handshake against a port that only speaks cleartext HTTP and
+ * the request simply fails. Any of them should land on the hostname.</p>
+ */
+export function isLegacyOnlineApiBase(url: string | null | undefined): boolean {
+  if (!url) return false;
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (!trimmed) return false;
+  if (LEGACY_DESKTOP_ONLINE_API_BASES.includes(trimmed)) return true;
+  try {
+    return new URL(trimmed).hostname === LEGACY_ONLINE_HOST;
+  } catch {
+    return false;   // not a URL at all — leave it alone
+  }
+}
 
 /** Local API base used by the desktop shell's Offline mode. Matches
  *  the default baked into `.env.desktop` so a fresh install "just
@@ -67,7 +98,7 @@ export function getDesktopApiMode(): DesktopApiMode {
     if (override === DESKTOP_ONLINE_API_BASE) return 'online';
     // An install that toggled Online before the constant moved to
     // HTTPS still has the old URL persisted — that's still "online".
-    if (override && LEGACY_DESKTOP_ONLINE_API_BASES.includes(override)) return 'online';
+    if (isLegacyOnlineApiBase(override)) return 'online';
   } catch { /* private mode / storage disabled — fall through */ }
   // No (recognised) override — fall back to the baked-in VITE_API_BASE.
   const buildTime = (import.meta as { env?: { VITE_API_BASE?: string } })
@@ -92,7 +123,7 @@ export function migrateLegacyApiBaseOverride(): string | null {
     if (typeof localStorage === 'undefined') return null;
     const current = localStorage.getItem('hrms:apiBaseOverride')?.trim() ?? null;
     if (!current) return null;
-    if (!LEGACY_DESKTOP_ONLINE_API_BASES.includes(current)) return current;
+    if (!isLegacyOnlineApiBase(current)) return current;
     localStorage.setItem('hrms:apiBaseOverride', DESKTOP_ONLINE_API_BASE);
     return DESKTOP_ONLINE_API_BASE;
   } catch {
