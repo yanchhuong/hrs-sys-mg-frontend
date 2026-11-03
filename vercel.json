@@ -9,6 +9,17 @@
       "destination": "https://api.hr-share.com/api/:path*"
     },
     {
+      "source": "/shop/:code",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(TelegramBot|facebookexternalhit|Facebot|meta-externalagent|Twitterbot|WhatsApp|LinkedInBot|Slackbot|Discordbot|Viber|Line/|SkypeUriPreview|Zalo).*"
+        }
+      ],
+      "destination": "https://api.hr-share.com/api/v1/public/shop/:code/preview"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
