@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -26,6 +26,8 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as hrBotApi from '../../api/hrTelegramBots';
 import { HrTelegramGroupCard } from '../common/HrTelegramGroupCard';
+import { HrTelegramBotCard } from '../common/HrTelegramBotCard';
+import { HrTelegramConnectionsCard } from '../common/HrTelegramConnectionsCard';
 import { PayWaySettingsDialog } from '../common/PayWaySettingsDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import * as currencyApi from '../../api/currencySettings';
@@ -42,36 +44,55 @@ import * as TenantAgencyApi from '../../api/tenantAgencyRequests';
 import { PageTitleTooltip } from './agency/PageTitleTooltip';
 
 /**
- * Team activity bot — the company Telegram group the HR bot posts to.
+ * Settings ▸ Telegram Bot — one tab for the one bot.
  *
- * Thin host for the shared card: it only supplies the tenant's HR bot,
- * which the card needs because the group's link code is redeemed by
- * that bot and the card disables itself until one is registered.
- * `active` drives the card's poll, and a tab that is mounted is a tab
- * being looked at, so it is simply true here.
+ * v-hr-bot-settings. Three cards, in the order the work happens:
+ * register the bot, connect people to it, then point it at the company
+ * group. Setup used to live only behind Employees ▸ ⚙, which made
+ * sense while the bot was an employee feature; since v-hr-bot-users it
+ * also carries system users' notifications, so an admin with no
+ * employee record has business here and no reason to look under
+ * Employees. The Employees dialog keeps its copy — same component,
+ * same endpoints, so the two cannot drift.
+ *
+ * The bot is held here rather than fetched three times: the group card
+ * needs it (the group's link code is redeemed by that bot) and the
+ * connections card needs it (links are minted from its token, so with
+ * no bot it says so instead of offering buttons that fail).
  */
-function TeamBotCard() {
+function TelegramBotTab() {
   const [bot, setBot] = useState<hrBotApi.HrTelegramBot | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    void hrBotApi.getBot()
-      .then(b => { if (!cancelled) setBot(b); })
-      .catch(() => { /* no bot registered, or no permission — the card says so */ })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+  // HrTelegramBotCard loads the bot for its own form and hands it up,
+  // so there is one GET for the tab. Until the first one lands the
+  // cards below would be guessing, so they wait.
+  const onBotChange = useCallback((b: hrBotApi.HrTelegramBot | null) => {
+    setBot(b);
+    setLoaded(true);
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading the HR bot…
-      </div>
-    );
-  }
-  return <HrTelegramGroupCard bot={bot} active />;
+  return (
+    <>
+      <Card>
+        <CardContent className="pt-6">
+          <HrTelegramBotCard onBotChange={onBotChange} />
+        </CardContent>
+      </Card>
+
+      {loaded ? (
+        <>
+          <HrTelegramConnectionsCard bot={bot} />
+          <HrTelegramGroupCard bot={bot} active />
+        </>
+      ) : (
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading the HR bot…
+        </div>
+      )}
+    </>
+  );
 }
 
 export function Settings() {
@@ -106,7 +127,7 @@ export function Settings() {
           {isAdmin && (
             <TabsTrigger value="teambot">
               <Send className="mr-2 h-4 w-4" />
-              Team Activity Bot
+              Telegram Bot
             </TabsTrigger>
           )}
         </TabsList>
@@ -134,11 +155,11 @@ export function Settings() {
           </TabsContent>
         )}
 
-        {/* Admin-only, like Currency and PayWay: it decides what the
-            whole company sees in a shared chat. */}
+        {/* Admin-only, like Currency and PayWay: one bot, and what it
+            posts to a chat the whole company reads. */}
         {isAdmin && (
           <TabsContent value="teambot" className="space-y-6">
-            <TeamBotCard />
+            <TelegramBotTab />
           </TabsContent>
         )}
       </Tabs>
