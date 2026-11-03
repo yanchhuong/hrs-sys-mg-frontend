@@ -74,6 +74,9 @@ export function PlatformTelegram() {
   const [errUsername, setErrUsername] = useState('');
   const [errToken, setErrToken] = useState('');
   const [errChatId, setErrChatId] = useState('');
+  // v-error-bot-detect — chats the bot has seen, offered for Chat ID.
+  const [errChats, setErrChats] = useState<Array<{ id: string; title: string; type: string }> | null>(null);
+  const [errDetecting, setErrDetecting] = useState(false);
   const [errEnabled, setErrEnabled] = useState(true);
   const [errSkipTypes, setErrSkipTypes] = useState('');
   const [errDescription, setErrDescription] = useState('');
@@ -251,6 +254,22 @@ export function PlatformTelegram() {
     setErrorDialogOpen(true);
   };
 
+  const detectChats = async () => {
+    setErrDetecting(true);
+    try {
+      const chats = await telegramApi.detectErrorBotChats(errToken.trim() || undefined);
+      setErrChats(chats);
+      if (chats.length === 1) setErrChatId(chats[0].id);
+      if (chats.length === 0) {
+        toast.info('No chats yet — send any message to the bot (or post in a group it was added to), then press Find again.');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not read chats');
+    } finally {
+      setErrDetecting(false);
+    }
+  };
+
   const saveError = async () => {
     if (!errUsername.trim()) { toast.error('Bot username is required'); return; }
     if (!errToken.trim()) {
@@ -260,6 +279,12 @@ export function PlatformTelegram() {
       return;
     }
     if (!errChatId.trim()) { toast.error('Chat ID is required'); return; }
+    // The digits before ':' in a token are the bot's own id — Telegram
+    // will not let a bot message itself (the server refuses it too).
+    if (errChatId.trim() === errToken.trim().split(':')[0]) {
+      toast.error("That Chat ID is the bot's own ID — use Find to pick your chat or group.");
+      return;
+    }
     setErrorSaving(true);
     try {
       await telegramApi.putErrorBot({
@@ -769,15 +794,35 @@ export function PlatformTelegram() {
             <div className="grid grid-cols-[1fr_auto] gap-4 items-start">
               <div className="space-y-1.5">
                 <Label className="text-xs">Chat ID</Label>
-                <Input
-                  value={errChatId}
-                  onChange={e => setErrChatId(e.target.value)}
-                  placeholder="-1001234567890"
-                  className="tabular-nums"
-                  disabled={errorSaving}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    value={errChatId}
+                    onChange={e => setErrChatId(e.target.value)}
+                    placeholder="-1001234567890"
+                    className="tabular-nums"
+                    disabled={errorSaving}
+                  />
+                  <Button type="button" variant="outline" className="h-10 shrink-0"
+                    onClick={() => void detectChats()} disabled={errorSaving || errDetecting}
+                    title="List the chats that recently messaged this bot">
+                    {errDetecting ? 'Finding…' : 'Find'}
+                  </Button>
+                </div>
+                {errChats && errChats.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {errChats.map(c => (
+                      <button key={c.id} type="button" onClick={() => setErrChatId(c.id)}
+                        className={`text-[11px] px-2 py-0.5 rounded-full border ${errChatId === c.id
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                        {c.title} <span className="text-gray-400">· {c.type} · {c.id}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="text-[10px] text-gray-500">
-                  Numeric id (negative for groups / channels, positive for a direct user chat).
+                  Send the bot a message (or add it to a group and post there), then press Find.
+                  Not the bot's own id — Telegram won't let a bot message itself.
                 </div>
               </div>
               <div className="space-y-1.5">

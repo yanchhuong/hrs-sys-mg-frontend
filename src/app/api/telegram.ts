@@ -212,6 +212,16 @@ export async function deleteErrorBot(): Promise<void> {
   return apiVoid('/api/v1/platform/telegram/error-bot', { method: 'DELETE' });
 }
 
+/** v-error-bot-detect — chats that recently messaged the bot (newest
+ *  first). Pass the token from the form for a bot not saved yet. */
+export async function detectErrorBotChats(
+  botToken?: string,
+): Promise<Array<{ id: string; title: string; type: string }>> {
+  return apiJson('/api/v1/platform/telegram/error-bot/detect-chat', {
+    method: 'POST', json: { botToken: botToken || null },
+  });
+}
+
 export async function testErrorBot(): Promise<{ ok: boolean; message: string }> {
   return apiJson('/api/v1/platform/telegram/error-bot/test', { method: 'POST' });
 }
