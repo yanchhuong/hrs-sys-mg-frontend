@@ -442,8 +442,7 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
             Team group
           </h3>
           <p className="text-[11px] text-gray-500">
-            Post team activity (invoices, expenses, approvals…) to one or more Telegram groups,
-            each with its own events. Employees' private chats are not affected.
+            Post team activity (invoices, expenses, approvals…)
           </p>
         </div>
         {linkedCount > 0 && (
