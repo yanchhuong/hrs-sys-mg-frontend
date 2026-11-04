@@ -269,10 +269,18 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
     }
   };
 
+  /* v-link-at-bot — the command names the bot: /link@sreykhorn_bot CODE.
+   * With Telegram's group privacy mode on (the default), a bot is only
+   * sure to receive commands addressed to it; a bare "/link CODE" can be
+   * withheld (e.g. when another bot spoke last), and the bot then never
+   * answers at all. The agent's command handler accepts both forms. */
+  const linkCommand = (g: Group) =>
+    g.linkCode ? `/link${bot?.botUsername ? `@${bot.botUsername}` : ''} ${g.linkCode}` : '';
+
   const copyCommand = async (g: Group) => {
     if (!g.linkCode) return;
     try {
-      await navigator.clipboard.writeText(`/link ${g.linkCode}`);
+      await navigator.clipboard.writeText(linkCommand(g));
       setCopiedId(g.id);
       window.setTimeout(() => setCopiedId(c => (c === g.id ? null : c)), 1500);
     } catch {
@@ -400,7 +408,7 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
             <li>
               In the group, send:
               <div className="mt-1 flex items-center gap-2">
-                <code className="rounded bg-white border px-2 py-1 font-mono text-sm select-all">/link {g.linkCode}</code>
+                <code className="rounded bg-white border px-2 py-1 font-mono text-sm select-all break-all">{linkCommand(g)}</code>
                 <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => copyCommand(g)}>
                   {copied ? <Check className="h-3.5 w-3.5 mr-1" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
                   {copied ? 'Copied' : 'Copy'}
@@ -408,7 +416,10 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
               </div>
             </li>
             <li>
-              Wait a moment — this card will show the group name.
+              Wait a moment — the bot replies "✅ This group is connected" and this card shows the group name.
+              <div className="text-xs text-gray-500 mt-0.5">
+                No reply from the bot? Make it an admin of the group, or in @BotFather send /setprivacy → Disable, then send the command again.
+              </div>
               {!codeExpired && !pollTimedOut && <Loader2 className="h-3.5 w-3.5 ml-1.5 animate-spin text-gray-400 inline" />}
               {!codeExpired && pollTimedOut && (
                 <Button type="button" variant="link" size="sm" className="h-auto p-0 ml-1.5 text-xs" onClick={checkAgain}>
