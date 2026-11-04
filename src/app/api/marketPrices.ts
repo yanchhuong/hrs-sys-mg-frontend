@@ -81,16 +81,6 @@ export function add(req: {
   return apiJson('/api/v1/market-prices', { method: 'POST', json: req });
 }
 
-/**
- * v-market-regenerate — stamp today with the price already in force.
- * Same title, same value, today's date; buy and sell carried
- * independently, each from its own latest row. Today's entry is
- * replaced, so pressing it twice leaves one entry for the day.
- */
-export function regenerate(title: string): Promise<MarketEntry[]> {
-  return apiJson(`/api/v1/market-prices/regenerate?title=${encodeURIComponent(title)}`, { method: 'POST' });
-}
-
 export function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/market-prices/${id}`, { method: 'DELETE' });
 }

@@ -6,7 +6,7 @@
  * deleted, after a confirm.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Coins, RefreshCw, Trash2 } from 'lucide-react';
+import { Coins, Copy, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -53,7 +53,14 @@ export function MarketPricesSettingsCard() {
     [dash, category],
   );
 
-  /** Start the next entry from an existing title — the daily update. */
+  /**
+   * v-market-copy — the one way to price a title that already
+   * exists. The form above is filled from the price in force, the
+   * title and category come along locked, and the date resets to
+   * today: same title, new date, new price, which is what copying
+   * one of these means. Saving a date that already has a price
+   * replaces that day's entry; earlier days stay as history.
+   */
   const pick = (item: marketApi.MarketItem) => {
     setCategory(item.category);
     setTitle(item.title);
@@ -95,42 +102,6 @@ export function MarketPricesSettingsCard() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to update');
       await load();
-    }
-  };
-
-  /**
-   * v-market-regenerate — one click: today gets the price already in
-   * force. Prices are entered daily even when nothing moves, and
-   * re-typing yesterday's number is the entry most likely to go in
-   * wrong, so this copies it instead of asking for it again.
-   *
-   * <p>It never refuses: today's entry is replaced outright. The
-   * confirm is still there because it writes a row the Dashboard
-   * reads straight away, and it is the one place the operator sees
-   * what is about to be stamped.</p>
-   */
-  const regenerate = async (item: marketApi.MarketItem) => {
-    const parts = [
-      item.buy.today != null ? `Buy ${marketApi.fmtPrice(item.buy.today)}` : null,
-      item.sell.today != null ? `Sell ${marketApi.fmtPrice(item.sell.today)}` : null,
-    ].filter(Boolean).join(' · ');
-    const today = marketApi.todayPP();
-    const ok = await confirm({
-      title: `Regenerate ${item.title} for ${today}?`,
-      message: parts
-        ? `${parts} becomes the entry for ${today}, replacing any price already entered for today. Earlier days are untouched — to enter a different price, use Update.`
-        : `The price already in force becomes the entry for ${today}.`,
-      confirmLabel: 'Regenerate',
-    });
-    if (!ok) return;
-    try {
-      const made = await marketApi.regenerate(item.title);
-      toast.success(`${item.title} stamped for ${today}`, {
-        description: made.map(e => `${e.key === 'buy' ? 'Buy' : 'Sell'} ${marketApi.fmtPrice(e.value)}`).join(' · '),
-      });
-      await load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to regenerate');
     }
   };
 
@@ -176,7 +147,8 @@ export function MarketPricesSettingsCard() {
         </CardTitle>
         <CardDescription className="mt-1">
           Buy In and Sell Out prices shown on the Dashboard, compared with the day before.
-          Each save adds a dated entry; earlier prices are kept as history.
+          Copy a title to price it again: same title, new date and price. One entry
+          per day — saving a day again replaces it, earlier days are kept as history.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -259,15 +231,10 @@ export function MarketPricesSettingsCard() {
                         />
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
-                        {/* Before Update: the daily no-change case is the
-                            common one, and it needs no form. */}
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700"
-                          onClick={() => void regenerate(i)}
-                          title={`Regenerate ${i.title} — make the price in force today's entry`}>
-                          <RefreshCw className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7" onClick={() => pick(i)}>
-                          Update
+                        <Button variant="ghost" size="sm" className="h-7 gap-1.5" onClick={() => pick(i)}
+                          title={`Copy ${i.title} — same title, new date and price`}>
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy
                         </Button>
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:text-red-700"
                           onClick={() => void removeTitle(i)} title={`Remove ${i.title}`}>
