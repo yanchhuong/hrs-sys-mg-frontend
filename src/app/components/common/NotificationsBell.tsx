@@ -320,17 +320,18 @@ export function NotificationsBell({ onNavigate }: {
 
 /**
  * Approve / Reject on an approval notification — only while the chain is
- * waiting on the viewer's step. Approve asks once more inline; Reject
- * asks for a reason (required, as on the Approvals page). Once settled
+ * waiting on the viewer's step. Approve acts on one click
+ * (v-approve-direct); Reject asks for a reason (required, as on the
+ * Approvals page). Once settled
  * the row shows the outcome instead. Clicks never reach the row.
  */
 function ApprovalRowActions({ chain, onDecide }: {
   chain: approvalsApi.Approval;
   onDecide: (decision: 'approved' | 'rejected', comment?: string) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<'idle' | 'approve' | 'reject'>('idle');
+  const [mode, setMode] = useState<'idle' | 'reject'>('idle');
   const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'approved' | 'rejected' | null>(null);
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
   if (chain.viewerRole !== 'active') {
@@ -345,10 +346,10 @@ function ApprovalRowActions({ chain, onDecide }: {
 
   const run = async (decision: 'approved' | 'rejected') => {
     if (decision === 'rejected' && !reason.trim()) { toast.error('Please add a reason before rejecting.'); return; }
-    setBusy(true);
+    setBusy(decision);
     try { await onDecide(decision, decision === 'rejected' ? reason.trim() : undefined); setMode('idle'); }
     catch (e) { toast.error(e instanceof Error ? e.message : 'Failed'); }
-    finally { setBusy(false); }
+    finally { setBusy(null); }
   };
 
   return (
@@ -359,22 +360,26 @@ function ApprovalRowActions({ chain, onDecide }: {
       )}
       <div className="flex items-center gap-1.5">
         {mode === 'idle' && (<>
-          <Button size="sm" className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => setMode('approve')}>
-            <Check className="h-3.5 w-3.5 mr-1" /> Approve
+          <Button size="sm" className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700" disabled={busy != null}
+            onClick={() => void run('approved')}>
+            {busy === 'approved'
+              ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              : <Check className="h-3.5 w-3.5 mr-1" />} Approve
           </Button>
-          <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs text-red-700 border-red-200 hover:bg-red-50" onClick={() => setMode('reject')}>
+          <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs text-red-700 border-red-200 hover:bg-red-50"
+            disabled={busy != null} onClick={() => setMode('reject')}>
             <X className="h-3.5 w-3.5 mr-1" /> Reject
           </Button>
         </>)}
         {mode !== 'idle' && (<>
-          <span className="text-[11px] text-gray-600 mr-auto">{mode === 'approve' ? 'Approve this request?' : 'Reject with this reason?'}</span>
-          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={busy} onClick={() => { setMode('idle'); setReason(''); }}>
+          <span className="text-[11px] text-gray-600 mr-auto">Reject with this reason?</span>
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={busy != null} onClick={() => { setMode('idle'); setReason(''); }}>
             Cancel
           </Button>
-          <Button size="sm" disabled={busy}
-            className={`h-7 px-2.5 text-xs ${mode === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
-            onClick={() => run(mode === 'approve' ? 'approved' : 'rejected')}>
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : mode === 'approve' ? 'Approve' : 'Reject'}
+          <Button size="sm" disabled={busy != null}
+            className="h-7 px-2.5 text-xs bg-red-600 hover:bg-red-700"
+            onClick={() => run('rejected')}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Reject'}
           </Button>
         </>)}
       </div>
