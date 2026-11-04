@@ -1750,7 +1750,7 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
                   key={i}
                   style={{
                     // Mirrors the print: one card is drawn wider.
-                    width: f.qrCount === 1 ? 95 : 68,
+                    width: f.qrCount === 1 ? 62 : 68,
                     textAlign: 'center', display: 'flex',
                     flexDirection: 'column', alignItems: 'center', gap: 3,
                   }}
@@ -1809,12 +1809,13 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
       {f.showThankYou !== false && (
         <div style={{
           marginTop: 'auto',
-          padding: '7px 10px',
+          // Mirrors the print band (v-print-compact).
+          padding: '4px 6px',
           background: bandBackground,
           display: 'flex', alignItems: 'baseline',
           justifyContent: 'space-between', gap: 8,
         }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>
+          <div style={{ fontSize: 9, fontWeight: 600 }}>
             {f.thankYouText ?? 'Thank you for your business!'}
           </div>
           {f.showPageName !== false && (

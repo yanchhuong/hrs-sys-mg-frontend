@@ -3614,7 +3614,7 @@ function InvoiceDetailDialog({
                    last line instead of covering it. The 14mm margin
                    plus the band; one that wraps to two lines reaches
                    only into the signatures' bottom margin. */
-                body > .print-tax-invoice:has(> .thank-you-band) { padding-bottom: 34mm !important; }
+                body > .print-tax-invoice:has(> .thank-you-band) { padding-bottom: 28mm !important; }
                 body > .print-tax-invoice > .thank-you-band {
                   position: absolute !important;
                   left: 14mm; right: 14mm; bottom: 14mm;
@@ -4052,7 +4052,9 @@ export function PrintTaxInvoice({
    * so choosing 1 changes the size and nothing else. */
   const qrCount     = cfgFooter.qrCount === 1 ? 1 : 2;
   const qrCards     = banks.slice(0, qrCount);
-  const qrCardWidth = qrCount === 1 ? '56mm' : '40mm';
+  // v-print-compact — the single QR was 56mm, a third of the sheet's
+  // width; 35% smaller still scans from a phone at arm's length.
+  const qrCardWidth = qrCount === 1 ? '36mm' : '40mm';
   // Banking gated by template config too — a receipt-style template
   // might switch it off even when the tenant has bank cards saved.
   const showBank = qrCards.length > 0 && cfgFooter.showBanking !== false;
@@ -4635,16 +4637,19 @@ export function PrintTaxInvoice({
           // marginBottom rather than a margin here — a margin-top of
           // both auto and a length is not a thing CSS can express.
           marginTop: 'auto',
-          padding: '10px 14px',
+          // v-print-compact — 35% smaller than it was: at the print text
+          // scale an 18px message printed ~30px tall, a banner rather
+          // than a sign-off. A5 gets the same proportions via zoom.
+          padding: '6px 9px',
           background: bandBackground,
           display: 'flex',
           alignItems: 'baseline',
           justifyContent: 'space-between',
           gap: '12px',
         }}>
-          <div style={{ fontSize: '18px', fontWeight: 600 }}>{cfgFooter.thankYouText}</div>
+          <div style={{ fontSize: '12px', fontWeight: 600 }}>{cfgFooter.thankYouText}</div>
           {cfgFooter.showPageName !== false && (
-            <div style={{ fontSize: '10px', color: '#555', textAlign: 'right' }}>
+            <div style={{ fontSize: '9px', color: '#555', textAlign: 'right' }}>
               {(cfgFooter.pageName ?? '').trim() || companyKh || companyEn}
             </div>
           )}
