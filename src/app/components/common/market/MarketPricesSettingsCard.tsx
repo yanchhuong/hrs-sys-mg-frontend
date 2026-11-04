@@ -104,10 +104,10 @@ export function MarketPricesSettingsCard() {
    * re-typing yesterday's number is the entry most likely to go in
    * wrong, so this copies it instead of asking for it again.
    *
-   * <p>Confirmed first because it writes a dated row that the
-   * Dashboard reads straight away — and the confirm doubles as the
-   * one place the operator sees exactly what is about to be
-   * stamped.</p>
+   * <p>It never refuses: today's entry is replaced outright. The
+   * confirm is still there because it writes a row the Dashboard
+   * reads straight away, and it is the one place the operator sees
+   * what is about to be stamped.</p>
    */
   const regenerate = async (item: marketApi.MarketItem) => {
     const parts = [
@@ -118,8 +118,8 @@ export function MarketPricesSettingsCard() {
     const ok = await confirm({
       title: `Regenerate ${item.title} for ${today}?`,
       message: parts
-        ? `${parts} is copied forward as a new entry dated ${today}. Nothing earlier changes — to enter a different price, use Update.`
-        : `A new entry dated ${today} is added from the price already in force.`,
+        ? `${parts} becomes the entry for ${today}, replacing any price already entered for today. Earlier days are untouched — to enter a different price, use Update.`
+        : `The price already in force becomes the entry for ${today}.`,
       confirmLabel: 'Regenerate',
     });
     if (!ok) return;
@@ -130,8 +130,6 @@ export function MarketPricesSettingsCard() {
       });
       await load();
     } catch (e) {
-      // The server refuses when today is already priced on both
-      // sides; its wording says so better than a generic failure.
       toast.error(e instanceof Error ? e.message : 'Failed to regenerate');
     }
   };
@@ -265,7 +263,7 @@ export function MarketPricesSettingsCard() {
                             common one, and it needs no form. */}
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700"
                           onClick={() => void regenerate(i)}
-                          title={`Regenerate ${i.title} for today — copy the price in force forward`}>
+                          title={`Regenerate ${i.title} — make the price in force today's entry`}>
                           <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
                         <Button variant="ghost" size="sm" className="h-7" onClick={() => pick(i)}>

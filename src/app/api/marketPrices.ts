@@ -84,8 +84,8 @@ export function add(req: {
 /**
  * v-market-regenerate — stamp today with the price already in force.
  * Same title, same value, today's date; buy and sell carried
- * independently, so a side entered by hand this morning is left alone.
- * 400 when both sides already have today's price.
+ * independently, each from its own latest row. Today's entry is
+ * replaced, so pressing it twice leaves one entry for the day.
  */
 export function regenerate(title: string): Promise<MarketEntry[]> {
   return apiJson(`/api/v1/market-prices/regenerate?title=${encodeURIComponent(title)}`, { method: 'POST' });
