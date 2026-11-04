@@ -48,6 +48,10 @@ interface AuthContextType {
    *  flag list has finished loading) so we never accidentally blank
    *  the sidebar during the initial fetch. */
   isModuleEnabled: (module: string) => boolean;
+  /** True once /me/modules has answered. Until then isModuleEnabled /
+   *  isModuleAvailable are optimistic (true), so a page that should not
+   *  even ASK for a module's data waits on this first. */
+  modulesLoaded: boolean;
   /** True when the module appears in the tenant's effective catalog
    *  (status='complete' on the platform side) AND is enabled for this
    *  tenant. False for drafts, unknown modules, or modules explicitly
@@ -97,6 +101,7 @@ const defaultAuthContext: AuthContextType = {
   refreshPermissions: noopAsync,
   refreshUser: noopAsync,
   isModuleEnabled: () => true,
+  modulesLoaded: true,
   isModuleAvailable: () => true,
   isAppLauncherEnabled: () => true,
   hasActiveAgency: () => false,
@@ -617,7 +622,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canDo, canView, canCreate, canUpdate, canDelete,
       refreshPermissions,
       refreshUser,
-      isModuleEnabled, isModuleAvailable, isAppLauncherEnabled, hasActiveAgency, getModuleCategoryLabel, setModuleEnabled,
+      isModuleEnabled, modulesLoaded: availableModules != null, isModuleAvailable, isAppLauncherEnabled, hasActiveAgency, getModuleCategoryLabel, setModuleEnabled,
       login, logout, switchRole,
     }}>
       {children}

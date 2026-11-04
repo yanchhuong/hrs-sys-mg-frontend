@@ -6,7 +6,7 @@ import * as usersApi from '../../api/users';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import * as rolesApi from '../../api/roles';
-import { USE_MOCKS } from '../../api/client';
+import { USE_MOCKS, ModuleDisabledError } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button, PlainButton } from '../ui/button';
@@ -601,7 +601,7 @@ export function UserManagement() {
   const { t } = useI18n();
   const { formatDate, formatDateTime } = useDateFormat();
   const confirm = useConfirm();
-  const { isModuleAvailable, isModuleEnabled, canView, canCreate, canDelete } = useAuth();
+  const { isModuleAvailable, isModuleEnabled, modulesLoaded, canView, canCreate, canDelete } = useAuth();
   const [users, setUsers] = useState<User[]>(USE_MOCKS ? mockUsers : []);
   /* v-hr-bot-users — the HR Telegram bot is shared with system users:
    * each row can share a /start link and shows whether that user's chat
@@ -665,15 +665,25 @@ export function UserManagement() {
     }
   };
 
+  /* v-um-no-employees — employees and departments both sit behind the
+   * employees module (TenantModuleGuard). A company without it (a POS-
+   * or Sale-only tenant) still manages users here, so neither list is
+   * an error: skip the call when the module is known to be off, and
+   * read a "not installed" answer as "no list" when the flags were not
+   * in yet. It used to show a red toast and log a warning on every open. */
+  const employeesInstalled = isModuleAvailable('employees') && isModuleEnabled('employees');
+
   const loadEmployees = async () => {
     if (USE_MOCKS) {
       setEmployees([...mockEmployees]);
       return;
     }
+    if (!employeesInstalled) { setEmployees([]); return; }
     try {
       const res = await employeesApi.list({ size: 500 });
       setEmployees((res?.content ?? []).map(adaptApiEmployee));
     } catch (err) {
+      if (err instanceof ModuleDisabledError) { setEmployees([]); return; }
       toast.error(err instanceof Error ? err.message : 'Failed to load employees');
     }
   };
@@ -683,10 +693,12 @@ export function UserManagement() {
       setDeptList(mockDepartments.map(d => ({ id: d.id, name: d.name })));
       return;
     }
+    if (!employeesInstalled) { setDeptList([]); return; }
     try {
       const list = await departmentsApi.list();
       setDeptList(list ?? []);
     } catch (err) {
+      if (err instanceof ModuleDisabledError) { setDeptList([]); return; }
       console.warn('Could not load departments', err);
     }
   };
@@ -843,12 +855,22 @@ export function UserManagement() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      await Promise.all([loadUsers(), loadEmployees(), loadDepartments(), loadRolesAndPermissions()]);
+      await Promise.all([loadUsers(), loadRolesAndPermissions()]);
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Employees + departments wait for the module list (v-um-no-employees):
+  // a users-only company never has the employees module, and asking
+  // before /me/modules answers sent two refused requests per open.
+  useEffect(() => {
+    if (!modulesLoaded) return;
+    void loadEmployees();
+    void loadDepartments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modulesLoaded, employeesInstalled]);
 
   // Memoized so this stays referentially stable across renders that
   // don't touch customRoles — ModuleRow (below) is memoized and reads
