@@ -7,7 +7,9 @@
  * tenant has entered at least one price.
  */
 import { useEffect, useState } from 'react';
-import { History } from 'lucide-react';
+import { History, NotebookPen } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
+import { useI18n } from '../../../i18n/I18nContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
@@ -19,6 +21,7 @@ const BUY = 'BUY IN · ទិញចូល';
 const SELL = 'SELL OUT · លក់ចេញ';
 
 export function MarketPricesWidget() {
+  const { t } = useI18n();
   const [data, setData] = useState<marketApi.MarketDashboard | null>(null);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
 
@@ -45,7 +48,23 @@ export function MarketPricesWidget() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-base">Gold Market Price</CardTitle>
+              <div className="flex items-center gap-1.5">
+                <CardTitle className="text-base">{t('market.gold_title', 'Gold Market Price')}</CardTitle>
+                {/* v-market-remark — the price disclaimer, one tap away
+                    rather than a line under every card. */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button type="button" className="text-amber-600 hover:text-amber-700 p-0.5 rounded"
+                      title={t('market.remark_label', 'Remark')} aria-label={t('market.remark_label', 'Remark')}>
+                      <NotebookPen className="h-4 w-4" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-72 text-sm">
+                    <div className="text-xs font-semibold text-gray-500 mb-1">{t('market.remark_label', 'Remark')}</div>
+                    <div className="text-gray-800">{t('market.remark', '*We reserve the right to adjust prices to actual market conditions!')}</div>
+                  </PopoverContent>
+                </Popover>
+              </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" title={`Showing prices effective ${goldAsOf.label.toLowerCase()}`}
                   className={goldAsOf.stale
@@ -81,7 +100,7 @@ export function MarketPricesWidget() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-2">
-              <CardTitle className="text-base">Currency Exchange</CardTitle>
+              <CardTitle className="text-base">{t('market.currency_title', 'Currency Exchange')}</CardTitle>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" title={`Showing prices effective ${currencyAsOf.label.toLowerCase()}`}
                   className={currencyAsOf.stale

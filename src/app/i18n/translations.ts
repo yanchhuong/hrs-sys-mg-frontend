@@ -52,6 +52,11 @@ export const dict: Dict = {
 
   // --- Tenant sidebar ------------------------------------------------------
   'nav.home':                 { en: 'Dashboard',            km: 'ផ្ទាំងបញ្ជា',          zh: '仪表板' },
+  // v-market-remark — the dashboard market cards.
+  'market.gold_title':     { en: 'Gold Market Price', km: 'តម្លៃមាសទីផ្សារ', zh: '黄金市场价格' },
+  'market.currency_title': { en: 'Currency Exchange', km: 'អត្រាប្តូរប្រាក់', zh: '货币兑换' },
+  'market.remark_label':   { en: 'Remark', km: 'កំណត់សម្គាល់', zh: '备注' },
+  'market.remark':         { en: '*We reserve the right to adjust prices to actual market conditions!', km: '*យើងខ្ញុំរក្សាសិទ្ធិ ក្នុងកែប្រែតម្លៃតាមជាក់ស្តែង!', zh: '*我们保留根据实际情况调整价格的权利！' },
   'nav.employee':             { en: 'Employee',             km: 'បុគ្គលិក',           zh: '员工' },
   'nav.announcements':        { en: 'Announcements',        km: 'សេចក្តីប្រកាស',        zh: '公告' },
   'nav.attendance':           { en: 'Attendance',           km: 'វត្តមាន',           zh: '考勤' },
