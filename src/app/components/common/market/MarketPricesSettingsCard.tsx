@@ -58,8 +58,9 @@ export function MarketPricesSettingsCard() {
    * exists. The form above is filled from the price in force, the
    * title and category come along locked, and the date resets to
    * today: same title, new date, new price, which is what copying
-   * one of these means. Saving a date that already has a price
-   * replaces that day's entry; earlier days stay as history.
+   * one of these means. Every save is its own entry, several on one
+   * day included — the latest stands and the rest are that day's
+   * trail.
    */
   const pick = (item: marketApi.MarketItem) => {
     setCategory(item.category);
@@ -147,8 +148,8 @@ export function MarketPricesSettingsCard() {
         </CardTitle>
         <CardDescription className="mt-1">
           Buy In and Sell Out prices shown on the Dashboard, compared with the day before.
-          Copy a title to price it again: same title, new date and price. One entry
-          per day — saving a day again replaces it, earlier days are kept as history.
+          Copy a title to price it again: same title, new date and price. Every save is
+          its own entry — a day can hold several, and each is stamped with its time.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -260,7 +261,7 @@ export function MarketPricesSettingsCard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b">
-                    <th className="py-2 pr-3">Date</th>
+                    <th className="py-2 pr-3">Date &amp; time</th>
                     <th className="py-2 pr-3">Title</th>
                     <th className="py-2 pr-3">Key</th>
                     <th className="py-2 pr-3 text-right">Value</th>
@@ -271,7 +272,7 @@ export function MarketPricesSettingsCard() {
                 <tbody>
                   {recent.map(r => (
                     <tr key={r.id} className="border-b last:border-0">
-                      <td className="py-1.5 pr-3 tabular-nums">{r.effectiveDate}</td>
+                      <td className="py-1.5 pr-3 tabular-nums whitespace-nowrap">{marketApi.fmtEntryStamp(r)}</td>
                       <td className="py-1.5 pr-3">{r.title}</td>
                       <td className={`py-1.5 pr-3 ${r.key === 'buy' ? 'text-green-700' : 'text-red-700'}`}>
                         {r.key === 'buy' ? 'Buy' : 'Sell'}

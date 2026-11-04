@@ -85,6 +85,31 @@ export function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/market-prices/${id}`, { method: 'DELETE' });
 }
 
+const PP = 'Asia/Phnom_Penh';
+
+/**
+ * v-market-entry-time — an entry's day and the clock time it was
+ * recorded. A price can move several times in one day, and the date
+ * alone makes those rows look like duplicates of each other; the
+ * time is what tells them apart and says which one stands.
+ *
+ * <p>Both parts are Phnom Penh, like every other day in this
+ * module. A backdated entry — effective one day, typed on another —
+ * says so rather than quietly showing the wrong clock against the
+ * wrong date.</p>
+ */
+export function fmtEntryStamp(e: MarketEntry): string {
+  const at = new Date(e.createdAt);
+  if (Number.isNaN(at.getTime())) return e.effectiveDate;
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: PP }).format(at);
+  const time = new Intl.DateTimeFormat('en-GB', {
+    timeZone: PP, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(at);
+  return day === e.effectiveDate
+    ? `${e.effectiveDate} · ${time}`
+    : `${e.effectiveDate} · entered ${day} ${time}`;
+}
+
 /** #,##0.00 — every price, difference and spread. */
 export function fmtPrice(v: number | null | undefined): string {
   if (v == null || Number.isNaN(Number(v))) return 'N/A';
