@@ -62,6 +62,11 @@ export function setShowOnDashboard(title: string, show: boolean): Promise<void> 
   return apiVoid('/api/v1/market-prices/titles/show', { method: 'PUT', json: { title, show } });
 }
 
+/** V394 — every title, in the order the admin dragged them into. */
+export function reorder(titles: string[]): Promise<void> {
+  return apiVoid('/api/v1/market-prices/titles/order', { method: 'PUT', json: { titles } });
+}
+
 /** V393 — remove a title and every entry of it. */
 export function removeTitle(title: string): Promise<{ removed: number }> {
   return apiJson(`/api/v1/market-prices/titles?title=${encodeURIComponent(title)}`, { method: 'DELETE' });

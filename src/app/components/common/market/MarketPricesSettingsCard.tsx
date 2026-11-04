@@ -6,7 +6,7 @@
  * deleted, after a confirm.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Coins, Copy, Trash2 } from 'lucide-react';
+import { Coins, Copy, GripVertical, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -36,6 +36,45 @@ export function MarketPricesSettingsCard() {
   const [buy, setBuy] = useState('');
   const [sell, setSell] = useState('');
   const [saving, setSaving] = useState(false);
+
+  /* V394 — drag-and-drop order. The row moves under the pointer as it
+   * is dragged (state only); the drop saves the whole order once. The
+   * grip also takes ArrowUp / ArrowDown for keyboard users. */
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [orderBefore, setOrderBefore] = useState<string[] | null>(null);
+  const moveTo = (title: string, targetIdx: number) => setDash(d => {
+    if (!d) return d;
+    const from = d.items.findIndex(i => i.title === title);
+    if (from < 0 || from === targetIdx) return d;
+    const items = [...d.items];
+    const [moved] = items.splice(from, 1);
+    items.splice(targetIdx, 0, moved);
+    return { ...d, items };
+  });
+  const saveOrder = async (titles: string[], before: string[] | null) => {
+    if (before && before.join('|') === titles.join('|')) return;
+    try {
+      await marketApi.reorder(titles);
+      toast.success('Order saved — the Dashboard follows it');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save the order');
+      await load();
+    }
+  };
+  const endDrag = () => {
+    if (dragging && dash) void saveOrder(dash.items.map(i => i.title), orderBefore);
+    setDragging(null); setOrderBefore(null);
+  };
+  const nudge = (idx: number, delta: number) => {
+    if (!dash) return;
+    const to = idx + delta;
+    if (to < 0 || to >= dash.items.length) return;
+    const titles = dash.items.map(i => i.title);
+    const [moved] = titles.splice(idx, 1);
+    titles.splice(to, 0, moved);
+    moveTo(moved, to);
+    void saveOrder(titles, null);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -207,6 +246,7 @@ export function MarketPricesSettingsCard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b">
+                    <th className="py-2 w-6" aria-label="Order" />
                     <th className="py-2 pr-3">Title</th>
                     <th className="py-2 pr-3">Category</th>
                     <th className="py-2 pr-3 text-right">Buy In</th>
@@ -217,8 +257,36 @@ export function MarketPricesSettingsCard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dash.items.map(i => (
-                    <tr key={i.title} className={`border-b last:border-0 ${i.showOnDashboard ? '' : 'text-gray-400'}`}>
+                  {dash.items.map((i, idx) => (
+                    <tr
+                      key={i.title}
+                      draggable
+                      onDragStart={e => {
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', i.title);
+                        setDragging(i.title);
+                        setOrderBefore(dash.items.map(x => x.title));
+                      }}
+                      onDragOver={e => { if (!dragging) return; e.preventDefault(); moveTo(dragging, idx); }}
+                      onDrop={e => e.preventDefault()}
+                      onDragEnd={endDrag}
+                      className={`border-b last:border-0 ${i.showOnDashboard ? '' : 'text-gray-400'} ${
+                        dragging === i.title ? 'bg-blue-50 opacity-70' : ''}`}
+                    >
+                      <td className="py-2 pl-1">
+                        <button
+                          type="button"
+                          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-0.5 rounded"
+                          title="Drag to reorder (or focus and use ↑ ↓)"
+                          aria-label={`Reorder ${i.title}`}
+                          onKeyDown={e => {
+                            if (e.key === 'ArrowUp') { e.preventDefault(); nudge(idx, -1); }
+                            if (e.key === 'ArrowDown') { e.preventDefault(); nudge(idx, 1); }
+                          }}
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </button>
+                      </td>
                       <td className="py-2 pr-3 font-medium">{i.title}</td>
                       <td className="py-2 pr-3 capitalize text-gray-600">{i.category}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{marketApi.fmtPrice(i.buy.today)}</td>
