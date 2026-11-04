@@ -87,6 +87,48 @@ export function remove(id: string): Promise<void> {
 
 const PP = 'Asia/Phnom_Penh';
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "03 Nov", or "03 Nov 2025" once the year stops being obvious. */
+function fmtDay(iso: string): string {
+  const m = /^(d{4})-(d{2})-(d{2})$/.exec(iso);
+  if (!m) return iso;
+  const month = MONTHS[Number(m[2]) - 1];
+  if (!month) return iso;
+  return `${m[3]} ${month}${m[1] === todayPP().slice(0, 4) ? '' : ` ${m[1]}`}`;
+}
+
+/**
+ * v-market-asof — the day a dashboard card is actually showing.
+ *
+ * <p>The cards used to read "Today" no matter what. A tenant who had
+ * not entered a price since Monday was told Monday's number was
+ * today's, which is the one claim a market card must never make. So
+ * the badge now reports the newest effective date the card's items
+ * carry, and says Today only when that is today.</p>
+ *
+ * <p>{@code stale} is for the colour: fresh reads green, anything
+ * older reads amber, so the card looks out of date from across the
+ * room rather than only on reading the label.</p>
+ */
+export function asOfLabel(
+  items: MarketItem[],
+  d: { today: string; yesterday: string },
+): { label: string; stale: boolean } {
+  let latest: string | null = null;
+  for (const i of items) {
+    for (const date of [i.buy.todayDate, i.sell.todayDate]) {
+      // yyyy-MM-dd compares lexically, so no Date parsing is needed.
+      if (date && (latest == null || date > latest)) latest = date;
+    }
+  }
+  if (latest == null) return { label: 'No price', stale: true };
+  if (latest === d.today) return { label: 'Today', stale: false };
+  if (latest === d.yesterday) return { label: 'Yesterday', stale: true };
+  return { label: fmtDay(latest), stale: true };
+}
+
+
 /**
  * v-market-entry-time — an entry's day and the clock time it was
  * recorded. A price can move several times in one day, and the date

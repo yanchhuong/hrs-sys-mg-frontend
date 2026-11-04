@@ -1,6 +1,8 @@
 /**
- * Financial Market widget (V392) — today's gold and currency buy /
- * sell prices against yesterday, on the Dashboard. Read-only: prices
+ * Financial Market widget (V392) — the latest gold and currency buy /
+ * sell prices against the day before, on the Dashboard. The badge on
+ * each card says which day it is showing, so a card nobody has
+ * updated since Monday says Monday rather than "Today". Read-only: prices
  * are entered in General Settings → Company. Renders nothing until a
  * tenant has entered at least one price.
  */
@@ -32,6 +34,10 @@ export function MarketPricesWidget() {
   const gold = data.items.filter(i => i.category === 'gold');
   const currency = data.items.filter(i => i.category === 'currency');
   const titles = data.items.map(i => ({ title: i.title, category: i.category }));
+  // v-market-asof — each card reports its own newest date: gold can be
+  // current while the currency pairs have not been touched for a week.
+  const goldAsOf = marketApi.asOfLabel(gold, data);
+  const currencyAsOf = marketApi.asOfLabel(currency, data);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -41,7 +47,12 @@ export function MarketPricesWidget() {
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-base">Gold Market Price</CardTitle>
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700">Today</Badge>
+                <Badge variant="outline" title={`Showing prices effective ${goldAsOf.label.toLowerCase()}`}
+                  className={goldAsOf.stale
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border-green-200 bg-green-50 text-green-700'}>
+                  {goldAsOf.label}
+                </Badge>
                 <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setHistoryFor('all')}
                   title="Price history">
                   <History className="h-4 w-4" />
@@ -72,7 +83,12 @@ export function MarketPricesWidget() {
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-base">Currency Exchange</CardTitle>
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="border-green-200 bg-green-50 text-green-700">Today</Badge>
+                <Badge variant="outline" title={`Showing prices effective ${currencyAsOf.label.toLowerCase()}`}
+                  className={currencyAsOf.stale
+                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                    : 'border-green-200 bg-green-50 text-green-700'}>
+                  {currencyAsOf.label}
+                </Badge>
                 <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setHistoryFor('all')}
                   title="Price history">
                   <History className="h-4 w-4" />
