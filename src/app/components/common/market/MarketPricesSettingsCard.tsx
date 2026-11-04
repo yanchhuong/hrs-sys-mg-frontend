@@ -6,7 +6,7 @@
  * deleted, after a confirm.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Coins, Trash2 } from 'lucide-react';
+import { Coins, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import { Button } from '../../ui/button';
@@ -95,6 +95,44 @@ export function MarketPricesSettingsCard() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to update');
       await load();
+    }
+  };
+
+  /**
+   * v-market-regenerate — one click: today gets the price already in
+   * force. Prices are entered daily even when nothing moves, and
+   * re-typing yesterday's number is the entry most likely to go in
+   * wrong, so this copies it instead of asking for it again.
+   *
+   * <p>Confirmed first because it writes a dated row that the
+   * Dashboard reads straight away — and the confirm doubles as the
+   * one place the operator sees exactly what is about to be
+   * stamped.</p>
+   */
+  const regenerate = async (item: marketApi.MarketItem) => {
+    const parts = [
+      item.buy.today != null ? `Buy ${marketApi.fmtPrice(item.buy.today)}` : null,
+      item.sell.today != null ? `Sell ${marketApi.fmtPrice(item.sell.today)}` : null,
+    ].filter(Boolean).join(' · ');
+    const today = marketApi.todayPP();
+    const ok = await confirm({
+      title: `Regenerate ${item.title} for ${today}?`,
+      message: parts
+        ? `${parts} is copied forward as a new entry dated ${today}. Nothing earlier changes — to enter a different price, use Update.`
+        : `A new entry dated ${today} is added from the price already in force.`,
+      confirmLabel: 'Regenerate',
+    });
+    if (!ok) return;
+    try {
+      const made = await marketApi.regenerate(item.title);
+      toast.success(`${item.title} stamped for ${today}`, {
+        description: made.map(e => `${e.key === 'buy' ? 'Buy' : 'Sell'} ${marketApi.fmtPrice(e.value)}`).join(' · '),
+      });
+      await load();
+    } catch (e) {
+      // The server refuses when today is already priced on both
+      // sides; its wording says so better than a generic failure.
+      toast.error(e instanceof Error ? e.message : 'Failed to regenerate');
     }
   };
 
@@ -223,6 +261,13 @@ export function MarketPricesSettingsCard() {
                         />
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
+                        {/* Before Update: the daily no-change case is the
+                            common one, and it needs no form. */}
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700"
+                          onClick={() => void regenerate(i)}
+                          title={`Regenerate ${i.title} for today — copy the price in force forward`}>
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        </Button>
                         <Button variant="ghost" size="sm" className="h-7" onClick={() => pick(i)}>
                           Update
                         </Button>
