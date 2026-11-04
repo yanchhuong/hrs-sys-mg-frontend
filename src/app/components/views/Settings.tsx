@@ -31,6 +31,7 @@ import { HrTelegramConnectionsCard } from '../common/HrTelegramConnectionsCard';
 import { PayWaySettingsDialog } from '../common/PayWaySettingsDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import * as currencyApi from '../../api/currencySettings';
+import { MarketPricesSettingsCard } from '../common/market/MarketPricesSettingsCard';
 import * as paywayApi from '../../api/payway';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
@@ -143,6 +144,9 @@ export function Settings() {
               is the copy that actually drives invoices, POS and
               quotations. Admin-only, as the tab was. */}
           {isAdmin && <CurrencySettingsCard />}
+          {/* V392 — gold + currency buy / sell, right after the currency
+              setup; read by the Dashboard market widget. */}
+          {isAdmin && <MarketPricesSettingsCard />}
           {/* Cloud Connection — hidden temporarily. Re-enable by
               uncommenting the line below when the sync surface is
               ready to ship. */}

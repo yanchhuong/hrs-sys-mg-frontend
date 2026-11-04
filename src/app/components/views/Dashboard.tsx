@@ -28,6 +28,7 @@ import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
 import { format, differenceInDays, parseISO } from 'date-fns';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { toast } from 'sonner';
+import { MarketPricesWidget } from '../common/market/MarketPricesWidget';
 
 /* ============================================================== */
 /* V316 — Dynamic multi-category Dashboard shell                   */
@@ -140,6 +141,9 @@ export function Dashboard() {
   return (
     <div className="space-y-4">
       {header}
+      {/* V392 — gold + currency prices, for every dashboard category.
+          Renders nothing until the tenant enters a price. */}
+      <MarketPricesWidget />
       {/* Category tab strip. Hidden entirely when the user has access
           to just one category — no signal there, keeps the page clean
           (a Cashier with only POS shouldn't see a "POS" tab as their
