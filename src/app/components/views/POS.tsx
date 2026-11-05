@@ -3297,7 +3297,8 @@ function PosCheckoutDialog({
             // A typed-but-unchecked code would be silently dropped — the
             // cashier checks it (or clears it) first.
             disabled={saving || short || total <= 0 || (!!couponInput.trim() && !coupon)}
-            className="bg-emerald-600 hover:bg-emerald-700"
+            // v-mark-paid-red — settling a sale is red, as on mobile.
+            className="bg-red-600 hover:bg-red-700"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <CreditCard className="h-4 w-4 mr-1.5" />}
             Confirm Payment
