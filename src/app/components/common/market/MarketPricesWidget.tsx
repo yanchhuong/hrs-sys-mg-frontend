@@ -14,11 +14,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
 import * as marketApi from '../../../api/marketPrices';
-import { PriceComparisonCard } from './PriceComparisonCard';
+import { PriceComparisonCard, marketWord } from './PriceComparisonCard';
 import { MarketPriceHistoryDialog } from './MarketPriceHistoryDialog';
 
-const BUY = 'BUY IN · ទិញចូល';
-const SELL = 'SELL OUT · លក់ចេញ';
 
 export function MarketPricesWidget() {
   const { t } = useI18n();
@@ -70,7 +68,7 @@ export function MarketPricesWidget() {
                   className={goldAsOf.stale
                     ? 'border-amber-200 bg-amber-50 text-amber-700'
                     : 'border-green-200 bg-green-50 text-green-700'}>
-                  {goldAsOf.label}
+                  {marketWord(t, goldAsOf.label)}
                 </Badge>
                 <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setHistoryFor('all')}
                   title="Price history">
@@ -87,8 +85,8 @@ export function MarketPricesWidget() {
                   {g.title}{g.unit && <span className="ml-1 text-xs font-normal text-gray-500">({g.unit})</span>}
                 </button>
                 <div className="grid grid-cols-2 gap-2 mt-1">
-                  <PriceComparisonCard side={g.buy} label={BUY} today={data.today} />
-                  <PriceComparisonCard side={g.sell} label={SELL} today={data.today} />
+                  <PriceComparisonCard side={g.buy} label={t('market.buy', 'Buy In')} today={data.today} />
+                  <PriceComparisonCard side={g.sell} label={t('market.sell', 'Sell Out')} today={data.today} />
                 </div>
               </div>
             ))}
@@ -106,7 +104,7 @@ export function MarketPricesWidget() {
                   className={currencyAsOf.stale
                     ? 'border-amber-200 bg-amber-50 text-amber-700'
                     : 'border-green-200 bg-green-50 text-green-700'}>
-                  {currencyAsOf.label}
+                  {marketWord(t, currencyAsOf.label)}
                 </Badge>
                 <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setHistoryFor('all')}
                   title="Price history">
@@ -123,11 +121,11 @@ export function MarketPricesWidget() {
                   {c.title}
                 </button>
                 <div className="grid grid-cols-2 gap-2">
-                  <PriceComparisonCard side={c.buy} label={BUY} unit={c.unit} today={data.today} tone="buy" />
-                  <PriceComparisonCard side={c.sell} label={SELL} unit={c.unit} today={data.today} tone="sell" />
+                  <PriceComparisonCard side={c.buy} label={t('market.buy', 'Buy In')} unit={c.unit} today={data.today} tone="buy" />
+                  <PriceComparisonCard side={c.sell} label={t('market.sell', 'Sell Out')} unit={c.unit} today={data.today} tone="sell" />
                 </div>
                 <div className="rounded-lg border px-3 py-2">
-                  <div className="text-xs text-gray-500">Exchange spread</div>
+                  <div className="text-xs text-gray-500">{t('market.spread', 'Exchange spread')}</div>
                   <div className="text-lg font-semibold tabular-nums">
                     {marketApi.fmtPrice(c.spread)}{c.spread != null && c.unit ? ` ${c.unit.split(' per ')[0]}` : ''}
                   </div>
