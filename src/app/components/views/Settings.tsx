@@ -27,7 +27,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import * as hrBotApi from '../../api/hrTelegramBots';
 import { HrTelegramGroupCard } from '../common/HrTelegramGroupCard';
 import { HrTelegramBotCard } from '../common/HrTelegramBotCard';
-import { HrTelegramConnectionsCard } from '../common/HrTelegramConnectionsCard';
 import { PayWaySettingsDialog } from '../common/PayWaySettingsDialog';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import * as currencyApi from '../../api/currencySettings';
@@ -47,19 +46,19 @@ import { PageTitleTooltip } from './agency/PageTitleTooltip';
 /**
  * Settings ▸ Telegram Bot — one tab for the one bot.
  *
- * v-hr-bot-settings. Three cards, in the order the work happens:
- * register the bot, connect people to it, then point it at the company
- * group. Setup used to live only behind Employees ▸ ⚙, which made
+ * v-hr-bot-settings. Two cards, in the order the work happens:
+ * register the bot, then point it at the company group. People are
+ * connected from their own rows — Users and Employees show each one's
+ * Telegram status and Share link — so the separate Connections list
+ * that repeated them here was removed (v-no-connections-card). Setup used to live only behind Employees ▸ ⚙, which made
  * sense while the bot was an employee feature; since v-hr-bot-users it
  * also carries system users' notifications, so an admin with no
  * employee record has business here and no reason to look under
  * Employees. The Employees dialog keeps its copy — same component,
  * same endpoints, so the two cannot drift.
  *
- * The bot is held here rather than fetched three times: the group card
- * needs it (the group's link code is redeemed by that bot) and the
- * connections card needs it (links are minted from its token, so with
- * no bot it says so instead of offering buttons that fail).
+ * The bot is held here rather than fetched twice: the group card needs
+ * it (the group's link code is redeemed by that bot).
  */
 function TelegramBotTab() {
   const [bot, setBot] = useState<hrBotApi.HrTelegramBot | null>(null);
@@ -82,10 +81,7 @@ function TelegramBotTab() {
       </Card>
 
       {loaded ? (
-        <>
-          <HrTelegramConnectionsCard bot={bot} />
-          <HrTelegramGroupCard bot={bot} active />
-        </>
+        <HrTelegramGroupCard bot={bot} active />
       ) : (
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <Loader2 className="h-4 w-4 animate-spin" />

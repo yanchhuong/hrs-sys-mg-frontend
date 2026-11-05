@@ -112,30 +112,7 @@ export async function unlinkMe(): Promise<void> {
   return apiVoid('/api/v1/hr-telegram/me', { method: 'DELETE' });
 }
 
-/* ── v-hr-bot-settings — the Settings ▸ Telegram Bot list ── */
-
-/**
- * One connectable person, with the chat they linked if they have one.
- *
- * Employees and system users in a single list: the Employees roster
- * and User Management each show only their own half, and an admin with
- * no employee record exists only on the user side. Somebody who is
- * both appears once, keyed on the user — `kind` says which id a link
- * for this row is minted and dropped against.
- */
-export interface HrTelegramConnection {
-  id: string;
-  userId: string | null;
-  employeeId: string | null;
-  name: string;
-  subtitle?: string | null;
-  kind: 'user' | 'employee';
-  link: HrTelegramEmployee | null;
-}
-
-export async function listConnections(): Promise<HrTelegramConnection[]> {
-  return apiJson('/api/v1/hr-telegram/connections');
-}
+/* ── v-hr-bot-users — a user's own link (User Management) ── */
 
 export async function unlinkUser(userId: string): Promise<void> {
   return apiVoid(`/api/v1/hr-telegram/users/${userId}`, { method: 'DELETE' });
