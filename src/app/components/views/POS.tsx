@@ -1119,7 +1119,7 @@ export function POS() {
     // the operator sees the page shape immediately instead of a
     // centered spinner. 12 tiles cover a typical 4-col × 3-row viewport.
     return (
-      <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3 p-3">
+      <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 3xl:grid-cols-5 gap-3 p-3">
         {Array.from({ length: 12 }).map((_, i) => (
           <div key={i} className="rounded-lg border bg-white overflow-hidden">
             <Skeleton className="aspect-square w-full rounded-none" />
@@ -1742,7 +1742,10 @@ export function POS() {
             ) : (
               // v-pos-mobile-drawer — 3-per-row on <sm matches the
               // mobile launcher tile aesthetic; step up progressively.
-              <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3 pb-24 lg:pb-3">
+              // v-pos-grid-xl — 4 up to ~24" (1920px, ~300px tiles); a 5th
+              // column from 2400px (27" QHD and up), where 4 would draw
+              // ~460px tiles.
+              <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 3xl:grid-cols-5 gap-3 pb-24 lg:pb-3">
                 {/* v-pos-infinite-scroll — slice the filtered list to
                     the current window so a 200-item tenant paints the
                     first screenful fast. The sentinel below expands

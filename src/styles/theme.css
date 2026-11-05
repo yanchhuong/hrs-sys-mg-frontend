@@ -92,6 +92,10 @@
 }
 
 @theme inline {
+  /* v-pos-grid-xl — a named breakpoint past 2xl (1536px) for 27" QHD
+     and up. Named, so Tailwind orders it after xl; an arbitrary
+     min-[2400px]: variant lost to xl:grid-cols-4. */
+  --breakpoint-3xl: 150rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
