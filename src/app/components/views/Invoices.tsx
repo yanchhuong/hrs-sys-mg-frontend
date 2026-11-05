@@ -59,6 +59,7 @@ import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark, Share2,
   Upload, FileSpreadsheet, Copy, ScanBarcode, X as XIcon,
+  Wallet, Banknote, QrCode, CreditCard, ScrollText, MoreHorizontal, CheckCircle2,
 } from 'lucide-react';
 import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
@@ -1151,7 +1152,8 @@ export function Invoices({
           // — the dialog mounts the print template, captures it as
           // PNG, and fires sendTelegram. Adjustments (CN/DN) and
           // anything still in draft skip this chain.
-          if (created && created.status === 'progress'
+          // v-pay-now — an invoice paid on creation goes out too, PAID.
+          if (created && (created.status === 'progress' || created.status === 'paid')
               && (created.kind === 'commercial' || created.kind === 'tax')) {
             setAutoSendTelegram(true);
             setDetailId(created.id);
@@ -1751,6 +1753,51 @@ function InvoiceFormDialog({
    *  parent so it can decide whether to chain the auto-send-Telegram
    *  flow (open the detail dialog briefly to capture the print
    *  template into a PNG and sendPhoto). */
+  /* v-pay-now — create, issue and record the payment in one go: a sale
+   * paid on the spot. Invoices / tax invoices in a payable currency;
+   * not on edit, and not for notes. */
+  const [payNowOpen, setPayNowOpen] = useState(false);
+  const payCurrency: paymentsApi.PaymentCurrency | null =
+    currency === 'USD' || currency === 'KHR' ? currency : null;
+  const canPayNow = !isEdit && (kind === 'commercial' || kind === 'tax') && payCurrency != null && total > 0;
+
+  const submitAndPay = async (p: PayNowValue) => {
+    if (!validate() || !payCurrency) return;
+    setSaving(true);
+    try {
+      const created = await createAndIssue();
+      if (created.status === 'draft') {
+        // Issue failed (createAndIssue said why) — a draft takes no payment.
+        setPayNowOpen(false);
+        await onCreated(created);
+        return;
+      }
+      try {
+        await paymentsApi.create({
+          invoiceId: created.id,
+          paymentDate: new Date().toISOString().slice(0, 10),
+          amount: p.amount,
+          currency: payCurrency,
+          method: p.method,
+          direction: 'credit',
+          referenceNo: p.referenceNo,
+        });
+        toast.success(`${created.invoiceNo} paid`);
+      } catch (e) {
+        // The invoice stands; only the payment is missing.
+        toast.error(`${created.invoiceNo} was created, but the payment was not saved: ${
+          e instanceof Error ? e.message : 'unknown error'}. Record it from the invoice.`);
+      }
+      const fresh = await invoicesApi.get(created.id).catch(() => created);
+      setPayNowOpen(false);
+      await onCreated(fresh);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to create invoice');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submitAndClose = async () => {
     if (!validate()) return;
     setSaving(true);
@@ -2461,7 +2508,26 @@ function InvoiceFormDialog({
               </Button>
             </>
           )}
+          {canPayNow && (
+            <Button
+              onClick={() => { if (validate()) setPayNowOpen(true); }}
+              disabled={saving}
+              className="bg-emerald-600 hover:bg-emerald-700"
+              title="Create the invoice and record its payment in one step"
+            >
+              <Wallet className="h-4 w-4 mr-1.5" /> Pay now
+            </Button>
+          )}
         </DialogFooter>
+        {payNowOpen && payCurrency && (
+          <PayNowDialog
+            total={total}
+            currency={payCurrency}
+            busy={saving}
+            onCancel={() => { if (!saving) setPayNowOpen(false); }}
+            onConfirm={submitAndPay}
+          />
+        )}
       </DialogContent>
       {quickAdd.dialog}
       {/* Per-row barcode scanner — mounted once at the form level.
@@ -4969,6 +5035,133 @@ function MailInvoiceDialog({
 /* -------------------------------------------------------------------------- */
 /* Record-payment dialog                                                      */
 /* -------------------------------------------------------------------------- */
+/* v-pay-now — the last step of "Pay now" on a new invoice. Built for
+ * speed: the amount is the full total and the method is the one used
+ * last time, so the usual path is one click (or Enter). Edit the amount
+ * for a part payment; the reference is optional. Same methods as
+ * Record payment. */
+export interface PayNowValue { method: paymentsApi.PaymentMethod; amount: number; referenceNo?: string }
+
+const PAY_NOW_METHODS: { key: paymentsApi.PaymentMethod; label: string; Icon: typeof Wallet }[] = [
+  { key: 'cash',   label: 'Cash',     Icon: Banknote },
+  { key: 'bank',   label: 'Transfer', Icon: Landmark },
+  { key: 'khqr',   label: 'KHQR',     Icon: QrCode },
+  { key: 'card',   label: 'Card',     Icon: CreditCard },
+  { key: 'cheque', label: 'Cheque',   Icon: ScrollText },
+  { key: 'other',  label: 'Other',    Icon: MoreHorizontal },
+];
+const PAY_NOW_LAST = 'hrms:payNowMethod';
+
+function PayNowDialog({ total, currency, busy, onCancel, onConfirm }: {
+  total: number;
+  currency: paymentsApi.PaymentCurrency;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (v: PayNowValue) => void;
+}) {
+  const khr = currency === 'KHR';
+  const fullText = khr ? String(Math.round(total)) : total.toFixed(2);
+  const [method, setMethod] = useState<paymentsApi.PaymentMethod>(() => {
+    try {
+      const v = localStorage.getItem(PAY_NOW_LAST);
+      if (v && PAY_NOW_METHODS.some(m => m.key === v)) return v as paymentsApi.PaymentMethod;
+    } catch { /* storage blocked */ }
+    return 'cash';
+  });
+  const [amount, setAmount] = useState(fullText);
+  const [referenceNo, setReferenceNo] = useState('');
+  const amt = Number(amount);
+  const valid = Number.isFinite(amt) && amt > 0;
+  const partial = valid && amt < Number(fullText) - (khr ? 0.5 : 0.005);
+
+  const confirm = () => {
+    if (!valid || busy) return;
+    try { localStorage.setItem(PAY_NOW_LAST, method); } catch { /* ignore */ }
+    onConfirm({ method, amount: amt, referenceNo: referenceNo.trim() || undefined });
+  };
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onCancel(); }}>
+      <DialogContent
+        className="sm:max-w-md"
+        onKeyDown={e => { if (e.key === 'Enter' && !(e.target instanceof HTMLTextAreaElement)) { e.preventDefault(); confirm(); } }}
+      >
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-emerald-600" /> Pay now
+          </DialogTitle>
+          <DialogDescription>Creates the invoice and records the payment in one step.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs">Amount received</Label>
+            <div className="mt-1 flex items-center gap-2 rounded-md border px-3 h-12 focus-within:ring-2 focus-within:ring-emerald-200">
+              <span className="text-lg font-semibold text-gray-400">{khr ? '៛' : '$'}</span>
+              <NumericInput
+                decimals={khr ? 0 : 2}
+                maxInt={12}
+                value={amount}
+                onChange={setAmount}
+                className="border-0 bg-transparent shadow-none focus-visible:ring-0 text-right text-2xl font-bold tabular-nums h-10 px-0"
+              />
+            </div>
+            {partial && (
+              <button type="button" onClick={() => setAmount(fullText)} className="mt-1 text-xs font-medium text-amber-700 hover:underline">
+                Part payment · pay full {fmtMoney(total, currency)}
+              </button>
+            )}
+          </div>
+
+          <div>
+            <Label className="text-xs">Method</Label>
+            <div className="mt-1 grid grid-cols-3 gap-2" role="radiogroup">
+              {PAY_NOW_METHODS.map(({ key, label, Icon }) => {
+                const on = key === method;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => setMethod(key)}
+                    className={`flex flex-col items-center gap-1 rounded-md border py-2.5 text-xs font-medium transition ${
+                      on ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-500'
+                         : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <Input
+            value={referenceNo}
+            onChange={e => setReferenceNo(e.target.value)}
+            placeholder="Reference (optional) — bank ref, cheque no…"
+            maxLength={LEN.referenceNo}
+          />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel} disabled={busy}>Cancel</Button>
+          <Button
+            autoFocus
+            onClick={confirm}
+            disabled={!valid || busy}
+            className="bg-emerald-600 hover:bg-emerald-700 min-w-[180px]"
+          >
+            {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1.5" />}
+            Create & pay {valid ? fmtMoney(amt, currency) : ''}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function RecordPaymentDialog({
   invoice, onClose, onSaved,
 }: {
