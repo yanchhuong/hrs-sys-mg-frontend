@@ -58,6 +58,10 @@ services:
     # we have to add it explicitly via the magic host-gateway value.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # v-storage-volume — uploaded files (profile photos, documents) must
+    # outlive the container; the image stores them in /data/hrms-storage.
+    volumes:
+      - api-storage:/data/hrms-storage
     expose:
       - "4000"
 
@@ -90,5 +94,6 @@ services:
 
 volumes:
   db-data:
+  api-storage:
   caddy-data:
   caddy-config:
