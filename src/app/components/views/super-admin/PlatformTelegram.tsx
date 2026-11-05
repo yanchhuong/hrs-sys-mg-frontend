@@ -115,25 +115,12 @@ export function PlatformTelegram() {
    *  they're operating on. */
   const currentPlatformBot = audience === 'employee' ? platformEmployeeBot : platformCustomerBot;
 
-  /** V304 — dialog mode. In 'add' the audience picker is live so the
-   *  Super Admin can flip between Customer + Employee before saving;
-   *  in 'edit' the audience is locked to the row that opened the
-   *  dialog. Kept in state (not derived) so switching audience
-   *  mid-Add doesn't accidentally flip us into edit. */
-  const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
-
   const openAdd = () => {
-    // Default to the first audience that isn't already registered so
-    // the picker doesn't land on a disabled option. When both are
-    // free (empty state), Customer is the historical first flavour so
-    // we keep it as the default. When Customer is already taken but
-    // Employee isn't, jump straight to Employee.
-    const initial: 'customer' | 'employee' =
-      !platformCustomerBot ? 'customer'
-        : !platformEmployeeBot ? 'employee'
-          : 'customer';
-    setDialogMode('add');
-    setAudience(initial);
+    // v-one-public-bot — one public bot serves customers AND employees,
+    // so there is no type to pick: it is the platform_telegram_bot row.
+    // A separately registered public Employee bot (from before) stays
+    // listed and editable, and keeps the staff side when present.
+    setAudience('customer');
     setBotUsername('');
     setBotToken('');
     setEnabled(true);
@@ -143,28 +130,12 @@ export function PlatformTelegram() {
   const openEdit = (which: 'customer' | 'employee') => {
     const row = which === 'employee' ? platformEmployeeBot : platformCustomerBot;
     if (!row) { openAdd(); return; }
-    setDialogMode('edit');
     setAudience(which);
     setBotUsername(row.botUsername);
     setBotToken('');
     setEnabled(row.enabled);
     setDescription(row.description ?? '');
     setDialogOpen(true);
-  };
-
-  /** V304 — user flips the audience segment inside the Add dialog.
-   *  Reset the form so the previously-typed values from the other
-   *  audience don't bleed across. Ignored when the target audience is
-   *  already registered (button rendered disabled anyway, defensive). */
-  const pickAudienceInAdd = (which: 'customer' | 'employee') => {
-    if (dialogMode !== 'add') return;
-    if (which === 'customer' && platformCustomerBot) return;
-    if (which === 'employee' && platformEmployeeBot) return;
-    setAudience(which);
-    setBotUsername('');
-    setBotToken('');
-    setEnabled(true);
-    setDescription('');
   };
 
   const save = async () => {
@@ -189,8 +160,8 @@ export function PlatformTelegram() {
         enabled,
         description: description.trim() || undefined,
       });
-      const label = audience === 'employee' ? 'HR bot' : 'Customer bot';
-      toast.success(currentPlatformBot ? `Platform ${label} updated` : `Platform ${label} registered`);
+      const label = audience === 'employee' ? 'Employee bot' : 'bot';
+      toast.success(currentPlatformBot ? `Public ${label} updated` : `Public ${label} registered`);
       setDialogOpen(false);
       await load();
     } catch (e) {
@@ -368,10 +339,9 @@ export function PlatformTelegram() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          {/* V304 — one CTA. Type gets picked inside the dialog.
-              Button disappears once both platform singletons are
-              registered because there's nothing left to add. */}
-          {(!platformCustomerBot || !platformEmployeeBot) && (
+          {/* v-one-public-bot — one public bot for everyone; the CTA
+              goes away once it is registered. */}
+          {!platformCustomerBot && (
             <Button onClick={openAdd}>
               <Plus className="h-4 w-4 mr-1.5" />
               Add Public Bot
@@ -453,6 +423,17 @@ export function PlatformTelegram() {
                         <Badge className="bg-red-100 text-red-700 border-red-200 gap-1">
                           <Wrench className="h-3 w-3" /> Ops
                         </Badge>
+                      ) : isPlatform && !isEmployee && !platformEmployeeBot ? (
+                        // v-one-public-bot — the public bot also serves
+                        // staff while no separate Employee bot exists.
+                        <div className="flex flex-wrap gap-1">
+                          <Badge className="bg-sky-100 text-sky-700 border-sky-200 gap-1">
+                            <Users className="h-3 w-3" /> Customer
+                          </Badge>
+                          <Badge className="bg-amber-100 text-amber-800 border-amber-200 gap-1">
+                            <Briefcase className="h-3 w-3" /> Employee
+                          </Badge>
+                        </div>
                       ) : isEmployee ? (
                         <Badge className="bg-amber-100 text-amber-800 border-amber-200 gap-1">
                           <Briefcase className="h-3 w-3" /> Employee
@@ -559,9 +540,7 @@ export function PlatformTelegram() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Bot className={`h-4 w-4 ${audience === 'employee' ? 'text-amber-600' : 'text-blue-600'}`} />
-              {currentPlatformBot
-                ? `Edit Public ${audience === 'employee' ? 'Employee' : 'Customer'} Bot`
-                : `Register Public ${audience === 'employee' ? 'Employee' : 'Customer'} Bot`}
+              {`${currentPlatformBot ? 'Edit' : 'Register'} Public ${audience === 'employee' ? 'Employee ' : ''}Bot`}
             </DialogTitle>
             <DialogDescription>
               Create the platform bot via{' '}
@@ -569,66 +548,14 @@ export function PlatformTelegram() {
                  className="text-blue-600 hover:underline inline-flex items-center gap-0.5">
                 @BotFather <ExternalLink className="h-3 w-3" />
               </a>
-              {' '}then paste the username and token. Tenants with no{' '}
-              {audience === 'employee' ? 'HR' : 'customer'} bot of their own will use this one automatically —{' '}
+              {' '}then paste the username and token.{' '}
               {audience === 'employee'
-                ? 'employees check in / out through this bot when the tenant has none.'
-                : 'invoices deliver through this bot when the tenant has none.'}
+                ? 'Staff of companies without their own HR bot use this one — check-in / out, notifications and team groups.'
+                : 'One bot for everyone: companies without a bot of their own use it automatically — customers get their invoices, staff check in / out and teams connect their groups.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* V304 — bot-type picker. Live only in 'add' mode; on
-                Edit the picker is hidden entirely because the row's
-                audience is fixed. Options already registered are
-                shown greyed-out with a hint so the Super Admin
-                doesn't try to duplicate. */}
-            {dialogMode === 'add' && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">Bot type</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['customer', 'employee'] as const).map((k) => {
-                    const taken = k === 'customer' ? !!platformCustomerBot : !!platformEmployeeBot;
-                    const active = audience === k;
-                    const tone = k === 'employee'
-                      ? 'border-amber-300 bg-amber-50 text-amber-800'
-                      : 'border-sky-300 bg-sky-50 text-sky-800';
-                    const inactive = 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50';
-                    const disabled = 'opacity-60 cursor-not-allowed';
-                    return (
-                      <button
-                        key={k}
-                        type="button"
-                        onClick={() => pickAudienceInAdd(k)}
-                        disabled={taken || saving}
-                        aria-pressed={active}
-                        className={`text-left px-3 py-2 rounded-md border text-sm transition ${
-                          active ? tone : inactive
-                        } ${taken ? disabled : ''}`}
-                      >
-                        <div className="flex items-center gap-1.5 font-medium">
-                          {k === 'employee'
-                            ? <Briefcase className="h-3.5 w-3.5" />
-                            : <Users className="h-3.5 w-3.5" />}
-                          {k === 'employee' ? 'Employee bot' : 'Customer bot'}
-                          {taken && (
-                            <span className="ml-auto text-[10px] text-gray-500 font-normal">
-                              Already registered
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-gray-500 mt-0.5">
-                          {k === 'employee'
-                            ? 'Shared HR bot — check-in / out for tenants without their own.'
-                            : 'Shared invoice bot — customer notifications for tenants without their own.'}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-xs">Bot username</Label>
@@ -636,7 +563,7 @@ export function PlatformTelegram() {
                   value={botUsername}
                   onChange={e => setBotUsername(e.target.value)}
                   autoComplete="off"
-                  placeholder={audience === 'employee' ? 'HRMS_HR_Bot' : 'HRMS_Platform_Bot'}
+                  placeholder={audience === 'employee' ? 'HRMS_HR_Bot' : 'SmartHRMS_Bot'}
                   className="tabular-nums"
                   disabled={saving}
                 />

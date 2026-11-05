@@ -63,25 +63,38 @@ import { PageTitleTooltip } from './agency/PageTitleTooltip';
 function TelegramBotTab() {
   const [bot, setBot] = useState<hrBotApi.HrTelegramBot | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [status, setStatus] = useState<hrBotApi.HrBotStatus | null>(null);
 
   // HrTelegramBotCard loads the bot for its own form and hands it up,
   // so there is one GET for the tab. Until the first one lands the
-  // cards below would be guessing, so they wait.
+  // cards below would be guessing, so they wait. Each change of the own
+  // bot can change which bot is in use (v-shared-hr-bot), so the status
+  // is read again with it.
   const onBotChange = useCallback((b: hrBotApi.HrTelegramBot | null) => {
     setBot(b);
     setLoaded(true);
+    hrBotApi.myBotStatus().then(setStatus).catch(() => setStatus(null));
   }, []);
+
+  // The bot groups are added to: whichever is in use, else the own bot
+  // even while it is switched off — as before the shared bot existed.
+  const groupBot = status?.available && status.botUsername
+    ? { botUsername: status.botUsername }
+    : bot;
 
   return (
     <>
       <Card>
         <CardContent className="pt-6">
-          <HrTelegramBotCard onBotChange={onBotChange} />
+          <HrTelegramBotCard
+            onBotChange={onBotChange}
+            sharedBotUsername={status?.source === 'platform' ? status.botUsername : null}
+          />
         </CardContent>
       </Card>
 
       {loaded ? (
-        <HrTelegramGroupCard bot={bot} active />
+        <HrTelegramGroupCard bot={groupBot} active />
       ) : (
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <Loader2 className="h-4 w-4 animate-spin" />

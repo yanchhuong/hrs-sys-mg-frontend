@@ -36,9 +36,9 @@ const POLL_MS = 5000;
 const POLL_WINDOW_MS = 5 * 60_000;
 
 interface Props {
-  /** The tenant's HR bot (null = not registered). The card is disabled
-   *  until a bot exists — group links are redeemed by that bot. */
-  bot: HrTelegramBot | null;
+  /** The HR bot groups are added to — the company's own, or the shared
+   *  Smart HRMS bot (v-shared-hr-bot). Null disables the card. */
+  bot: Pick<HrTelegramBot, 'botUsername'> | null;
   /** Whether the host dialog/page is open; polling only runs while true. */
   active: boolean;
 }
@@ -277,6 +277,15 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
   const linkCommand = (g: Group) =>
     g.linkCode ? `/link${bot?.botUsername ? `@${bot.botUsername}` : ''} ${g.linkCode}` : '';
 
+  /* v-startgroup — one tap, like ABA PayWay's "Add me to your group":
+   * Telegram opens its group picker, adds the bot to the group chosen and
+   * sends it "/start <code>" there, which links the group. The code is
+   * [A-Z2-9], within what a startgroup parameter allows. */
+  const addToGroupUrl = (g: Group) =>
+    bot?.botUsername && g.linkCode
+      ? `https://t.me/${bot.botUsername}?startgroup=${encodeURIComponent(g.linkCode)}`
+      : '';
+
   const copyCommand = async (g: Group) => {
     if (!g.linkCode) return;
     try {
@@ -401,33 +410,57 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
           </div>
         </div>
         <div className="bg-slate-50 border rounded-md px-3 py-2.5 space-y-2 text-sm">
-          <ol className="list-decimal pl-5 space-y-2">
-            <li>
-              Add the HR bot{bot?.botUsername && <> (<span className="font-medium">@{bot.botUsername}</span>)</>} to your Telegram group.
-            </li>
-            <li>
-              In the group, send:
-              <div className="mt-1 flex items-center gap-2">
-                <code className="rounded bg-white border px-2 py-1 font-mono text-sm select-all break-all">{linkCommand(g)}</code>
-                <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => copyCommand(g)}>
-                  {copied ? <Check className="h-3.5 w-3.5 mr-1" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
-                  {copied ? 'Copied' : 'Copy'}
-                </Button>
-              </div>
-            </li>
-            <li>
-              Wait a moment — the bot replies "✅ This group is connected" and this card shows the group name.
-              <div className="text-xs text-gray-500 mt-0.5">
-                No reply from the bot? Make it an admin of the group, or in @BotFather send /setprivacy → Disable, then send the command again.
-              </div>
-              {!codeExpired && !pollTimedOut && <Loader2 className="h-3.5 w-3.5 ml-1.5 animate-spin text-gray-400 inline" />}
-              {!codeExpired && pollTimedOut && (
-                <Button type="button" variant="link" size="sm" className="h-auto p-0 ml-1.5 text-xs" onClick={checkAgain}>
-                  Check again
-                </Button>
-              )}
-            </li>
-          </ol>
+          {/* v-startgroup — the one-tap path first, like ABA PayWay. */}
+          {addToGroupUrl(g) && !codeExpired && (
+            <div className="space-y-1.5">
+              <a
+                href={addToGroupUrl(g)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold px-4 h-10 shadow-sm"
+              >
+                <Plus className="h-4 w-4" />
+                Add to Telegram group
+              </a>
+              <p className="text-xs text-gray-500">
+                Telegram opens — pick your group and @{bot?.botUsername} joins and connects it.
+                This card updates by itself.
+              </p>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            {!codeExpired && !pollTimedOut && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
+            {!codeExpired && (pollTimedOut ? 'Not connected yet.' : 'Waiting for the group…')}
+            {!codeExpired && pollTimedOut && (
+              <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={checkAgain}>
+                Check again
+              </Button>
+            )}
+          </div>
+          {/* The typed command stays as the fallback — a desktop without
+              Telegram installed, or a group the picker does not list. */}
+          <details className="text-xs text-gray-600">
+            <summary className="cursor-pointer select-none">Can't use the button? Type a command instead</summary>
+            <ol className="list-decimal pl-5 space-y-2 mt-2">
+              <li>
+                Add the HR bot{bot?.botUsername && <> (<span className="font-medium">@{bot.botUsername}</span>)</>} to your Telegram group.
+              </li>
+              <li>
+                In the group, send:
+                <div className="mt-1 flex items-center gap-2">
+                  <code className="rounded bg-white border px-2 py-1 font-mono text-sm select-all break-all">{linkCommand(g)}</code>
+                  <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => copyCommand(g)}>
+                    {copied ? <Check className="h-3.5 w-3.5 mr-1" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </Button>
+                </div>
+              </li>
+              <li>
+                The bot replies "✅ This group is connected". No reply? Make the bot an admin of the
+                group, or in @BotFather send /setprivacy → Disable, then send it again.
+              </li>
+            </ol>
+          </details>
           {g.linkCodeExpiresAt && (
             <p className={`text-[11px] ${codeExpired ? 'text-red-600' : 'text-gray-500'}`}>
               {codeExpired

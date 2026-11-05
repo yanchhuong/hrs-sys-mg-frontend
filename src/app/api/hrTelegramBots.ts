@@ -94,8 +94,25 @@ export async function generateUserLink(userId: string): Promise<HrTelegramLinkRe
 
 /** Whether the company has an enabled HR bot to link to. */
 export async function myBotAvailable(): Promise<boolean> {
-  const r = await apiJson<{ available: boolean }>('/api/v1/hr-telegram/me/available');
-  return !!r?.available;
+  return (await myBotStatus()).available;
+}
+
+/** v-shared-hr-bot — the bot people and groups link to: the company's
+ *  own enabled bot ('tenant'), else the shared Smart HRMS bot
+ *  ('platform'), else none. */
+export interface HrBotStatus {
+  available: boolean;
+  botUsername: string | null;
+  source: 'tenant' | 'platform' | null;
+}
+
+export async function myBotStatus(): Promise<HrBotStatus> {
+  const r = await apiJson<Partial<HrBotStatus>>('/api/v1/hr-telegram/me/available');
+  return {
+    available: !!r?.available,
+    botUsername: r?.botUsername ?? null,
+    source: r?.source ?? null,
+  };
 }
 
 /** A /start link for the signed-in user (Your Profile). */

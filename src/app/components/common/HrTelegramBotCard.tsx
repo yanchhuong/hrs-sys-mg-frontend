@@ -34,9 +34,12 @@ interface Props {
   active?: boolean;
   /** The registered bot, or null, after every load and save. */
   onBotChange?: (bot: hrBotApi.HrTelegramBot | null) => void;
+  /** v-shared-hr-bot — the shared Smart HRMS bot's username while it is
+   *  the one in use (no own bot, or the own one switched off). */
+  sharedBotUsername?: string | null;
 }
 
-export function HrTelegramBotCard({ active = true, onBotChange }: Props) {
+export function HrTelegramBotCard({ active = true, onBotChange, sharedBotUsername }: Props) {
   const [bot, setBot] = useState<hrBotApi.HrTelegramBot | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -146,6 +149,21 @@ export function HrTelegramBotCard({ active = true, onBotChange }: Props) {
         </div>
       ) : (
         <>
+          {sharedBotUsername && (
+            <div className="flex items-start gap-2.5 rounded-md border border-sky-200 bg-sky-50 px-3 py-2.5">
+              <Send className="h-4 w-4 text-sky-600 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <div className="font-medium text-sky-900">
+                  Using the shared bot <span className="tabular-nums">@{sharedBotUsername}</span>
+                </div>
+                <div className="text-xs text-sky-800/80 mt-0.5">
+                  Ready now — share links and team groups work with it. Optional: register
+                  your own bot below and switch it on to show your company's name instead.
+                </div>
+              </div>
+            </div>
+          )}
+
           {bot && (
             <div className="flex items-center justify-between bg-slate-50 border rounded-md px-3 py-2">
               <div className="text-sm">
