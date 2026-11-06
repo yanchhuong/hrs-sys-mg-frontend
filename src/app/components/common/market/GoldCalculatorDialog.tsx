@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsList, TabsTrigger } from '../../ui/tabs';
 import * as marketApi from '../../../api/marketPrices';
 import { useI18n } from '../../../i18n/I18nContext';
-import { NUM, maskNumber } from '../../../utils/validation';
+import { NUM, maskNumber, padNumber } from '../../../utils/validation';
 
 /** One half of the Sell Out / Buy In switch. */
 const SWITCH_HALF = 'h-9 rounded-md no-underline data-[state=active]:no-underline '
@@ -29,6 +29,9 @@ const num = (s: string): number | null => {
   const n = Number(v);
   return Number.isFinite(n) ? n : NaN;
 };
+
+/** Grams to two places, grouped: 7.5 → "7.50", 1234.5 → "1,234.50". */
+const fmtGrams = (g: number) => g.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function GoldCalculatorDialog({ item, onClose }: {
   /** The gold price to quote from; null closes the dialog. */
@@ -43,9 +46,10 @@ export function GoldCalculatorDialog({ item, onClose }: {
   const { t } = useI18n();
 
   const priceOf = (s: 'sell' | 'buy') => {
-    // The rate field takes two places, so the price in force does too.
+    // The rate field takes two places, so the price in force does too:
+    // 470 reads "470.00".
     const v = item?.[s].today;
-    return v != null ? String(Math.round(v * 100) / 100) : '';
+    return v != null ? (Math.round(v * 100) / 100).toFixed(2) : '';
   };
 
   // A fresh quote each time it opens, on the Sell Out price.
@@ -97,6 +101,7 @@ export function GoldCalculatorDialog({ item, onClose }: {
                 170px unit picker left the weight box too narrow to read. */}
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input id="gold-calc-weight" value={qty} onChange={e => setQty(maskNumber(e.target.value, NUM.goldWeight))}
+                onBlur={() => setQty(v => padNumber(v, NUM.goldWeight))}
                 inputMode="decimal" placeholder="0.0000" autoFocus className="flex-1 text-right tabular-nums" />
               <Select value={unit} onValueChange={v => setUnit(v as marketApi.GoldCalcUnit)}>
                 <SelectTrigger className="w-full sm:w-[170px] shrink-0" aria-label={t('market.calc.unit', 'Weight unit')}><SelectValue /></SelectTrigger>
@@ -110,6 +115,7 @@ export function GoldCalculatorDialog({ item, onClose }: {
           <div className="space-y-1.5">
             <Label htmlFor="gold-calc-rate">{t('market.calc.rate', 'Market rate per Chi')} ({currency})</Label>
             <Input id="gold-calc-rate" value={rate} onChange={e => setRate(maskNumber(e.target.value, NUM.money))}
+              onBlur={() => setRate(v => padNumber(v, NUM.money))}
               inputMode="decimal" placeholder="0.00" className="text-right tabular-nums" />
           </div>
 
@@ -118,6 +124,7 @@ export function GoldCalculatorDialog({ item, onClose }: {
               {feeLabel} ({currency})
             </Label>
             <Input id="gold-calc-fee" value={fee} onChange={e => setFee(maskNumber(e.target.value, NUM.money))}
+              onBlur={() => setFee(v => padNumber(v, NUM.money))}
               inputMode="decimal" placeholder="0.00" className="text-right tabular-nums" />
           </div>
 
@@ -131,7 +138,7 @@ export function GoldCalculatorDialog({ item, onClose }: {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">{t('market.calc.grams', 'Weight in grams')}</span>
-              <span className="font-medium tabular-nums">{quote ? `${quote.grams.toFixed(4)} g` : '—'}</span>
+              <span className="font-medium tabular-nums">{quote ? `${fmtGrams(quote.grams)} g` : '—'}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">{t('market.calc.gold_value', 'Gold value')}</span>

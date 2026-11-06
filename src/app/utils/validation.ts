@@ -88,6 +88,17 @@ export function maskNumber(raw: string, spec: NumSpec): string {
   return neg ? `-${s}` : s;
 }
 
+/**
+ * A masked number shown to all its places, for when the field loses
+ * focus: "470" → "470.00" with two, "2.5" → "2.5000" with four. Blank,
+ * or not yet a number ("-", "."), stays as typed.
+ */
+export function padNumber(v: string, spec: NumSpec): string {
+  const n = Number(v.trim());
+  if (v.trim() === '' || !Number.isFinite(n) || !/\d/.test(v)) return v;
+  return n.toFixed(spec.dec);
+}
+
 /** Phone-ish text: digits, spaces, + - ( ) only, capped at LEN.phone. */
 export function maskPhone(raw: string): string {
   return raw.replace(/[^\d+\-() ]/g, '').slice(0, LEN.phone);
