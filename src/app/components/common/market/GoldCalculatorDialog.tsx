@@ -90,7 +90,7 @@ export function GoldCalculatorDialog({ item, onClose }: {
                   the chosen one raised in the colour of its total. */}
               <TabsList className="grid w-full grid-cols-2 gap-1 rounded-lg border-0 bg-gray-100 p-1">
                 <TabsTrigger value="sell" className={`${SWITCH_HALF} data-[state=active]:text-emerald-700`}>{t('market.sell', 'Sell Out')}</TabsTrigger>
-                <TabsTrigger value="buy" className={`${SWITCH_HALF} data-[state=active]:text-blue-700`}>{t('market.buy', 'Buy In')}</TabsTrigger>
+                <TabsTrigger value="buy" className={`${SWITCH_HALF} data-[state=active]:text-red-700`}>{t('market.buy', 'Buy In')}</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -132,7 +132,7 @@ export function GoldCalculatorDialog({ item, onClose }: {
             <div className="text-xs text-gray-500">
               {isSell ? t('market.calc.pays', 'Estimated Customer Pays') : t('market.calc.receives', 'Estimated Customer Receives')}
             </div>
-            <div className={`text-2xl font-semibold tabular-nums ${isSell ? 'text-emerald-700' : 'text-blue-700'}`}
+            <div className={`text-2xl font-semibold tabular-nums ${isSell ? 'text-emerald-700' : 'text-red-700'}`}
               data-gold-total="">
               {money(quote?.total)}
             </div>

@@ -181,7 +181,7 @@ export function MarketPriceHistoryDialog({
                   <tr key={r.id} className="border-b last:border-0">
                     <td className="py-2 pr-3 tabular-nums">{r.effectiveDate}</td>
                     <td className="py-2 pr-3">{r.title}</td>
-                    <td className={`py-2 pr-3 ${r.key === 'buy' ? 'text-green-700' : 'text-red-700'}`}>
+                    <td className={`py-2 pr-3 ${r.key === 'buy' ? 'text-red-700' : 'text-green-700'}`}>
                       {r.key === 'buy' ? 'Buy' : 'Sell'}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{marketApi.fmtPrice(r.value)}</td>

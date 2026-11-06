@@ -50,8 +50,9 @@ export function PriceComparisonCard({
 }) {
   const { t } = useI18n();
   const color = side.today == null ? 'text-gray-400' : DIRECTION_TEXT[side.direction];
-  const bg = tone === 'buy' ? 'bg-green-50 border-green-100'
-    : tone === 'sell' ? 'bg-red-50 border-red-100'
+  // Sell Out is money in (green), Buy In money out (red), as on mobile.
+  const bg = tone === 'buy' ? 'bg-red-50 border-red-100'
+    : tone === 'sell' ? 'bg-green-50 border-green-100'
     : 'bg-transparent border-transparent';
   const stale = side.todayDate && today && side.todayDate !== today;
   return (

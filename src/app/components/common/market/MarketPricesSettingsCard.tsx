@@ -242,12 +242,12 @@ export function MarketPricesSettingsCard() {
             <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-green-700">Buy In · ទិញចូល</Label>
+            <Label className="text-xs text-red-700">Buy In · ទិញចូល</Label>
             <Input value={buy} onChange={e => setBuy(e.target.value)} inputMode="decimal" placeholder="0.00"
               className="text-right tabular-nums" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs text-red-700">Sell Out · លក់ចេញ</Label>
+            <Label className="text-xs text-green-700">Sell Out · លក់ចេញ</Label>
             <Input value={sell} onChange={e => setSell(e.target.value)} inputMode="decimal" placeholder="0.00"
               className="text-right tabular-nums" />
           </div>
@@ -377,7 +377,7 @@ export function MarketPricesSettingsCard() {
                     <tr key={r.id} className="border-b last:border-0">
                       <td className="py-1.5 pr-3 tabular-nums whitespace-nowrap">{marketApi.fmtEntryStamp(r)}</td>
                       <td className="py-1.5 pr-3">{r.title}</td>
-                      <td className={`py-1.5 pr-3 ${r.key === 'buy' ? 'text-green-700' : 'text-red-700'}`}>
+                      <td className={`py-1.5 pr-3 ${r.key === 'buy' ? 'text-red-700' : 'text-green-700'}`}>
                         {r.key === 'buy' ? 'Buy' : 'Sell'}
                       </td>
                       <td className="py-1.5 pr-3 text-right tabular-nums">{marketApi.fmtPrice(r.value)}</td>
