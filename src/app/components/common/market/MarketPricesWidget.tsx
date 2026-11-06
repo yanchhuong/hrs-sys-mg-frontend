@@ -7,7 +7,7 @@
  * tenant has entered at least one price.
  */
 import { useEffect, useState } from 'react';
-import { History, NotebookPen } from 'lucide-react';
+import { Calculator, History, NotebookPen } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import { useI18n } from '../../../i18n/I18nContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -16,12 +16,15 @@ import { Button } from '../../ui/button';
 import * as marketApi from '../../../api/marketPrices';
 import { PriceComparisonCard, marketWord } from './PriceComparisonCard';
 import { MarketPriceHistoryDialog } from './MarketPriceHistoryDialog';
+import { GoldCalculatorDialog } from './GoldCalculatorDialog';
 
 
 export function MarketPricesWidget() {
   const { t } = useI18n();
   const [data, setData] = useState<marketApi.MarketDashboard | null>(null);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
+  /** The gold price the calculator is quoting from, when open. */
+  const [calcFor, setCalcFor] = useState<marketApi.MarketItem | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -80,10 +83,17 @@ export function MarketPricesWidget() {
           <CardContent className="space-y-3">
             {gold.map(g => (
               <div key={g.title} className="rounded-lg border p-3">
-                <button type="button" className="text-sm font-semibold hover:underline"
-                  onClick={() => setHistoryFor(g.title)}>
-                  {g.title}{g.unit && <span className="ml-1 text-xs font-normal text-gray-500">({g.unit})</span>}
-                </button>
+                <div className="flex items-center justify-between gap-2">
+                  <button type="button" className="text-sm font-semibold hover:underline text-left"
+                    onClick={() => setHistoryFor(g.title)}>
+                    {g.title}{g.unit && <span className="ml-1 text-xs font-normal text-gray-500">({g.unit})</span>}
+                  </button>
+                  {/* Prices a weight at this gold's Buy In / Sell Out. */}
+                  <Button variant="outline" size="sm" className="h-7 px-2 shrink-0" onClick={() => setCalcFor(g)}
+                    title={`Calculate ${g.title} by weight`}>
+                    <Calculator className="h-3.5 w-3.5 mr-1" /> {t('market.calculate', 'Calculate')}
+                  </Button>
+                </div>
                 <div className="grid grid-cols-2 gap-2 mt-1">
                   <PriceComparisonCard side={g.buy} label={t('market.buy', 'Buy In')} today={data.today} />
                   <PriceComparisonCard side={g.sell} label={t('market.sell', 'Sell Out')} today={data.today} />
@@ -135,6 +145,8 @@ export function MarketPricesWidget() {
           </CardContent>
         </Card>
       )}
+
+      <GoldCalculatorDialog item={calcFor} onClose={() => setCalcFor(null)} />
 
       <MarketPriceHistoryDialog
         open={historyFor != null}

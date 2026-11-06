@@ -65,6 +65,9 @@ export const NUM = {
   count:     { int: 2, dec: 0 },
   /** Item modifier price delta — may be negative. */
   signedMoney: { int: 12, dec: 2, signed: true },
+  /** Gold weight in the gold calculator — chi, damloeng or grams, to
+   *  four places (###.0000). */
+  goldWeight: { int: 6, dec: 4 },
 } as const satisfies Record<string, NumSpec>;
 
 /**

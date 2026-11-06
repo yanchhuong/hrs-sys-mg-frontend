@@ -8,6 +8,91 @@ import { apiJson, apiVoid } from './client';
 export type MarketCategory = 'gold' | 'currency';
 export type MarketDirection = 'up' | 'down' | 'flat' | 'na';
 
+/**
+ * Gold is quoted per chi (ជី, 3.75 g) or per damloeng (ដំឡឹង, 10 chi).
+ * Prices are saved — and so shown — per chi: a damloeng price is divided
+ * by ten on the way in, so the dashboard always compares chi with chi,
+ * whichever way each day's price was entered.
+ */
+export type GoldWeight = 'chi' | 'damloeng';
+
+export const GOLD_WEIGHTS: { key: GoldWeight; label: string; hint: string; chi: number }[] = [
+  { key: 'chi',      label: 'Chi (ជី)',         hint: '3.75 g',          chi: 1 },
+  { key: 'damloeng', label: 'Damloeng (ដំឡឹង)', hint: '10 chi · 37.5 g', chi: 10 },
+];
+
+/** A price per `weight`, as the price per chi it is saved as. */
+export function perChi(value: number, weight: GoldWeight): number {
+  const chi = GOLD_WEIGHTS.find(w => w.key === weight)?.chi ?? 1;
+  return Math.round((value / chi) * 10000) / 10000;
+}
+
+/** The unit a gold price is saved with. " per " splits the currency off
+ *  for the spread, as it did for the free-text "USD per chi". */
+export function goldUnit(currency: GoldCurrency): string {
+  return `${currency} per ជី`;
+}
+
+export type GoldCurrency = 'USD' | 'KHR';
+
+/** The currency a saved gold unit names; USD when it names none. */
+export function goldCurrency(unit: string | null | undefined): GoldCurrency {
+  return /^\s*(KHR|៛)/i.test(unit ?? '') ? 'KHR' : 'USD';
+}
+
+/** Grams in one chi (ជី); a damloeng (ដំឡឹង) is ten chi. */
+export const GRAMS_PER_CHI = 3.75;
+
+/** Weights the gold calculator takes: as quoted, or weighed in grams. */
+export type GoldCalcUnit = GoldWeight | 'gram';
+
+export const GOLD_CALC_UNITS: { key: GoldCalcUnit; label: string }[] = [
+  { key: 'chi',      label: 'Chi (ជី)' },
+  { key: 'damloeng', label: 'Damloeng (ដំឡឹង)' },
+  { key: 'gram',     label: 'Gram (g)' },
+];
+
+/** A weight in `unit`, in chi. */
+export function weightInChi(qty: number, unit: GoldCalcUnit): number {
+  if (unit === 'gram') return qty / GRAMS_PER_CHI;
+  return qty * (GOLD_WEIGHTS.find(w => w.key === unit)?.chi ?? 1);
+}
+
+export interface GoldQuote {
+  chi: number;
+  grams: number;
+  /** Weight × the price per chi. */
+  goldValue: number;
+  fee: number;
+  /** Sell: what the customer pays (value + fee). Buy: what the customer
+   *  is paid (value − fee). */
+  total: number;
+}
+
+/**
+ * The gold calculator's sum, for the shop selling gold (the Sell Out
+ * price) or buying it back (the Buy In price). Rounded to the
+ * currency: cents for USD, whole riel for KHR.
+ */
+export function goldQuote(
+  side: 'sell' | 'buy', qty: number, unit: GoldCalcUnit,
+  ratePerChi: number, fee: number, currency: GoldCurrency,
+): GoldQuote {
+  const round = (v: number) => (currency === 'KHR' ? Math.round(v) : Math.round(v * 100) / 100);
+  const chi = weightInChi(qty, unit);
+  const goldValue = round(chi * ratePerChi);
+  return { chi, grams: chi * GRAMS_PER_CHI, goldValue, fee, total: round(side === 'sell' ? goldValue + fee : goldValue - fee) };
+}
+
+/** "$950.00" / "-$5.00" / "៛1,000,000". */
+export function fmtMoney(v: number, currency: GoldCurrency): string {
+  const sign = v < 0 ? '-' : '';
+  const abs = Math.abs(v);
+  return currency === 'KHR'
+    ? `${sign}៛${abs.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+    : `${sign}$${abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export interface MarketSide {
   today: number | null;
   todayDate: string | null;

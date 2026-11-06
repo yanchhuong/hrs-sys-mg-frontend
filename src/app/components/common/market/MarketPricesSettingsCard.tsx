@@ -31,7 +31,9 @@ export function MarketPricesSettingsCard() {
   const [recent, setRecent] = useState<marketApi.MarketEntry[] | null>(null);
   const [category, setCategory] = useState<marketApi.MarketCategory>('gold');
   const [title, setTitle] = useState('');
-  const [unit, setUnit] = useState('');
+  /** Gold only: what the typed prices are per, and in. Saved per chi. */
+  const [weight, setWeight] = useState<marketApi.GoldWeight>('chi');
+  const [currency, setCurrency] = useState<marketApi.GoldCurrency>('USD');
   const [date, setDate] = useState(marketApi.todayPP());
   const [buy, setBuy] = useState('');
   const [sell, setSell] = useState('');
@@ -104,7 +106,9 @@ export function MarketPricesSettingsCard() {
   const pick = (item: marketApi.MarketItem) => {
     setCategory(item.category);
     setTitle(item.title);
-    setUnit(item.category === 'gold' ? (item.unit ?? '') : '');
+    // The price in force is per chi, so the copy starts on chi.
+    setWeight('chi');
+    setCurrency(marketApi.goldCurrency(item.unit));
     setBuy(item.buy.today != null ? String(item.buy.today) : '');
     setSell(item.sell.today != null ? String(item.sell.today) : '');
     setDate(marketApi.todayPP());
@@ -119,9 +123,12 @@ export function MarketPricesSettingsCard() {
     }
     setSaving(true);
     try {
+      const gold = category === 'gold';
       await marketApi.add({
-        category, title: title.trim(), unit: category === 'gold' ? (unit.trim() || null) : null,
-        effectiveDate: date, buy: b, sell: s,
+        category, title: title.trim(), unit: gold ? marketApi.goldUnit(currency) : null,
+        effectiveDate: date,
+        buy: gold && b != null ? marketApi.perChi(b, weight) : b,
+        sell: gold && s != null ? marketApi.perChi(s, weight) : s,
       });
       toast.success(`${title.trim()} saved for ${date}`);
       setBuy(''); setSell('');
@@ -210,8 +217,24 @@ export function MarketPricesSettingsCard() {
           </div>
           {category === 'gold' ? (
             <div className="space-y-1.5">
-              <Label className="text-xs text-gray-600">Unit (optional)</Label>
-              <Input value={unit} onChange={e => setUnit(e.target.value)} placeholder="USD per chi" />
+              <Label className="text-xs text-gray-600">Price per</Label>
+              {/* One control for both halves — currency and weight —
+                  so the cell stays one field wide. */}
+              <Select value={`${currency}|${weight}`} onValueChange={v => {
+                const [c, w] = v.split('|');
+                setCurrency(c as marketApi.GoldCurrency); setWeight(w as marketApi.GoldWeight);
+              }}>
+                <SelectTrigger aria-label="Gold price per">
+                  <SelectValue>{currency} / {weight === 'damloeng' ? 'ដំឡឹង' : 'ជី'}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {(['USD', 'KHR'] as const).flatMap(c => marketApi.GOLD_WEIGHTS.map(w => (
+                    <SelectItem key={`${c}|${w.key}`} value={`${c}|${w.key}`}>
+                      {c} per {w.label} <span className="text-gray-500">· {w.hint}</span>
+                    </SelectItem>
+                  )))}
+                </SelectContent>
+              </Select>
             </div>
           ) : <div className="hidden lg:block" />}
           <div className="space-y-1.5">
@@ -231,7 +254,19 @@ export function MarketPricesSettingsCard() {
         </div>
         {/* Outside the grid — inside a cell it nudged the Title field up. */}
         <datalist id="market-titles">{known.map(t => <option key={t} value={t} />)}</datalist>
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-3">
+          {/* Gold is shown per chi everywhere; a damloeng price is saved
+              as a tenth of itself, said here before it is. */}
+          {category === 'gold' && weight === 'damloeng' && (num(buy) != null || num(sell) != null) && (
+            <span className="text-xs text-gray-500">
+              Saved per ជី (÷10):
+              {[['Buy', num(buy)], ['Sell', num(sell)]].map(([k, v]) => typeof v === 'number' && !Number.isNaN(v) && (
+                <span key={k as string} className="ml-2 tabular-nums">
+                  {k} {marketApi.fmtPrice(marketApi.perChi(v, 'damloeng'))} {currency}
+                </span>
+              ))}
+            </span>
+          )}
           <Button onClick={() => void save()} disabled={saving}>{saving ? 'Saving…' : 'Add prices'}</Button>
         </div>
 
