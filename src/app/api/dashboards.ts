@@ -114,15 +114,18 @@ export interface DashboardSummary {
   }[];
   /** Management-only. Merged feed of accounting / payroll / POS
    *  rows. Positive amountUsd = money in; negative = money out.
-   *  {@code source} + {@code kind} let the FE colour + icon the row. */
+   *  {@code source} + {@code kind} let the FE colour + icon the row.
+   *  A 'market' row is a gold / currency price save: no amount, its
+   *  prices already written out in {@code priceText}. */
   activity?: {
     id: string;
-    source: 'accounting' | 'payroll' | 'pos' | 'cash flow';
+    source: 'accounting' | 'payroll' | 'pos' | 'cash flow' | 'market';
     kind?: string;
     docNo: string;
     date: string | null;
     status: string;
-    amountUsd: number | string;
+    amountUsd?: number | string;
+    priceText?: string;
   }[];
   /** School-only. */
   recentEnrollments?: {

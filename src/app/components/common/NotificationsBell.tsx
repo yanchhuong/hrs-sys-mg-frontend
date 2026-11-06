@@ -39,6 +39,8 @@ function targetOf(n: api.Notification): Target | null {
   if (t === 'approval') return id ? { kind: 'approval', chainId: id } : { kind: 'view', view: 'approvals' };
   if (/^(shop-order|pos-order|shop-spin)/.test(t) || t === 'pos_order') return { kind: 'view', view: 'pos' };
   if (t === 'tax_declaration') return { kind: 'view', view: 'tax-declarations' };
+  // A new gold / currency price: the Dashboard's market widget shows it.
+  if (t === 'market_price') return { kind: 'view', view: 'dashboard' };
   if (t.includes('invoice'))   return { kind: 'view', view: 'invoices', id };
   if (t.includes('bill'))      return { kind: 'view', view: 'bills', id };
   if (t.includes('quotation')) return { kind: 'view', view: 'quotations', id };

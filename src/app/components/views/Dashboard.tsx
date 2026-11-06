@@ -608,6 +608,7 @@ const ACTIVITY_SOURCE_TONE: Record<string, string> = {
   payroll:      'text-violet-600 bg-violet-50',
   pos:          'text-emerald-600 bg-emerald-50',
   'cash flow':  'text-amber-600 bg-amber-50',
+  market:       'text-yellow-700 bg-yellow-50',
 };
 
 /** V316 — Management category widgets. A cross-category roll-up
@@ -725,13 +726,24 @@ function ManagementDashboardBundle() {
                         </span>
                         <div className="min-w-0">
                           <div className="font-medium tabular-nums text-xs truncate">{r.docNo}</div>
-                          <div className="text-[11px] text-gray-500 capitalize">{r.status}</div>
+                          {r.source === 'market' ? (
+                            // A price save carries no amount: its prices go
+                            // under the title, wrapping on a narrow card
+                            // rather than losing the sell price.
+                            <div className="text-[11px] leading-snug text-gray-500 tabular-nums">{r.priceText}</div>
+                          ) : (
+                            <div className="text-[11px] text-gray-500 capitalize">{r.status}</div>
+                          )}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <div className={`font-medium tabular-nums text-xs ${
-                          positive ? 'text-emerald-700' : 'text-rose-700'
-                        }`}>{usd(amt)}</div>
+                        {r.source === 'market' ? (
+                          <div className="font-medium text-xs text-gray-700 capitalize">{r.status}</div>
+                        ) : (
+                          <div className={`font-medium tabular-nums text-xs ${
+                            positive ? 'text-emerald-700' : 'text-rose-700'
+                          }`}>{usd(amt)}</div>
+                        )}
                         <div className="text-[10px] text-gray-400">
                           {r.date ? formatDate(String(r.date)) : '—'}
                         </div>

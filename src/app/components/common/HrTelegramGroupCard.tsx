@@ -13,10 +13,12 @@ import type { HrTelegramBot } from '../../api/hrTelegramBots';
 
 type Group = groupApi.HrTelegramGroup;
 type EventKey = 'postInvoices' | 'postExpenses' | 'postApprovals' | 'postCashAdvance' | 'postActivity'
-  | 'postAttendance' | 'postOvertime' | 'postLeave' | 'postPayroll' | 'postEmployee';
+  | 'postAttendance' | 'postOvertime' | 'postLeave' | 'postPayroll' | 'postEmployee'
+  | 'postMarketPrices';
 
 /** Each event is offered only when at least one of its modules is
- *  available to the tenant (declared + enabled). */
+ *  available to the tenant (declared + enabled). No modules = always
+ *  offered: gold and currency prices are part of General Settings. */
 const EVENTS: { key: EventKey; label: string; modules: string[] }[] = [
   { key: 'postInvoices',    label: 'Invoices',               modules: ['invoice'] },
   { key: 'postExpenses',    label: 'Expenses & Bills',       modules: ['expenses', 'bill'] },
@@ -28,6 +30,7 @@ const EVENTS: { key: EventKey; label: string; modules: string[] }[] = [
   { key: 'postLeave',       label: 'Leave',                  modules: ['all-leave'] },
   { key: 'postPayroll',     label: 'Payroll',                modules: ['payroll'] },
   { key: 'postEmployee',    label: 'Employees',              modules: ['employees'] },
+  { key: 'postMarketPrices', label: 'Gold & currency prices', modules: [] },
 ];
 
 const POLL_MS = 5000;
@@ -85,7 +88,7 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
   const disabled = !bot;
   /** Events this tenant can actually produce; hidden ones keep their
    *  server value untouched — they're just never rendered. */
-  const availableEvents = EVENTS.filter(ev => ev.modules.some(m => isModuleAvailable(m)));
+  const availableEvents = EVENTS.filter(ev => ev.modules.length === 0 || ev.modules.some(m => isModuleAvailable(m)));
 
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [loading, setLoading] = useState(false);
