@@ -204,6 +204,14 @@ export function PublicShopPage() {
    *  network blip doesn't strand the customer on a dead page. */
   const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState('');
+  // Phone: search starts as an icon at the end of the chip row, as on
+  // the mobile app's Items screen; tapping it opens a full-width box
+  // with the chips under it. It stays open while it holds text.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const phoneSearchShown = searchOpen || search.length > 0;
+  const phoneSearchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (searchOpen) phoneSearchRef.current?.focus(); }, [searchOpen]);
+  const closePhoneSearch = () => { setSearch(''); setSearchOpen(false); };
   const [category, setCategory] = useState<string>('all');
   // v-shop-warehouse-filter — filter by warehouse name. Empty string
   // means "All warehouses"; matches the shape POS uses so the two
@@ -1049,7 +1057,36 @@ export function PublicShopPage() {
             surfaces read as one system. shrink-0 keeps the right-
             side inputs from squeezing; the chip-row scrolls
             independently when it overflows. */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 min-w-0">
+          {/* Phone, search open: the box takes the whole first line, as on
+              the mobile app's Items screen, and the chips wrap to the line
+              under it. Hidden from sm up, where the inline box below is. */}
+          {phoneSearchShown && (
+            <div className="sm:hidden basis-full flex items-center gap-2 h-10 px-3 rounded-xl bg-white shadow-sm border-2 border-transparent focus-within:border-blue-500 transition-colors">
+              <Search className="h-4 w-4 shrink-0 text-gray-400" />
+              <input
+                ref={phoneSearchRef}
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') closePhoneSearch(); }}
+                placeholder="Search the menu…"
+                aria-label="Search the menu"
+                enterKeyHint="search"
+                // 16px: iOS zooms the page into any smaller field.
+                className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400"
+              />
+              <button
+                type="button"
+                onClick={closePhoneSearch}
+                title="Close search"
+                aria-label="Close search"
+                className="shrink-0 -mr-1 p-1 rounded-full text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
           {/* v-shop-chip-parity — mirror POS's chip strategy: cap the
               visible chips at CHIP_LIMIT and roll the rest into a
               "+N more" popover. Beats the scroll-arrow strip for a
@@ -1136,9 +1173,22 @@ export function PublicShopPage() {
               );
             })()}
           </div>
-          {/* Search input pinned right. shrink-0 so the chip row
-              (flex-1) absorbs the remaining width. */}
-          <div className="relative w-40 sm:w-56 shrink-0">
+          {/* Phone: just a search icon until it is tapped, so the chips
+              get the width a 160px box used to take from them. */}
+          {!phoneSearchShown && (
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              title="Search the menu"
+              aria-label="Search the menu"
+              className="sm:hidden h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-xl bg-white shadow-sm border border-gray-200 text-gray-600 hover:text-blue-600 active:scale-95 transition"
+            >
+              <Search className="h-5 w-5" />
+            </button>
+          )}
+          {/* sm and up: the box is always there, pinned right. shrink-0
+              so the chip row (flex-1) absorbs the remaining width. */}
+          <div className="relative w-56 shrink-0 hidden sm:block">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
               value={search}
