@@ -16,7 +16,7 @@ import * as settingsApi from '../../api/settings';
 import * as attendanceApi from '../../api/attendance';
 import * as beneficiaryApi from '../../api/paywayBeneficiary';
 import * as increasesApi from '../../api/increases';
-import { USE_MOCKS } from '../../api/client';
+import { ApiError, USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import type { Employee, PayrollItem } from '../../types/hrms';
 import type { PayrollBatch, PayrollCategory } from '../../types/settings';
@@ -667,6 +667,10 @@ export function Payroll() {
       const res = await payrollApi.listBatches({ size: 200 });
       setBatches(res.data.map(adaptApiBatch));
     } catch (err) {
+      // A role that sees only its own payslips is refused the batch list
+      // by the API; its self view reads them separately, so that is not
+      // an error worth a toast.
+      if (err instanceof ApiError && err.status === 403) { setBatches([]); return; }
       toast.error(err instanceof Error ? err.message : 'Failed to load payroll batches');
     }
   };
