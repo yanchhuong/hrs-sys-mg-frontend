@@ -14,9 +14,9 @@ import {
   ArrowRight, Quote, Sparkles, Target, Globe, LineChart,
   Lock, FileSpreadsheet, ShieldCheck, RefreshCw,
   HelpCircle, Mail, Phone, MapPin, Factory, Briefcase, Store,
-  CalendarDays, FileText, Baby, Calculator, Scale, 
-  
-  
+  CalendarDays, FileText, Baby, Calculator, Scale,
+  Bell, Home, Settings, UserRound, Plus, ArrowUp, ChevronRight,
+
   Stethoscope, ChevronDown, GraduationCap,
 } from 'lucide-react';
 import {
@@ -667,8 +667,9 @@ function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; on
           </div>
         </div>
 
-        {/* Stylised dashboard preview — pure CSS, no screenshot dependencies. */}
-        <div className="relative">
+        {/* Stylised dashboard preview — pure CSS, no screenshot dependencies.
+            Padded right and below so the phone can sit over its corner. */}
+        <div className="relative pb-24 sm:pb-16 sm:pr-28">
           {/* White glow — the old blue-200/30 halo was invisible now
               that the hero ground is blue. */}
           <div className="absolute -inset-4 rounded-3xl bg-white/15 blur-2xl" aria-hidden />
@@ -705,9 +706,117 @@ function Hero({ lang, onSignIn, onDemo }: { lang: Lang; onSignIn: () => void; on
               </div>
             </CardContent>
           </Card>
+          {/* The mobile app's Home, on a phone over the corner — the
+              same product on the phone every employee already has. */}
+          <PhoneHomePreview className="absolute bottom-0 right-0" />
         </div>
       </Container>
     </section>
+  );
+}
+
+/**
+ * The mobile app's Home screen (m.hr-share.com), drawn in CSS like the
+ * dashboard beside it: gold prices with their as-of time and Calculate,
+ * the currency pair, a quick action and the tab bar. Figures are made up.
+ *
+ * Drawn at a readable 340 × 700 and scaled down as a whole (--s), so no
+ * text is set below 12px — some browsers enforce that as a minimum for
+ * Chinese and Khmer, which would burst a phone drawn at 6px directly.
+ */
+function PhoneHomePreview({ className = '' }: { className?: string }) {
+  return (
+    <div
+      aria-hidden
+      className={`[--s:0.46] sm:[--s:0.54] lg:[--s:0.56] ${className}`}
+      style={{ width: 'calc(340px * var(--s))', height: 'calc(700px * var(--s))' }}
+    >
+      <div
+        className="rounded-[52px] border-[12px] border-slate-900 bg-slate-900 shadow-2xl"
+        style={{ width: 340, height: 700, transform: 'scale(var(--s))', transformOrigin: 'top left' }}
+      >
+        <div className="relative h-full overflow-hidden rounded-[40px] bg-slate-100">
+          <div className="absolute left-1/2 top-2.5 z-10 h-7 w-28 -translate-x-1/2 rounded-full bg-slate-900" />
+
+          <div className="flex items-center gap-2.5 bg-white px-5 pb-3 pt-14">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-600 text-xs font-bold text-white">SH</span>
+            <span className="text-[15px] font-semibold text-slate-900">Smrt HRMS</span>
+            <Bell className="ml-auto h-5 w-5 text-slate-500" />
+          </div>
+
+          <div className="space-y-2.5 p-3">
+            <div className="rounded-2xl bg-white p-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-[14px] font-semibold text-slate-900">Gold Market Price</span>
+                <span className="ml-auto rounded-full bg-emerald-50 px-2.5 py-0.5 text-[12px] font-semibold text-emerald-700">Today 09:30</span>
+              </div>
+              <div className="mt-2.5 rounded-xl border border-slate-200 p-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[14px] font-semibold text-slate-900">មាសដុំ</span>
+                  <span className="text-[12px] text-slate-400">(USD per ជី)</span>
+                  <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-blue-600 px-2 py-0.5 text-[12px] font-semibold text-blue-700">
+                    <Calculator className="h-3.5 w-3.5" /> Calculate
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <PhonePrice label="Buy In" value="460.00" change="+5.00 (1.10%)" />
+                  <PhonePrice label="Sell Out" value="470.00" change="+5.00 (1.08%)" />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white p-3 shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-[14px] font-semibold text-slate-900">Currency Exchange</span>
+                <span className="ml-auto rounded-full bg-emerald-50 px-2.5 py-0.5 text-[12px] font-semibold text-emerald-700">Today 09:30</span>
+              </div>
+              <p className="mt-2 text-[13px] font-semibold text-slate-900">USD/KHR</p>
+              <div className="mt-1.5 grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-rose-50 px-2.5 py-2">
+                  <p className="text-[12px] text-slate-500">Buy In</p>
+                  <p className="text-[18px] font-bold text-slate-800">4,080.00</p>
+                </div>
+                <div className="rounded-xl bg-emerald-50 px-2.5 py-2">
+                  <p className="text-[12px] text-slate-500">Sell Out</p>
+                  <p className="text-[18px] font-bold text-slate-800">4,100.00</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 rounded-2xl bg-amber-500 p-3 text-white">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/30"><Plus className="h-4 w-4" /></span>
+              <span>
+                <span className="block text-[14px] font-semibold">Create order</span>
+                <span className="block text-[12px] text-amber-50">Invoice or KHQR</span>
+              </span>
+              <ChevronRight className="ml-auto h-4 w-4" />
+            </div>
+          </div>
+
+          <div className="absolute inset-x-0 bottom-0 flex justify-around border-t border-slate-200 bg-white px-3 pb-5 pt-2">
+            {([[Home, 'Home'], [FileText, 'Invoice'], [UserRound, 'Customers'], [Settings, 'Settings']] as const).map(([Icon, label], i) => (
+              <span key={label} className={`flex flex-col items-center gap-0.5 text-[12px] ${i === 0 ? 'font-semibold text-blue-700' : 'text-slate-500'}`}>
+                <Icon className="h-5 w-5" />
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One side of a gold price on the phone: label chip, price, change. */
+function PhonePrice({ label, value, change }: { label: string; value: string; change: string }) {
+  return (
+    <div>
+      <span className="inline-block rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-medium text-slate-600">{label}</span>
+      <p className="mt-1 text-[22px] font-bold leading-tight text-slate-800">{value}</p>
+      <p className="flex items-center gap-0.5 text-[12px] font-medium text-emerald-600">
+        <ArrowUp className="h-3 w-3" /> {change}
+      </p>
+    </div>
   );
 }
 
