@@ -1,8 +1,10 @@
+import { useEffect } from 'react';
 import { Card, CardContent } from '../ui/card';
 import { useI18n } from '../../i18n/I18nContext';
 import type { Lang } from '../LandingPage';
 import type { Tone, TriLang } from './moduleCategories';
 import { LANDING_CATEGORIES } from './moduleCategories';
+import { ModulePreview } from './ModulePreview';
 
 /** Tint palette for category banners, module-card icon chips, and
  *  accent text. Kept aligned with the `Tone` union in
@@ -62,6 +64,14 @@ export function ModulesGrid({ lang }: { lang?: Lang }) {
   const { lang: ctxLang } = useI18n();
   const activeLang: Lang = lang ?? (ctxLang as Lang);
 
+  // The section mounts after the page (LandingPage → DeferredModules),
+  // so a link straight to a category (#cat-pos) found nothing to scroll
+  // to on arrival. Scroll there once it exists.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.startsWith('#cat-')) document.getElementById(hash.slice(1))?.scrollIntoView();
+  }, []);
+
   return (
     <section id="modules" className="py-20 sm:py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -108,12 +118,19 @@ export function ModulesGrid({ lang }: { lang?: Lang }) {
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {/* Two columns from tablet width up, one on a phone —
+                    wide enough for a card's screenshot to read. */}
+                <div className="mt-5 grid gap-5 md:grid-cols-2">
                   {cat.modules.map((m, i) => {
                     const MIcon = m.icon;
                     return (
                       <Card key={i} className="group border-slate-200/70 transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
-                        <CardContent className="p-6">
+                        <CardContent className="p-5 sm:p-6">
+                          {m.preview && (
+                            <div className="mb-5">
+                              <ModulePreview spec={m.preview} tone={cat.tone} lang={activeLang} />
+                            </div>
+                          )}
                           <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${TONE_ICON_CLASSES[cat.tone]}`}>
                             <MIcon className="h-5 w-5" />
                           </span>

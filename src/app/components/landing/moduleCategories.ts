@@ -11,6 +11,11 @@ import {
   CalendarClock, CalendarCheck, RotateCw, Globe,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
+import type { ModulePreviewSpec } from './modulePreviews';
+import {
+  PREVIEW_CUSTOMERS, PREVIEW_QUOTATION, PREVIEW_INVOICES, PREVIEW_BILLS,
+  PREVIEW_ITEMS, PREVIEW_PAYMENTS, PREVIEW_VOUCHERS, PREVIEW_CONSIGNMENT,
+} from './modulePreviews';
 
 /** Category-level tint. Drives the banner background, module-card
  *  icon chip, and category accent text across the grid. */
@@ -28,6 +33,9 @@ export interface LandingModule {
   icon: ComponentType<{ className?: string }>;
   title: TriLang;
   desc: TriLang;
+  /** A drawn screenshot of the screen (modulePreviews.ts), shown at
+   *  the top of the card. Cards without one show icon and text only. */
+  preview?: ModulePreviewSpec;
 }
 
 export interface LandingCategory {
@@ -72,6 +80,7 @@ export const LANDING_CATEGORIES: LandingCategory[] = [
     modules: [
       {
         icon: UserCheck,
+        preview: PREVIEW_CUSTOMERS,
         title: { en: 'Customers & Vendors', km: 'អតិថិជន និងអ្នកលក់', zh: '客户与供应商' },
         desc: {
           en: 'Individual + business parties with TIN, representative, multi-site address, and bilingual names for the printed invoice.',
@@ -81,6 +90,7 @@ export const LANDING_CATEGORIES: LandingCategory[] = [
       },
       {
         icon: FileText,
+        preview: PREVIEW_QUOTATION,
         title: { en: 'Quotation', km: 'សម្រង់តម្លៃ', zh: '报价单' },
         desc: {
           en: 'Pre-sale quotes with expiry, line items, and one-click convert-to-Invoice. Optional Telegram delivery to the customer.',
@@ -90,6 +100,7 @@ export const LANDING_CATEGORIES: LandingCategory[] = [
       },
       {
         icon: Receipt,
+        preview: PREVIEW_INVOICES,
         title: { en: 'Invoices (Commercial · Tax · CN/DN)', km: 'វិក្កយបត្រ (ពាណិជ្ជ · អាករ · CN/DN)', zh: '发票（商业·税务·CN/DN）' },
         desc: {
           en: 'Issue, void, and adjust invoices with Credit/Debit Notes. Auto-numbering, AR tracking, partial/paid/overdue states.',
@@ -99,6 +110,7 @@ export const LANDING_CATEGORIES: LandingCategory[] = [
       },
       {
         icon: ShoppingBag,
+        preview: PREVIEW_BILLS,
         title: { en: 'Bills & Receipts (Purchase)', km: 'វិក្កយបត្រទិញ និងបង្កាន់ដៃ', zh: '账单与收据（采购）' },
         desc: {
           en: 'Vendor bills with CN/DN, single-amount WHT receipts, and AP tracking — the symmetric purchase-side of the sale ledger.',
@@ -108,6 +120,7 @@ export const LANDING_CATEGORIES: LandingCategory[] = [
       },
       {
         icon: Package,
+        preview: PREVIEW_ITEMS,
         title: { en: 'Items & Stock', km: 'ទំនិញ និងស្តុក', zh: '商品与库存' },
         desc: {
           en: 'Per-item picture, SKU, category, modifier groups, on-hand qty, cost basis, and per-doc deduction toggle so back-orders never slip through.',
@@ -117,6 +130,7 @@ export const LANDING_CATEGORIES: LandingCategory[] = [
       },
       {
         icon: Wallet,
+        preview: PREVIEW_PAYMENTS,
         title: { en: 'Payments (KHQR + Bank + Cash)', km: 'ការទូទាត់ (KHQR + ធនាគារ + សាច់ប្រាក់)', zh: '收付款（KHQR + 银行 + 现金）' },
         desc: {
           en: 'Record cash, bank, and card payments; show KHQR on the customer screen for scan-to-pay; PayWay (ABA) real-time gateway.',
@@ -126,6 +140,7 @@ export const LANDING_CATEGORIES: LandingCategory[] = [
       },
       {
         icon: FileMinus,
+        preview: PREVIEW_VOUCHERS,
         title: { en: 'Vouchers', km: 'ប័ណ្ណផ្តល់', zh: '凭单' },
         desc: {
           en: 'Free-of-charge giveaways: charity, donation, sponsorship, promo — printed with the right per-purpose title and customer block.',
@@ -135,6 +150,7 @@ export const LANDING_CATEGORIES: LandingCategory[] = [
       },
       {
         icon: FileSpreadsheet,
+        preview: PREVIEW_CONSIGNMENT,
         title: { en: 'Consignment & Settlement', km: 'ការផ្ញើ និងការទូទាត់', zh: '寄售与结算' },
         desc: {
           en: 'Consign stock to a partner outlet, track sell-through, and settle at period end — one document per settlement, print-ready.',

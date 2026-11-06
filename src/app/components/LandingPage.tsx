@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
@@ -36,7 +36,11 @@ import imgPosRetail   from '../../imports/pos-retail.jpg';
 // the taglined version below the mark stays legible on desktop and
 // crunches down cleanly on mobile.
 import imgBrandLogo   from '../../imports/smrt-web-logo1.png';
-import { ModulesGrid } from './landing/ModulesGrid';
+// The module catalog (70 cards, their drawn screenshots and all three
+// languages of text) is its own chunk: it sits several screens down, so
+// the first paint should not wait to download, parse and lay it out.
+const loadModulesGrid = () => import('./landing/ModulesGrid');
+const ModulesGrid = lazy(() => loadModulesGrid().then(m => ({ default: m.ModulesGrid })));
 
 export type Lang = 'en' | 'km' | 'zh';
 
@@ -2015,6 +2019,39 @@ function PosShowcase({ lang }: { lang: Lang }) {
   );
 }
 
+/**
+ * The Modules section, drawn only as the visitor scrolls toward it.
+ * It sits several screens down and is the heaviest block on the page
+ * (70 cards with drawn screenshots); laid out during load it cost a
+ * long task right after first paint. Its chunk is fetched once the
+ * page is idle, so it is in hand by the time it is needed. Until then
+ * a placeholder holds the #modules anchor and about a screen of height,
+ * so the nav's Modules link lands in place and draws it. A visit that
+ * arrives on #modules or a #cat-… link draws it straight away.
+ */
+function DeferredModules({ lang }: { lang: Lang }) {
+  const [ready, setReady] = useState(() =>
+    typeof window !== 'undefined' && /^#(modules|cat-)/.test(window.location.hash));
+  const holder = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (ready) return;
+    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
+    if (w.requestIdleCallback) w.requestIdleCallback(() => void loadModulesGrid());
+    else setTimeout(() => void loadModulesGrid(), 1000);   // Safari
+    const el = holder.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setReady(true); return; }
+    // About two screens ahead, so it is drawn before it comes into view.
+    const io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) { io.disconnect(); setReady(true); }
+    }, { rootMargin: '1500px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ready]);
+  const placeholder = <section id="modules" ref={holder} aria-busy="true" className="min-h-screen" />;
+  if (!ready) return placeholder;
+  return <Suspense fallback={<section id="modules" aria-busy="true" className="min-h-screen" />}><ModulesGrid lang={lang} /></Suspense>;
+}
+
 export function LandingPage({ onSignInClick, onDemoClick, navSlot }: LandingPageProps) {
   // Drive the landing language off the global I18nContext so the toggle here
   // also flips the html.lang-km class (which triggers Khmer typography) and
@@ -2041,7 +2078,7 @@ export function LandingPage({ onSignInClick, onDemoClick, navSlot }: LandingPage
       <Reveal variant="fade"><MetricsStrip lang={lang} /></Reveal>
       <Reveal><Industries lang={lang} /></Reveal>
       <Reveal variant="scale"><PosShowcase lang={lang} /></Reveal>
-      <Reveal><ModulesGrid lang={lang} /></Reveal>
+      <Reveal><DeferredModules lang={lang} /></Reveal>
       <Reveal variant="left"><HowItWorks lang={lang} /></Reveal>
       <Reveal variant="right"><Deployment lang={lang} /></Reveal>
       <Reveal><Testimonials lang={lang} /></Reveal>
