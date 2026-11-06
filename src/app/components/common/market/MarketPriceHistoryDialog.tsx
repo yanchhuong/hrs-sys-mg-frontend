@@ -52,7 +52,8 @@ export function MarketPriceHistoryDialog({
   initialTitle?: string;
 }) {
   const today = marketApi.todayPP();
-  const [range, setRange] = useState<Range>('30d');
+  // Today first, as on mobile: what the shop is quoting now.
+  const [range, setRange] = useState<Range>('today');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [category, setCategory] = useState<'all' | marketApi.MarketCategory>('all');
@@ -61,7 +62,10 @@ export function MarketPriceHistoryDialog({
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
-  useEffect(() => { if (open) setTitle(initialTitle ?? 'all'); }, [open, initialTitle]);
+  // Each opening starts on Today, whatever range was picked last time.
+  useEffect(() => {
+    if (open) { setTitle(initialTitle ?? 'all'); setRange('today'); }
+  }, [open, initialTitle]);
 
   const span = rangeOf(range, today, from, to);
   useEffect(() => {

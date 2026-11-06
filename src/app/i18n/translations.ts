@@ -63,6 +63,7 @@ export const dict: Dict = {
   'market.yesterday':      { en: 'Yesterday', km: 'ម្សិលមិញ', zh: '昨日' },
   'market.spread':         { en: 'Exchange spread', km: 'គម្លាតអត្រាប្តូរ', zh: '汇差' },
   'market.calculate':      { en: 'Calculate', km: 'គណនា', zh: '计算' },
+  'market.update':         { en: 'Update', km: 'កែតម្លៃ', zh: '更新' },
   'market.today':          { en: 'Today', km: 'ថ្ងៃនេះ', zh: '今日' },
   'market.no_price':       { en: 'No price', km: 'គ្មានតម្លៃ', zh: '暂无价格' },
   'market.no_change':      { en: 'No change', km: 'មិនប្រែប្រួល', zh: '无变化' },
