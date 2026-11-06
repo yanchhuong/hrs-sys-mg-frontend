@@ -101,6 +101,9 @@ export interface MarketSide {
   difference: number | null;
   percent: number | null;
   direction: MarketDirection;
+  /** When the price in force was entered (ISO instant). Absent from an
+   *  API older than v-market-asof-time. */
+  todayAt?: string | null;
 }
 
 export interface MarketItem {
@@ -181,7 +184,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 /** "03 Nov", or "03 Nov 2025" once the year stops being obvious. */
 function fmtDay(iso: string): string {
-  const m = /^(d{4})-(d{2})-(d{2})$/.exec(iso);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!m) return iso;
   const month = MONTHS[Number(m[2]) - 1];
   if (!month) return iso;
@@ -200,22 +203,47 @@ function fmtDay(iso: string): string {
  * <p>{@code stale} is for the colour: fresh reads green, anything
  * older reads amber, so the card looks out of date from across the
  * room rather than only on reading the label.</p>
+ *
+ * <p>v-market-asof-time — {@code time} is when the newest of those
+ * prices was entered, Phnom Penh, shown after the label: "Today 09:30",
+ * or the date for any other day, "05 Nov 16:45". {@code label} stays a
+ * bare word or date so it can still be translated. Null when the API
+ * sends no time, or when the price was typed on a different day than it
+ * took effect: that clock time belongs to another day.</p>
  */
 export function asOfLabel(
   items: MarketItem[],
   d: { today: string; yesterday: string },
-): { label: string; stale: boolean } {
+): { label: string; stale: boolean; time: string | null } {
   let latest: string | null = null;
+  let at: number | null = null;
   for (const i of items) {
-    for (const date of [i.buy.todayDate, i.sell.todayDate]) {
+    for (const s of [i.buy, i.sell]) {
+      const date = s.todayDate;
+      if (!date) continue;
+      const t = s.todayAt ? Date.parse(s.todayAt) : NaN;
       // yyyy-MM-dd compares lexically, so no Date parsing is needed.
-      if (date && (latest == null || date > latest)) latest = date;
+      if (latest == null || date > latest) {
+        latest = date; at = Number.isNaN(t) ? null : t;
+      } else if (date === latest && !Number.isNaN(t) && (at == null || t > at)) {
+        at = t;
+      }
     }
   }
-  if (latest == null) return { label: 'No price', stale: true };
-  if (latest === d.today) return { label: 'Today', stale: false };
-  if (latest === d.yesterday) return { label: 'Yesterday', stale: true };
-  return { label: fmtDay(latest), stale: true };
+  if (latest == null) return { label: 'No price', stale: true, time: null };
+  const time = clockOn(at, latest);
+  if (latest === d.today) return { label: 'Today', stale: false, time };
+  return { label: fmtDay(latest), stale: true, time };
+}
+
+/** "09:30" in Phnom Penh, when `at` falls on `day`; null otherwise. */
+function clockOn(at: number | null, day: string): string | null {
+  if (at == null) return null;
+  const when = new Date(at);
+  if (new Intl.DateTimeFormat('en-CA', { timeZone: PP }).format(when) !== day) return null;
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: PP, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(when);
 }
 
 

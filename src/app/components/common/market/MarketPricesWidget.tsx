@@ -71,7 +71,7 @@ export function MarketPricesWidget() {
                   className={goldAsOf.stale
                     ? 'border-amber-200 bg-amber-50 text-amber-700'
                     : 'border-green-200 bg-green-50 text-green-700'}>
-                  {marketWord(t, goldAsOf.label)}
+                  {marketWord(t, goldAsOf.label)}{goldAsOf.time ? ` ${goldAsOf.time}` : ''}
                 </Badge>
                 <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setHistoryFor('all')}
                   title="Price history">
@@ -114,7 +114,7 @@ export function MarketPricesWidget() {
                   className={currencyAsOf.stale
                     ? 'border-amber-200 bg-amber-50 text-amber-700'
                     : 'border-green-200 bg-green-50 text-green-700'}>
-                  {marketWord(t, currencyAsOf.label)}
+                  {marketWord(t, currencyAsOf.label)}{currencyAsOf.time ? ` ${currencyAsOf.time}` : ''}
                 </Badge>
                 <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setHistoryFor('all')}
                   title="Price history">
