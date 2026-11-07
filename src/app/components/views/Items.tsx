@@ -2849,9 +2849,9 @@ function GoldPriceFields({ form, setForm, goldPrices }: {
               follows gold. Sell Out green, Buy In red — money in / out. */}
           <div className="sm:col-span-2 rounded-md border border-amber-200 bg-white px-3 py-2 space-y-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Information</p>
-            <GoldInfoLine label="Sell Out · selling price" tone="text-emerald-700" value={sell} chi={chi} perChi={g?.sell.today} />
+            <GoldInfoLine label="Sell Out" tone="text-emerald-700" value={sell} chi={chi} perChi={g?.sell.today} />
             <div className="border-t border-gray-100" />
-            <GoldInfoLine label="Buy In · buy price" tone="text-red-700" value={buy} chi={chi} perChi={g?.buy.today} />
+            <GoldInfoLine label="Buy In" tone="text-red-700" value={buy} chi={chi} perChi={g?.buy.today} />
           </div>
         </div>
       )}
