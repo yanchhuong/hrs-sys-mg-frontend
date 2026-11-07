@@ -31,6 +31,7 @@ import { ListEmpty, ListError } from '../common/ListStates';
 import { TONE_CLASS } from '../../utils/statusTones';
 import { DocAuditLine } from '../common/DocAuditLine';
 import * as itemsApi from '../../api/items';
+import * as marketApi from '../../api/marketPrices';
 import { resolveAssetUrl } from '../../api/client';
 import * as warehousesApi from '../../api/warehouses';
 import { Plus, Pencil, Trash2, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal, Coins, Tag, Package, Boxes, CheckCircle2, PackageX, ScanBarcode } from 'lucide-react';
@@ -89,6 +90,12 @@ interface FormState {
   minStock: string;
   /** V302 — optional barcode. Empty string clears on save. */
   barcode: string;
+  /** v-gold-items — Gold Market Price title ('' = fixed price), the
+   *  weight as typed and in which unit, and the optional making fee. */
+  goldTitle: string;
+  weight: string;
+  weightUnit: marketApi.GoldCalcUnit;
+  makingFee: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -108,6 +115,10 @@ const EMPTY_FORM: FormState = {
   itemCategory: '',
   minStock: '0',
   barcode: '',
+  goldTitle: '',
+  weight: '',
+  weightUnit: 'chi',
+  makingFee: '',
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -795,6 +806,15 @@ export function Items() {
 
   const [editing, setEditing] = useState<itemsApi.Item | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // v-gold-items — gold titles an item can follow, loaded when the
+  // dialog first opens (USD only for now).
+  const [goldPrices, setGoldPrices] = useState<marketApi.MarketItem[] | null>(null);
+  useEffect(() => {
+    if (!dialogOpen || goldPrices) return;
+    marketApi.dashboard({ all: true })
+      .then(d => setGoldPrices(d.items.filter(i => i.category === 'gold' && marketApi.goldCurrency(i.unit) === 'USD')))
+      .catch(() => setGoldPrices([]));
+  }, [dialogOpen, goldPrices]);
   // Usage-settings dialog (V120) — controls which sale/purchase
   // document forms surface the StockItemPicker.
   const [usageSettingsOpen, setUsageSettingsOpen] = useState(false);
@@ -1092,6 +1112,10 @@ export function Items() {
       itemCategory: it.itemCategory ?? '',
       minStock: String(it.minStock ?? 0),
       barcode: it.barcode ?? '',
+      goldTitle: it.goldTitle ?? '',
+      weight: it.weightChi != null ? String(Number(it.weightChi)) : '',
+      weightUnit: 'chi',
+      makingFee: it.makingFee ? String(it.makingFee) : '',
     });
     setDialogOpen(true);
   };
@@ -1105,6 +1129,17 @@ export function Items() {
     if (!Number.isFinite(unitPrice) || unitPrice < 0) { toast.error('Unit price must be 0 or more'); return; }
     if (!Number.isFinite(unitCost)  || unitCost  < 0) { toast.error('Unit cost must be 0 or more'); return; }
     if (!Number.isFinite(stockQty)) { toast.error('Stock quantity must be a number'); return; }
+    // v-gold-items — a gold item is priced by its weight, so it needs one.
+    const goldTitle = form.goldTitle.trim();
+    let weightChi: number | undefined;
+    let makingFee: number | undefined;
+    if (goldTitle) {
+      const w = Number(form.weight.replace(/,/g, ''));
+      if (!Number.isFinite(w) || w <= 0) { toast.error('Enter the weight — a gold item is priced by its weight'); return; }
+      weightChi = Math.round(marketApi.weightInChi(w, form.weightUnit) * 10000) / 10000;
+      makingFee = form.makingFee.trim() === '' ? 0 : Number(form.makingFee.replace(/,/g, ''));
+      if (!Number.isFinite(makingFee) || makingFee < 0) { toast.error('Making fee must be 0 or more'); return; }
+    }
 
     setSaving(true);
     try {
@@ -1134,6 +1169,11 @@ export function Items() {
         stockQty,
         active: form.active,
         deductionEnabled: form.deductionEnabled,
+        // v-gold-items — '' unlinks; the server prices a linked item from
+        // the gold price in force, whatever unitPrice says.
+        goldTitle,
+        weightChi,
+        makingFee,
         // V265 — send the full ordered list; the BE derives imageUrl
         // from imageUrls[0] so legacy readers keep working. An empty
         // array clears every image.
@@ -1931,6 +1971,13 @@ export function Items() {
                           {Number(it.unitCost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
+                          {it.goldTitle && (
+                            // v-gold-items — the price follows the market.
+                            <span className="mr-1.5 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-700 align-middle"
+                              title={goldTagTitle(it)}>
+                              Gold
+                            </span>
+                          )}
                           {Number(it.unitPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className={`text-right tabular-nums ${onHand <= 0 ? 'text-rose-700 font-medium' : ''}`}>
@@ -2246,6 +2293,12 @@ export function Items() {
               />
             </div>
 
+            <GoldPriceFields
+              form={form}
+              setForm={setForm}
+              goldPrices={goldPrices}
+            />
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-gray-600">Cost Price</Label>
@@ -2254,13 +2307,16 @@ export function Items() {
                   onChange={v => setForm({ ...form, unitCost: v })}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Selling Price</Label>
-                <NumericInput
-                  value={form.unitPrice}
-                  onChange={v => setForm({ ...form, unitPrice: v })}
-                />
-              </div>
+              {/* A gold item's selling price is in its Information panel above. */}
+              {!form.goldTitle && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-600">Selling Price</Label>
+                  <NumericInput
+                    value={form.unitPrice}
+                    onChange={v => setForm({ ...form, unitPrice: v })}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:items-end">
@@ -2677,3 +2733,129 @@ function ModifiersEditor({
     </div>
   );
 }
+
+/* ─────────────────────────── v-gold-items ─────────────────────────── */
+
+const fmtUsd = (v: number) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Tooltip on the list's Gold tag: what the price follows. */
+function goldTagTitle(it: itemsApi.Item): string {
+  const parts = ['Follows ' + it.goldTitle, Number(it.weightChi ?? 0) + ' chi'];
+  if (it.goldPriceDate) parts.push('price of ' + it.goldPriceDate);
+  return parts.join(' · ');
+}
+
+/** The typed weight in chi, or null while it is not a positive number. */
+function formChi(form: FormState): number | null {
+  const w = Number(form.weight.replace(/,/g, ''));
+  return Number.isFinite(w) && w > 0 ? marketApi.weightInChi(w, form.weightUnit) : null;
+}
+
+/** weight × a price per chi, to the cent — what the server will store. */
+function goldValue(chi: number | null, perChi: number | null | undefined): number | null {
+  return chi == null || perChi == null ? null : Math.round(chi * perChi * 100) / 100;
+}
+
+/** One line of a gold item's Information panel: label left, value right,
+ *  and how it is made up ("3 chi × $480.00") under the value. */
+function GoldInfoLine({ label, tone, value, chi, perChi }: {
+  label: string; tone: string; value: number | null; chi: number | null; perChi: number | null | undefined;
+}) {
+  const made = perChi == null ? 'no price'
+    : (chi == null ? '—' : String(Math.round(chi * 10000) / 10000)) + ' chi × ' + fmtUsd(perChi);
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className={'text-xs font-medium pt-0.5 ' + tone}>{label}</span>
+      <span className="text-right">
+        <span className="block text-base font-semibold tabular-nums text-gray-900">{value == null ? '—' : fmtUsd(value)}</span>
+        <span className="block text-[10px] tabular-nums text-gray-500">{made}</span>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Gold Market Price link on the item form: pick a gold title and the
+ * item is priced by weight from it — Sell Out to sell, Buy In to buy —
+ * instead of a fixed price. Weight is required while linked; the making
+ * fee is optional and sold on its own line. Hidden until the tenant has
+ * a USD gold price (or the item is already linked).
+ */
+function GoldPriceFields({ form, setForm, goldPrices }: {
+  form: FormState;
+  setForm: (f: FormState) => void;
+  goldPrices: marketApi.MarketItem[] | null;
+}) {
+  const options = goldPrices ?? [];
+  if (options.length === 0 && !form.goldTitle) return null;
+  const g = options.find(p => p.title === form.goldTitle);
+  const chi = formChi(form);
+  const sell = goldValue(chi, g?.sell.today);
+  const buy = goldValue(chi, g?.buy.today);
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1.5">
+        <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+          <Coins className="h-3.5 w-3.5 text-amber-600" />
+          Gold Market Price
+        </Label>
+        <select
+          value={form.goldTitle}
+          onChange={e => setForm({ ...form, goldTitle: e.target.value })}
+          className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm"
+          aria-label="Gold Market Price"
+        >
+          <option value="">None — a fixed price</option>
+          {options.map(o => <option key={o.title} value={o.title}>{o.title}</option>)}
+          {form.goldTitle && !g && <option value={form.goldTitle}>{form.goldTitle}</option>}
+        </select>
+        <p className="text-[11px] text-gray-500">
+          {form.goldTitle
+            ? 'Priced by weight from this gold, and updated every time its price changes.'
+            : 'Pick a gold to price this item by weight from the market instead.'}
+        </p>
+      </div>
+
+      {form.goldTitle && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-gray-600">Weight <span className="text-red-500">*</span></Label>
+            <div className="flex gap-2">
+              <Input
+                value={form.weight}
+                onChange={e => setForm({ ...form, weight: maskNumber(e.target.value, NUM.goldWeight) })}
+                inputMode="decimal"
+                placeholder="0.0000"
+                aria-label="Weight"
+                className="flex-1 min-w-0 bg-white text-right tabular-nums"
+              />
+              <select
+                value={form.weightUnit}
+                onChange={e => setForm({ ...form, weightUnit: e.target.value as marketApi.GoldCalcUnit })}
+                className="h-9 w-[150px] shrink-0 rounded-md border border-input bg-white px-2 text-sm"
+                aria-label="Weight unit"
+              >
+                {marketApi.GOLD_CALC_UNITS.map(u => <option key={u.key} value={u.key}>{u.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-gray-600">Making fee <span className="text-gray-400">(optional)</span></Label>
+            <NumericInput value={form.makingFee} onChange={v => setForm({ ...form, makingFee: v })} />
+            <p className="text-[11px] text-gray-500">Not part of the gold price: sold on a line of its own.</p>
+          </div>
+          {/* Information: what the weight is worth today. The selling price
+              IS the item's price, so there is no Selling Price field while it
+              follows gold. Sell Out green, Buy In red — money in / out. */}
+          <div className="sm:col-span-2 rounded-md border border-amber-200 bg-white px-3 py-2 space-y-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Information</p>
+            <GoldInfoLine label="Sell Out · selling price" tone="text-emerald-700" value={sell} chi={chi} perChi={g?.sell.today} />
+            <div className="border-t border-gray-100" />
+            <GoldInfoLine label="Buy In · buy price" tone="text-red-700" value={buy} chi={chi} perChi={g?.buy.today} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

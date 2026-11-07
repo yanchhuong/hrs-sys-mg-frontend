@@ -70,6 +70,18 @@ export interface Item {
   /** Display names of the creator / last editor (server-resolved). */
   createdByName?: string | null;
   updatedByName?: string | null;
+  /** v-gold-items — Gold Market Price title the price follows. When set,
+   *  unitPrice is the live Sell Out × weightChi (kept in step server-side
+   *  each time the gold price changes) and goldBuyPrice the Buy In ×
+   *  weightChi. Null for a fixed-price item. */
+  goldTitle?: string | null;
+  /** Weight in chi (ជី). */
+  weightChi?: number | null;
+  /** Optional making fee (ថ្លៃឈ្នួល), sold on its own line. */
+  makingFee?: number | null;
+  goldBuyPrice?: number | null;
+  /** Effective date (YYYY-MM-DD) of the gold price in use. */
+  goldPriceDate?: string | null;
 }
 
 /** V182 — item discriminator. */
@@ -179,6 +191,13 @@ export interface ItemRequest {
    *  value; on create the backend defaults to 'product'. School
    *  vertical no longer piggybacks on this table (V213). */
   type?: ItemType;
+  /** v-gold-items — Gold Market Price title to price from. Undefined on
+   *  update = unchanged; empty string = a fixed price again. */
+  goldTitle?: string;
+  /** Weight in chi; required with a gold title. Undefined = unchanged. */
+  weightChi?: number;
+  /** Optional making fee; 0 clears it. Undefined = unchanged. */
+  makingFee?: number;
 }
 
 /** V265 — normalise the two image fields into a single ordered list.
