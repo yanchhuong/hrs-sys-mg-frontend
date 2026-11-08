@@ -1113,8 +1113,9 @@ export function Items() {
       minStock: String(it.minStock ?? 0),
       barcode: it.barcode ?? '',
       goldTitle: it.goldTitle ?? '',
-      weight: it.weightChi != null ? String(Number(it.weightChi)) : '',
-      weightUnit: 'chi',
+      // Weight is stored in chi; shown in the unit it was saved in.
+      weight: it.weightChi != null ? String(marketApi.chiInUnit(Number(it.weightChi), marketApi.goldUnitOf(it.unit))) : '',
+      weightUnit: marketApi.goldUnitOf(it.unit),
       makingFee: it.makingFee ? String(it.makingFee) : '',
     });
     setDialogOpen(true);
@@ -1163,7 +1164,9 @@ export function Items() {
         sku: form.sku.trim() || undefined,
         name,
         description: form.description.trim() || undefined,
-        unit: form.unit.trim() || undefined,
+        // A gold item's unit is its weight unit (ជី, ហ៊ុន, …), as on mobile,
+        // so every screen reads its weight back in the unit it was entered in.
+        unit: goldTitle ? marketApi.goldWeightUnit(form.weightUnit).symbol : (form.unit.trim() || undefined),
         unitPrice,
         unitCost,
         stockQty,
@@ -2740,7 +2743,9 @@ const fmtUsd = (v: number) => '$' + v.toLocaleString('en-US', { minimumFractionD
 
 /** Tooltip on the list's Gold tag: what the price follows. */
 function goldTagTitle(it: itemsApi.Item): string {
-  const parts = ['Follows ' + it.goldTitle, Number(it.weightChi ?? 0) + ' chi'];
+  const unit = marketApi.goldUnitOf(it.unit);
+  const parts = ['Follows ' + it.goldTitle,
+    `${marketApi.chiInUnit(Number(it.weightChi ?? 0), unit)} ${marketApi.goldWeightUnit(unit).symbol}`];
   if (it.goldPriceDate) parts.push('price of ' + it.goldPriceDate);
   return parts.join(' · ');
 }
@@ -2831,7 +2836,11 @@ function GoldPriceFields({ form, setForm, goldPrices }: {
               />
               <select
                 value={form.weightUnit}
-                onChange={e => setForm({ ...form, weightUnit: e.target.value as marketApi.GoldCalcUnit })}
+                onChange={e => {
+                  const weightUnit = e.target.value as marketApi.GoldCalcUnit;
+                  // The weight unit is the item's unit — keep the Unit field saying so.
+                  setForm({ ...form, weightUnit, unit: marketApi.goldWeightUnit(weightUnit).symbol });
+                }}
                 className="h-9 w-[150px] shrink-0 rounded-md border border-input bg-white px-2 text-sm"
                 aria-label="Weight unit"
               >

@@ -87,6 +87,8 @@ export const dict: Dict = {
   'market.calc.note_buy':   { en: 'Estimate only: the weight at the Buy In price per chi, less the fee. Purity and rounding rules of the actual sale are not applied.', km: 'ប៉ាន់ស្មានតែប៉ុណ្ណោះ៖ ទម្ងន់គុណនឹងតម្លៃទិញចូលក្នុងមួយជី ដកថ្លៃ។ មិនទាន់គិតភាពសុទ្ធនៃមាស និងការបង្គត់លេខនៃការលក់ពិតប្រាកដទេ។', zh: '仅为估算：按每钱买入价乘以重量，再减去费用。不含实际交易中的成色和取整规则。' },
   'market.unit.chi':        { en: 'Chi (ជី)', km: 'ជី', zh: '钱 (ជី)' },
   'market.unit.damloeng':   { en: 'Damloeng (ដំឡឹង)', km: 'ដំឡឹង', zh: '两 (ដំឡឹង)' },
+  'market.unit.hun':        { en: 'Hun (ហ៊ុន)', km: 'ហ៊ុន', zh: '分 (ហ៊ុន)' },
+  'market.unit.li':         { en: 'Li (លី)', km: 'លី', zh: '厘 (លី)' },
   'market.unit.gram':       { en: 'Gram (g)', km: 'ក្រាម (g)', zh: '克 (g)' },
   'nav.employee':             { en: 'Employee',             km: 'បុគ្គលិក',           zh: '员工' },
   'nav.announcements':        { en: 'Announcements',        km: 'សេចក្តីប្រកាស',        zh: '公告' },

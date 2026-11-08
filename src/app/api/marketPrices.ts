@@ -40,22 +40,71 @@ export function goldCurrency(unit: string | null | undefined): GoldCurrency {
   return /^\s*(KHR|៛)/i.test(unit ?? '') ? 'KHR' : 'USD';
 }
 
-/** Grams in one chi (ជី); a damloeng (ដំឡឹង) is ten chi. */
+/*
+ * Gold weights — the Khmer scale and grams, in one table.
+ *
+ *   1 ដំឡឹង (damloeng) = 10 ជី (chi)   = 37.5 g
+ *   1 ជី   (chi)       = 10 ហ៊ុន (hun) = 3.75 g
+ *   1 ហ៊ុន (hun)       = 10 លី (li)    = 0.375 g
+ *
+ * Every weight is stored, priced and compared in chi; a unit is only how
+ * it is typed and read. The mobile app keeps the same table in
+ * src/lib/goldUnits.ts — keep the two in step.
+ */
+
+/** Grams in one chi (ជី). */
 export const GRAMS_PER_CHI = 3.75;
 
-/** Weights the gold calculator takes: as quoted, or weighed in grams. */
-export type GoldCalcUnit = GoldWeight | 'gram';
+export type GoldCalcUnit = 'damloeng' | 'chi' | 'hun' | 'li' | 'gram';
 
-export const GOLD_CALC_UNITS: { key: GoldCalcUnit; label: string }[] = [
-  { key: 'chi',      label: 'Chi (ជី)' },
-  { key: 'damloeng', label: 'Damloeng (ដំឡឹង)' },
-  { key: 'gram',     label: 'Gram (g)' },
+export interface GoldWeightUnit {
+  key: GoldCalcUnit;
+  label: string;
+  /** Printed after a weight, and saved as a Market Based item's unit. */
+  symbol: string;
+  /** Chi in one of this unit. */
+  chi: number;
+}
+
+/** Largest first, grams last. */
+export const GOLD_CALC_UNITS: GoldWeightUnit[] = [
+  { key: 'damloeng', label: 'Damloeng (ដំឡឹង)', symbol: 'ដំឡឹង', chi: 10 },
+  { key: 'chi',      label: 'Chi (ជី)',         symbol: 'ជី',    chi: 1 },
+  { key: 'hun',      label: 'Hun (ហ៊ុន)',       symbol: 'ហ៊ុន',  chi: 0.1 },
+  { key: 'li',       label: 'Li (លី)',          symbol: 'លី',    chi: 0.01 },
+  { key: 'gram',     label: 'Gram (g)',         symbol: 'g',     chi: 1 / GRAMS_PER_CHI },
 ];
 
-/** A weight in `unit`, in chi. */
+const CHI_UNIT = GOLD_CALC_UNITS[1];
+
+export function goldWeightUnit(unit: GoldCalcUnit): GoldWeightUnit {
+  return GOLD_CALC_UNITS.find(u => u.key === unit) ?? CHI_UNIT;
+}
+
+/** The unit a saved label names, by symbol or key ("ហ៊ុន", "hun", "g").
+ *  Anything else is chi — what an item saved without one is weighed in. */
+export function goldUnitOf(label: string | null | undefined): GoldCalcUnit {
+  const s = (label ?? '').trim().toLowerCase();
+  return GOLD_CALC_UNITS.find(u => u.symbol === s || u.key === s)?.key ?? 'chi';
+}
+
+/** A weight in `unit`, in chi — past float noise, so 3 hun is 0.3 chi
+ *  rather than 0.30000000000000004. */
 export function weightInChi(qty: number, unit: GoldCalcUnit): number {
-  if (unit === 'gram') return qty / GRAMS_PER_CHI;
-  return qty * (GOLD_WEIGHTS.find(w => w.key === unit)?.chi ?? 1);
+  return Math.round(qty * goldWeightUnit(unit).chi * 1e8) / 1e8;
+}
+
+/** A weight stored in chi, in `unit`. Grams to 2 places: chi is stored to
+ *  4, so 5 g comes back as 4.9999. The rest to 4 — all chi's 4 places
+ *  show in li (2) and hun (3). */
+export function chiInUnit(chi: number, unit: GoldCalcUnit): number {
+  const places = unit === 'gram' ? 100 : 10000;
+  return Math.round((chi / goldWeightUnit(unit).chi) * places) / places;
+}
+
+/** A price per chi, as the price per `unit`: $480 a chi is $48 a hun. */
+export function pricePerUnit(perChi: number, unit: GoldCalcUnit): number {
+  return Math.round(perChi * goldWeightUnit(unit).chi * 1e8) / 1e8;
 }
 
 export interface GoldQuote {
