@@ -339,7 +339,10 @@ export interface ItemsListWithTotals {
   totalOutOfStock: number;
   totalActive: number;
   totalStock: number;
+  /** Sum of unit_price — NOT price x quantity. */
   totalPrice: number;
+  /** Sum of unit_price x stock_qty — the stock's worth at its price. */
+  totalRetailValue: number;
 }
 
 /** V305 — tenant's own item-quota snapshot. Used by the bulk-upload

@@ -742,7 +742,8 @@ export function Items() {
     totalOutOfStock: number;
     totalActive: number;
     totalStock: number;
-    totalPrice: number;
+    /** Price x quantity on hand, the same sum as totals.price below. */
+    totalRetailValue: number;
   } | null>(null);
   const CATALOG_MAX = 1000;
   const [loading, setLoading] = useState(false);
@@ -850,7 +851,7 @@ export function Items() {
         totalOutOfStock: first.totalOutOfStock ?? 0,
         totalActive:     first.totalActive     ?? 0,
         totalStock:      Number(first.totalStock ?? 0),
-        totalPrice:      Number(first.totalPrice ?? 0),
+        totalRetailValue: Number(first.totalRetailValue ?? 0),
       });
       setLoading(false);
       setTimeout(() => {
@@ -1528,8 +1529,11 @@ export function Items() {
           <StatCard label="Total Cost" icon={Coins} tone="green"
             hint={costTileComplete ? undefined : 'Shown once the full item list has loaded.'}
             value={costTileComplete ? `$${totals.cost.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '—'} />
+          {/* Price x quantity whichever figure is shown. The server's sum of
+              unit prices counted an out-of-stock item at its price, so the
+              unfiltered tile disagreed with In stock + Out. */}
           <StatCard label="Total Price" icon={Tag} tone="blue"
-            value={`$${(tilesUseFiltered ? totals.price : (serverTotals?.totalPrice ?? totals.price)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`} />
+            value={`$${(tilesUseFiltered ? totals.price : (serverTotals?.totalRetailValue ?? totals.price)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`} />
           <StatCard label="Total Stock (QTY)" icon={Package} tone="amber"
             value={(tilesUseFiltered ? totals.qty : (serverTotals?.totalStock ?? totals.qty)).toLocaleString('en-US', { maximumFractionDigits: 2 })} />
         </div>
