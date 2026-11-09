@@ -321,13 +321,15 @@ export function SalaryRules({ embedded = false }: Props = {}) {
                 {loading && rules.length === 0 ? '…' : `${filtered.length} of ${rules.length}`}
               </CardDescription>
             </div>
-            <div className="relative shrink-0">
+            {/* Full width under the title on a phone; beside it, the same
+                11–28rem flexible box as every filter strip's search. */}
+            <div className="relative w-full sm:w-auto sm:flex-[1_1_16rem] sm:min-w-[11rem] sm:max-w-[28rem]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
                 placeholder="Search…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-7 h-9 w-64 text-sm"
+                className="pl-7 h-9 w-full text-sm"
               />
             </div>
           </div>
