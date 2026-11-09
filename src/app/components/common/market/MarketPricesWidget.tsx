@@ -1,6 +1,10 @@
 /**
  * Financial Market widget (V392) — the latest gold and currency buy /
- * sell prices against the day before, on the Dashboard. The badge on
+ * sell prices against the day before, on the Dashboard, drawn like the
+ * mobile Home: each title on a band (gold for gold, blue for currency)
+ * over its two raised Sell / Buy cards. Each section spans the page, and
+ * its titles share the row — one fills it, two halve it, three a third
+ * each — so a wide screen is not left half empty. The badge on
  * each card says which day it is showing, so a card nobody has
  * updated since Monday says Monday rather than "Today". Read-only: prices
  * are entered in General Settings → Company. Renders nothing until a
@@ -18,6 +22,20 @@ import { MarketStatCard, marketWord } from './MarketStatCard';
 import { MarketPriceHistoryDialog } from './MarketPriceHistoryDialog';
 import { GoldCalculatorDialog } from './GoldCalculatorDialog';
 
+
+/** The title bands: gold for gold, blue for currency (mobile's colours). */
+const BAND = {
+  gold:     'bg-amber-300 text-amber-950',
+  currency: 'bg-blue-300 text-blue-950',
+} as const;
+
+/** Calculate on the band: a white pill with a blue outline, as on mobile. */
+const CALC_BTN = 'inline-flex shrink-0 items-center gap-1 rounded-full border border-blue-600 bg-white '
+  + 'px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50';
+
+/** A section's titles across the row: as many as fit at ≥ 22rem each,
+ *  stretched to fill it — one title takes the full width. */
+const ITEMS_ROW = 'grid gap-6 grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))]';
 
 export function MarketPricesWidget() {
   const { t } = useI18n();
@@ -44,7 +62,7 @@ export function MarketPricesWidget() {
   const currencyAsOf = marketApi.asOfLabel(currency, data);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="space-y-4">
       {gold.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
@@ -80,27 +98,31 @@ export function MarketPricesWidget() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent>
+            <div className={ITEMS_ROW}>
             {gold.map(g => (
-              <div key={g.title} className="rounded-lg border p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <button type="button" className="text-sm font-semibold hover:underline text-left"
+              <div key={g.title} className="space-y-3">
+                {/* The title on its gold band, as on mobile. */}
+                <div className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 ${BAND.gold}`}>
+                  <button type="button" className="text-left text-base font-bold hover:underline"
                     onClick={() => setHistoryFor(g.title)}>
-                    {g.title}{g.unit && <span className="ml-1 text-xs font-normal text-gray-500">({g.unit})</span>}
+                    {g.title}{g.unit && <span className="ml-1.5 text-xs font-normal opacity-75">({g.unit})</span>}
                   </button>
-                  {/* Prices a weight at this gold's Buy In / Sell Out. */}
-                  <Button variant="outline" size="sm" className="h-7 px-2 shrink-0" onClick={() => setCalcFor(g)}
-                    title={`Calculate ${g.title} by weight`}>
-                    <Calculator className="h-3.5 w-3.5 mr-1" /> {t('market.calculate', 'Calculate')}
-                  </Button>
+                  {/* Prices a weight at this gold's Buy In / Sell Out. White
+                      on the band, so it stays a button. */}
+                  <button type="button" onClick={() => setCalcFor(g)} title={`Calculate ${g.title} by weight`}
+                    className={CALC_BTN}>
+                    <Calculator className="h-3.5 w-3.5" /> {t('market.calculate', 'Calculate')}
+                  </button>
                 </div>
                 {/* Sell first, as on mobile and the Gold calculator. */}
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="grid grid-cols-2 gap-3">
                   <MarketStatCard side={g.sell} label={t('market.sell', 'Sell Out')} tone="sell" today={data.today} />
                   <MarketStatCard side={g.buy} label={t('market.buy', 'Buy In')} tone="buy" today={data.today} />
                 </div>
               </div>
             ))}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -124,18 +146,23 @@ export function MarketPricesWidget() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
+            <div className={ITEMS_ROW}>
             {currency.map(c => (
-              <div key={c.title} className="space-y-2">
-                <button type="button" className="text-sm font-semibold hover:underline"
-                  onClick={() => setHistoryFor(c.title)}>
-                  {c.title}
-                </button>
-                <div className="grid grid-cols-2 gap-2">
+              <div key={c.title} className="space-y-3">
+                {/* The pair on its blue band, as on mobile. */}
+                <div className={`rounded-lg px-3 py-2 ${BAND.currency}`}>
+                  <button type="button" className="text-left text-base font-bold hover:underline"
+                    onClick={() => setHistoryFor(c.title)}>
+                    {c.title}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <MarketStatCard side={c.sell} label={t('market.sell', 'Sell Out')} tone="sell" unit={c.unit} today={data.today} />
                   <MarketStatCard side={c.buy} label={t('market.buy', 'Buy In')} tone="buy" unit={c.unit} today={data.today} />
                 </div>
-                <div className="rounded-lg border px-3 py-2">
+                {/* A soft fill, not another outline — as on mobile. */}
+                <div className="rounded-lg bg-slate-50 px-3 py-2">
                   <div className="text-xs text-gray-500">{t('market.spread', 'Exchange spread')}</div>
                   <div className="text-lg font-semibold tabular-nums">
                     {marketApi.fmtPrice(c.spread)}{c.spread != null && c.unit ? ` ${c.unit.split(' per ')[0]}` : ''}
@@ -143,6 +170,7 @@ export function MarketPricesWidget() {
                 </div>
               </div>
             ))}
+            </div>
           </CardContent>
         </Card>
       )}
