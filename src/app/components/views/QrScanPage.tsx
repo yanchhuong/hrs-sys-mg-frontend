@@ -155,8 +155,8 @@ export function QrScanPage() {
       <Card className="w-full max-w-sm shadow-lg">
         <CardContent className="p-6">
           <div className="flex items-center gap-2 mb-4">
-            <QrCodeIcon className="h-6 w-6 text-blue-600" />
-            <h1 className="text-lg font-semibold">QR Check-in</h1>
+            <QrCodeIcon className="h-7 w-7 text-blue-600" />
+            <h1 className="text-3xl font-bold">QR Check-in</h1>
           </div>
 
           {phase === 'init' && (

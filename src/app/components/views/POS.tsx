@@ -1403,8 +1403,9 @@ export function POS() {
           buttons (Share, drawer, etc.) into view. */}
       <header className="flex items-center justify-between gap-2 px-4 py-3 border-b bg-white shrink-0 overflow-x-auto">
         <div className="flex items-center gap-2 shrink-0">
-          <ShoppingCart className="h-5 w-5 text-emerald-600" />
-          <h1 className="text-lg font-semibold">POS</h1>
+          {/* The common page title size (text-3xl bold), as on every page. */}
+          <ShoppingCart className="h-7 w-7 text-emerald-600" />
+          <h1 className="text-3xl font-bold">POS</h1>
           {/* Gear icon — opens the POS-scope AccountingSettingsDialog
               where the cashier can toggle PAID stamp, auto-print, SKU
               prefix, paper size, and the printed shop name. */}

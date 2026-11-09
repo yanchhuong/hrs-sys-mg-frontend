@@ -142,8 +142,8 @@ export function KitchenSharePage(): JSX.Element {
       <div className="mx-auto max-w-[1600px] px-4 sm:px-6 py-6">
         <div className="flex items-start justify-between gap-3 mb-5">
           <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
-              <ClipboardList className="h-5 w-5 text-gray-500" />
+            <h1 className="flex items-center gap-2 text-3xl font-bold text-gray-900">
+              <ClipboardList className="h-7 w-7 text-gray-500" />
               Active Queue
             </h1>
             <p className="mt-1 text-xs text-gray-500">

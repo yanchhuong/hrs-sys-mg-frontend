@@ -264,7 +264,7 @@ export function SuperAdminLayout({ children, currentView, onViewChange }: Props)
                   not repeat it as an in-page h1/h2; the nav description
                   sits under it as the subtitle. */}
               <div className="min-w-0">
-                <h1 className="text-base font-semibold truncate">{activeMeta.label}</h1>
+                <h1 className="text-3xl font-bold truncate">{activeMeta.label}</h1>
                 {activeMeta.description && (
                   <p className="text-xs text-gray-500 truncate hidden sm:block">{activeMeta.description}</p>
                 )}

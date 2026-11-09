@@ -944,7 +944,7 @@ export function PublicShopPage() {
               : <Store className="h-7 w-7" />}
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl font-semibold truncate flex items-center gap-2 flex-wrap">
+            <h1 className="text-3xl font-bold truncate flex items-center gap-2 flex-wrap">
               <span className="truncate">{data.shopName || 'Shop'}</span>
               {/* V315 — Table badge, only when the customer scanned a
                   per-table QR. Prominent enough that the operator

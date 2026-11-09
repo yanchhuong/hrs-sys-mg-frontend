@@ -282,7 +282,7 @@ export function RequirementSurveyForm({ onBack }: Props) {
             <div className="mx-auto h-14 w-14 rounded-full bg-emerald-100 flex items-center justify-center">
               <Check className="h-7 w-7 text-emerald-700" />
             </div>
-            <h1 className="text-2xl font-semibold">Thanks — we've received your request</h1>
+            <h1 className="text-3xl font-bold">Thanks — we've received your request</h1>
             <p className="text-sm text-gray-600">
               Our sales team will reach out within one business day. Please quote this
               reference number in any follow-up:
@@ -315,7 +315,7 @@ export function RequirementSurveyForm({ onBack }: Props) {
             <ArrowLeft className="h-4 w-4 mr-1" /> Back to home
           </Button>
         )}
-        <h1 className="text-2xl font-semibold text-blue-800 mb-1">Requirement Survey</h1>
+        <h1 className="text-3xl font-bold text-blue-800 mb-1">Requirement Survey</h1>
         <p className="text-xs text-gray-500 mb-4">
           Step {step + 1} of {STEPS.length} · {currentStep.label}
         </p>
