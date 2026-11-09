@@ -24,6 +24,16 @@ function readDisplayCode(): string {
   return cleaned;
 }
 
+/** Origins whose POS may feed this popup by postMessage: this site, the
+ *  mobile app, and any localhost while developing. Anything else could
+ *  put its own content (a KHQR, say) on a page under our domain. */
+const MOBILE_APP_ORIGIN = 'https://m.hr-share.com';
+function isPosOrigin(origin: string): boolean {
+  return origin === window.location.origin
+    || origin === MOBILE_APP_ORIGIN
+    || (import.meta.env.DEV && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin));
+}
+
 /**
  * Customer-facing POS display (the "mirror" screen).
  *
@@ -93,7 +103,22 @@ export function PosCustomerDisplay() {
       if (ev.data?.kind === 'state') setState(ev.data.state);
     };
     ch.postMessage({ kind: 'request-state' } satisfies DisplayMessage);
-    return () => { ch.close(); channelRef.current = null; };
+    // v-display-opener — the mobile POS opens this same popup from its
+    // own origin, where a BroadcastChannel cannot reach, so it talks
+    // through window.postMessage instead. Same contract; only the
+    // window that opened us, and only from the app's origins.
+    const opener = window.opener as Window | null;
+    const onMessage = (ev: MessageEvent<DisplayMessage>) => {
+      if (!opener || ev.source !== opener || !isPosOrigin(ev.origin)) return;
+      if (ev.data?.kind === 'state') setState(ev.data.state);
+    };
+    window.addEventListener('message', onMessage);
+    // Carries no data, so any origin may receive it.
+    try { opener?.postMessage({ kind: 'request-state' } satisfies DisplayMessage, '*'); } catch { /* opener gone */ }
+    return () => {
+      ch.close(); channelRef.current = null;
+      window.removeEventListener('message', onMessage);
+    };
   }, [pairedCode]);
 
   if (state.paid) return <PaidSplash state={state} />;
@@ -137,15 +162,21 @@ export function PosCustomerDisplay() {
         isFullscreen={isFullscreen}
       />
 
-      <main className="flex-1 px-8 pb-6 flex gap-6">
+      {/* v-display-responsive — one column on a phone (the Pair QR opens
+          this on whatever device scans it), totals FIRST so the amount
+          to pay is on screen without scrolling, and the same on a portrait
+          tablet, where two columns squeezed the item names to "Iced L…".
+          Side by side from 1024px, the totals card widening on a big
+          monitor / TV. */}
+      <main className="flex-1 min-w-0 px-4 pb-4 sm:px-8 sm:pb-6 flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* ---- Order list ---- */}
-        <section className="flex-1 bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-          <div className="px-6 py-4 border-b border-gray-100 bg-[#fafcff] flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <ShoppingCart className="h-5 w-5 text-teal-700" />
-              <h2 className="text-xl font-bold text-slate-800">Your Order</h2>
+        <section className="flex-1 min-w-0 min-h-[14rem] bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-100 bg-[#fafcff] flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <ShoppingCart className="h-5 w-5 text-teal-700 shrink-0" />
+              <h2 className="text-lg sm:text-xl font-bold text-slate-800 truncate">Your Order</h2>
             </div>
-            <span className="text-sm text-slate-500">
+            <span className="text-sm text-slate-500 shrink-0">
               {state.items.length === 0
                 ? 'Tap items at the counter'
                 : `${state.items.length} item${state.items.length === 1 ? '' : 's'}`}
@@ -166,8 +197,8 @@ export function PosCustomerDisplay() {
         </section>
 
         {/* ---- Totals card ---- */}
-        <aside className="w-[380px] shrink-0">
-          <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 p-8 flex flex-col">
+        <aside className="order-first lg:order-none w-full lg:w-[360px] xl:w-[380px] 2xl:w-[460px] lg:shrink-0">
+          <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 p-5 sm:p-8 flex flex-col">
             <div className="flex justify-between items-center text-slate-600 mb-6">
               <span className="text-sm">Subtotal</span>
               <span className="font-bold text-slate-900 text-sm tabular-nums">
@@ -190,9 +221,11 @@ export function PosCustomerDisplay() {
                 </span>
               </div>
             )}
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex flex-wrap justify-between items-baseline gap-x-4 mb-5 sm:mb-8">
               <span className="text-sm text-slate-600">Total</span>
-              <span className="text-5xl font-bold text-teal-700 tabular-nums tracking-tight">
+              {/* Wraps under its label rather than out of the card when a
+                  large amount meets a narrow screen. */}
+              <span className="ml-auto text-4xl sm:text-5xl 2xl:text-6xl font-bold text-teal-700 tabular-nums tracking-tight [overflow-wrap:anywhere] text-right">
                 {fmtDisplayMoney(state.total, state.currency)}
               </span>
             </div>
@@ -201,7 +234,7 @@ export function PosCustomerDisplay() {
                 sees "Total KHR (@ 4,100)  ៛ 410,000" identical on
                 screen and on paper. */}
             {state.currency === 'USD' && state.exchangeRate > 0 && (
-              <div className="flex justify-between items-center text-slate-500 mt-auto">
+              <div className="flex flex-wrap justify-between items-center gap-x-3 text-slate-500 mt-auto">
                 <span className="text-xs">
                   Total KHR (@ {state.exchangeRate.toLocaleString('en-US')})
                 </span>
@@ -244,8 +277,8 @@ function Header({
   dark?: boolean;
 }) {
   return (
-    <header className="w-full p-8 pb-6 flex items-start justify-between gap-4">
-      <div className="flex items-center gap-4 min-w-0">
+    <header className="w-full p-4 pb-3 sm:p-8 sm:pb-6 flex items-start justify-between gap-3 sm:gap-4">
+      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
         {/* Rounded white square with the shop's logo (when set) or a
             neutral fork/knife glyph fallback. Matches the mockup's
             top-left mark. */}
@@ -253,15 +286,15 @@ function Header({
           <img
             src={logoUrl}
             alt=""
-            className="w-16 h-16 rounded-2xl object-contain bg-white border border-gray-100 shadow-sm"
+            className="w-12 h-12 sm:w-16 sm:h-16 shrink-0 rounded-2xl object-contain bg-white border border-gray-100 shadow-sm"
           />
         ) : (
-          <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center text-slate-800">
-            <Utensils className="h-8 w-8" strokeWidth={2} />
+          <div className="w-12 h-12 sm:w-16 sm:h-16 shrink-0 bg-white rounded-2xl shadow-sm flex items-center justify-center text-slate-800">
+            <Utensils className="h-6 w-6 sm:h-8 sm:w-8" strokeWidth={2} />
           </div>
         )}
         <div className="min-w-0">
-          <h1 className={`text-3xl font-bold tracking-tight truncate ${dark ? 'text-white' : 'text-slate-900'}`}>
+          <h1 className={`text-2xl sm:text-3xl font-bold tracking-tight truncate ${dark ? 'text-white' : 'text-slate-900'}`}>
             {/* Greeting-first, shop name secondary. Matches the mockup
                 where the display leads with "Welcome" and the shop
                 identity sits in the logo mark. Falls back to the
@@ -279,11 +312,13 @@ function Header({
           </p>
         </div>
       </div>
-      {onToggleFullscreen && (
+      {/* Only where the page can go fullscreen — iPhone Safari cannot,
+          and the button did nothing there. */}
+      {onToggleFullscreen && typeof document !== 'undefined' && document.fullscreenEnabled && (
         <button
           type="button"
           onClick={onToggleFullscreen}
-          className="w-12 h-12 bg-white rounded-full shadow-sm flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors shrink-0"
+          className="w-10 h-10 sm:w-12 sm:h-12 bg-white rounded-full shadow-sm flex items-center justify-center text-slate-500 hover:text-slate-800 transition-colors shrink-0"
           aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
           title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Enter fullscreen'}
         >
@@ -296,11 +331,11 @@ function Header({
 
 function WelcomeEmpty() {
   return (
-    <div className="h-full flex flex-col items-center justify-center text-center py-24 text-slate-400">
-      <div className="h-24 w-24 rounded-full bg-emerald-50 flex items-center justify-center mb-4">
-        <Package className="h-12 w-12 text-emerald-400" strokeWidth={1.25} />
+    <div className="h-full flex flex-col items-center justify-center text-center px-4 py-10 sm:py-24 text-slate-400">
+      <div className="h-16 w-16 sm:h-24 sm:w-24 rounded-full bg-emerald-50 flex items-center justify-center mb-4">
+        <Package className="h-8 w-8 sm:h-12 sm:w-12 text-emerald-400" strokeWidth={1.25} />
       </div>
-      <div className="text-3xl font-semibold text-slate-700">Welcome</div>
+      <div className="text-2xl sm:text-3xl font-semibold text-slate-700">Welcome</div>
       <div className="text-sm mt-1">Your order will appear here as items are added.</div>
     </div>
   );
@@ -314,8 +349,8 @@ function LineTile({ line, currency }: { line: DisplayItem; currency: string }) {
   const [broken, setBroken] = useState(false);
   const showImage = !!line.imageUrl && !broken;
   return (
-    <li className="flex items-center gap-6 px-6 py-4 border-b border-gray-50 last:border-b-0">
-      <div className="w-16 h-16 shrink-0 rounded-[16px] overflow-hidden shadow-sm bg-slate-50 border border-slate-100 flex items-center justify-center">
+    <li className="flex items-center gap-3 sm:gap-6 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-50 last:border-b-0">
+      <div className="w-12 h-12 sm:w-16 sm:h-16 shrink-0 rounded-[16px] overflow-hidden shadow-sm bg-slate-50 border border-slate-100 flex items-center justify-center">
         {showImage ? (
           <img
             src={line.imageUrl!}
@@ -330,7 +365,7 @@ function LineTile({ line, currency }: { line: DisplayItem; currency: string }) {
       </div>
 
       <div className="flex-1 min-w-0">
-        <h3 className="text-lg font-medium text-slate-800 truncate">{line.name}</h3>
+        <h3 className="text-base sm:text-lg font-medium text-slate-800 truncate">{line.name}</h3>
         <p className="text-slate-500 text-sm mt-1 tabular-nums">
           {line.qty} × {fmtDisplayMoney(line.unitPrice, currency)}
         </p>
@@ -341,7 +376,7 @@ function LineTile({ line, currency }: { line: DisplayItem; currency: string }) {
         )}
       </div>
 
-      <div className="text-2xl font-bold text-slate-900 tabular-nums shrink-0">
+      <div className="text-lg sm:text-2xl font-bold text-slate-900 tabular-nums shrink-0">
         {fmtDisplayMoney(line.lineTotal, currency)}
       </div>
     </li>
@@ -381,10 +416,10 @@ function FeaturedSlider({ state }: { state: DisplayState }) {
   const current = playable[idx];
 
   return (
-    <section className="px-8 pb-8">
+    <section className="px-4 pb-4 sm:px-8 sm:pb-8">
       <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex flex-col md:flex-row items-stretch">
-          <div className="w-full md:w-1/2 h-64 md:h-72 p-4">
+          <div className="w-full md:w-1/2 h-48 sm:h-64 md:h-72 p-3 sm:p-4">
             {current.kind === 'image' ? (
               <img
                 src={current.src}
@@ -406,7 +441,7 @@ function FeaturedSlider({ state }: { state: DisplayState }) {
               />
             )}
           </div>
-          <div className="w-full md:w-1/2 p-8 flex flex-col gap-4 justify-center">
+          <div className="w-full md:w-1/2 p-5 sm:p-8 flex flex-col gap-3 sm:gap-4 justify-center">
             <div className="flex items-center gap-3">
               <Star className="h-5 w-5 text-amber-500 fill-amber-500" />
               <span className="font-bold text-xs uppercase tracking-widest text-slate-500">Featured</span>
@@ -469,15 +504,15 @@ function PaidSplash({ state }: { state: DisplayState }) {
         queueNo={paid.queueNo}
         customerName={state.customerName}
       />
-      <main className="flex-1 flex items-center justify-center px-8 pb-8">
-        <div className="text-center">
-          <div className="h-32 w-32 mx-auto rounded-full bg-emerald-100 flex items-center justify-center">
-            <CheckCircle2 className="h-20 w-20 text-emerald-600" strokeWidth={1.4} />
+      <main className="flex-1 flex items-center justify-center px-4 pb-6 sm:px-8 sm:pb-8">
+        <div className="text-center w-full max-w-md">
+          <div className="h-24 w-24 sm:h-32 sm:w-32 mx-auto rounded-full bg-emerald-100 flex items-center justify-center">
+            <CheckCircle2 className="h-14 w-14 sm:h-20 sm:w-20 text-emerald-600" strokeWidth={1.4} />
           </div>
-          <div className="mt-6 text-6xl font-bold text-emerald-700 tracking-tight">Thank you!</div>
-          <div className="mt-2 text-xl text-slate-600">Payment received</div>
+          <div className="mt-5 sm:mt-6 text-4xl sm:text-6xl font-bold text-emerald-700 tracking-tight">Thank you!</div>
+          <div className="mt-2 text-lg sm:text-xl text-slate-600">Payment received</div>
 
-          <div className="mt-10 inline-flex flex-col gap-2 bg-white rounded-3xl shadow-md px-10 py-7 min-w-[20rem]">
+          <div className="mt-8 sm:mt-10 flex flex-col gap-2 bg-white rounded-3xl shadow-md px-6 py-5 sm:px-10 sm:py-7 text-left">
             <Row label="Order" value={paid.queueNo} />
             <Row label="Total" value={fmtDisplayMoney(paid.total, state.currency)} />
             <Row label={paid.method.toUpperCase()} value={fmtDisplayMoney(paid.total + paid.change, state.currency)} muted />
@@ -512,10 +547,10 @@ function KhqrPayOverlay({ state }: { state: DisplayState }) {
         dark
       />
 
-      <main className="flex-1 flex flex-col items-center justify-center px-8 pb-8">
+      <main className="flex-1 flex flex-col items-center justify-center px-4 pb-6 sm:px-8 sm:pb-8">
         <div className="text-center mb-6">
-          <div className="text-xl uppercase tracking-[0.3em] text-emerald-400 font-semibold">Scan to Pay</div>
-          <div className="mt-3 text-6xl font-bold text-white tabular-nums tracking-tight">
+          <div className="text-base sm:text-xl uppercase tracking-[0.3em] text-emerald-400 font-semibold">Scan to Pay</div>
+          <div className="mt-3 text-4xl sm:text-6xl font-bold text-white tabular-nums tracking-tight [overflow-wrap:anywhere]">
             {fmtDisplayMoney(state.total, state.currency)}
           </div>
           {state.currency === 'USD' && state.exchangeRate > 0 && (
@@ -527,20 +562,22 @@ function KhqrPayOverlay({ state }: { state: DisplayState }) {
         </div>
 
         {qrCards.length === 0 ? (
-          <div className="rounded-2xl bg-amber-900/40 border border-amber-700 text-amber-100 px-8 py-6 max-w-md text-center">
+          <div className="rounded-2xl bg-amber-900/40 border border-amber-700 text-amber-100 px-6 py-5 sm:px-8 sm:py-6 max-w-md text-center">
             <div className="text-lg font-semibold">No KHQR configured</div>
             <p className="text-sm mt-1 text-amber-200">
               Please pay at the counter — your cashier will help.
             </p>
           </div>
         ) : (
-          <div className={`grid gap-6 ${qrCards.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          // Several banks: one per row on a phone, side by side from a tablet.
+          <div className={`grid gap-4 sm:gap-6 w-full max-w-3xl justify-items-center ${qrCards.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
             {qrCards.map(b => (
-              <div key={b.id} className="bg-white rounded-2xl shadow-2xl p-6 text-center">
+              <div key={b.id} className="bg-white rounded-2xl shadow-2xl p-4 sm:p-6 text-center w-full max-w-sm">
+                {/* Square, as large as the card allows, up to 18rem. */}
                 <img
                   src={b.qrDataUrl}
                   alt={b.bankName || 'KHQR'}
-                  className="mx-auto h-72 w-72 object-contain"
+                  className="mx-auto aspect-square w-full max-w-72 object-contain"
                 />
                 <div className="mt-3 text-xl font-bold text-slate-900">{b.bankName || 'KHQR'}</div>
                 {b.accountName && (
@@ -677,7 +714,7 @@ function AdsCarousel({ state }: { state: DisplayState }) {
           screen even mid-ad so the customer always knows where they
           are. translucent dark gradient for legibility on bright
           imagery. */}
-      <div className="absolute inset-x-0 bottom-0 px-8 py-4 bg-gradient-to-t from-black/70 to-transparent flex items-center gap-3">
+      <div className="absolute inset-x-0 bottom-0 px-4 sm:px-8 py-3 sm:py-4 bg-gradient-to-t from-black/70 to-transparent flex items-center gap-3">
         {state.logoUrl && (
           <img src={state.logoUrl} alt="" className="h-12 w-12 object-contain rounded bg-white/10 p-1" />
         )}
