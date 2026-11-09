@@ -62,17 +62,19 @@ export interface GoldWeightUnit {
   label: string;
   /** Printed after a weight, and saved as a Market Based item's unit. */
   symbol: string;
+  /** The unit in English, printed after a weight where the UI is not Khmer. */
+  name: string;
   /** Chi in one of this unit. */
   chi: number;
 }
 
 /** Largest first, grams last. */
 export const GOLD_CALC_UNITS: GoldWeightUnit[] = [
-  { key: 'damloeng', label: 'Damloeng (ដំឡឹង)', symbol: 'ដំឡឹង', chi: 10 },
-  { key: 'chi',      label: 'Chi (ជី)',         symbol: 'ជី',    chi: 1 },
-  { key: 'hun',      label: 'Hun (ហ៊ុន)',       symbol: 'ហ៊ុន',  chi: 0.1 },
-  { key: 'li',       label: 'Li (លី)',          symbol: 'លី',    chi: 0.01 },
-  { key: 'gram',     label: 'Gram (g)',         symbol: 'g',     chi: 1 / GRAMS_PER_CHI },
+  { key: 'damloeng', label: 'Damloeng (ដំឡឹង)', symbol: 'ដំឡឹង', name: 'Damloeng', chi: 10 },
+  { key: 'chi',      label: 'Chi (ជី)',         symbol: 'ជី',    name: 'Chi',      chi: 1 },
+  { key: 'hun',      label: 'Hun (ហ៊ុន)',       symbol: 'ហ៊ុន',  name: 'Hun',      chi: 0.1 },
+  { key: 'li',       label: 'Li (លី)',          symbol: 'លី',    name: 'Li',       chi: 0.01 },
+  { key: 'gram',     label: 'Gram (g)',         symbol: 'g',     name: 'g',        chi: 1 / GRAMS_PER_CHI },
 ];
 
 const CHI_UNIT = GOLD_CALC_UNITS[1];

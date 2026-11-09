@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
 import * as marketApi from '../../../api/marketPrices';
-import { PriceComparisonCard, marketWord } from './PriceComparisonCard';
+import { MarketStatCard, marketWord } from './MarketStatCard';
 import { MarketPriceHistoryDialog } from './MarketPriceHistoryDialog';
 import { GoldCalculatorDialog } from './GoldCalculatorDialog';
 
@@ -94,9 +94,10 @@ export function MarketPricesWidget() {
                     <Calculator className="h-3.5 w-3.5 mr-1" /> {t('market.calculate', 'Calculate')}
                   </Button>
                 </div>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <PriceComparisonCard side={g.buy} label={t('market.buy', 'Buy In')} today={data.today} />
-                  <PriceComparisonCard side={g.sell} label={t('market.sell', 'Sell Out')} today={data.today} />
+                {/* Sell first, as on mobile and the Gold calculator. */}
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <MarketStatCard side={g.sell} label={t('market.sell', 'Sell Out')} tone="sell" today={data.today} />
+                  <MarketStatCard side={g.buy} label={t('market.buy', 'Buy In')} tone="buy" today={data.today} />
                 </div>
               </div>
             ))}
@@ -131,8 +132,8 @@ export function MarketPricesWidget() {
                   {c.title}
                 </button>
                 <div className="grid grid-cols-2 gap-2">
-                  <PriceComparisonCard side={c.buy} label={t('market.buy', 'Buy In')} unit={c.unit} today={data.today} tone="buy" />
-                  <PriceComparisonCard side={c.sell} label={t('market.sell', 'Sell Out')} unit={c.unit} today={data.today} tone="sell" />
+                  <MarketStatCard side={c.sell} label={t('market.sell', 'Sell Out')} tone="sell" unit={c.unit} today={data.today} />
+                  <MarketStatCard side={c.buy} label={t('market.buy', 'Buy In')} tone="buy" unit={c.unit} today={data.today} />
                 </div>
                 <div className="rounded-lg border px-3 py-2">
                   <div className="text-xs text-gray-500">{t('market.spread', 'Exchange spread')}</div>
