@@ -882,7 +882,11 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                 Commission report reads these plans to compute
                 per-seller payouts. */}
             {section === 'commission' && scope === 'pos' && (
-              <CommissionSettings />
+              <div className="space-y-3">
+                {/* The same small heading every other section opens with. */}
+                <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">Commission</h3>
+                <CommissionSettings />
+              </div>
             )}
 
             {section === 'numbering' && (() => {

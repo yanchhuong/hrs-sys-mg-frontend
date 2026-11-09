@@ -11,7 +11,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
 import {
-  Gift, Loader2, Plus, RefreshCw, Trash2, Edit3, Star, Stamp as StampIcon, Cake,
+  Loader2, Plus, RefreshCw, Trash2, Edit3, Star, Stamp as StampIcon, Cake,
 } from 'lucide-react';
 import { loyalty } from '../../api/loyalty';
 import type { LoyaltyProgram, LoyaltyType, UpsertLoyaltyProgram } from '../../api/loyalty';
@@ -107,13 +107,15 @@ export function Loyalty() {
 
   return (
     <div className="space-y-4">
-      <div className="page-header-strip">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Gift className="h-6 w-6 text-blue-600" />
+      {/* Titled like every other POS Settings section (Display, Numbering,
+          Receipt…): a small semibold heading, not a page-sized h1 — this
+          page only ever renders inside that dialog. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
           Loyalty &amp; Rewards
-        </h1>
+        </h3>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => load()} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -122,7 +124,7 @@ export function Loyalty() {
               exists so the operator edits it instead of trying
               to create a second (BE would reject with 409). */}
           {rows.length === 0 && (
-            <Button onClick={openNew}>
+            <Button size="sm" onClick={openNew}>
               <Plus className="h-4 w-4 mr-1.5" />
               New program
             </Button>
