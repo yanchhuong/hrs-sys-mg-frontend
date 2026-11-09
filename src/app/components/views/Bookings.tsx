@@ -680,7 +680,7 @@ function CreateBookingDialogContent({
                 <span className="h-4 w-4 rounded bg-indigo-600" /> Selected
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-4 w-4 rounded bg-gray-300" /> Occupied
+                <span className="h-4 w-4 rounded bg-gray-300" /> Booked
               </span>
             </div>
             <div className="rounded-2xl bg-indigo-50/40 py-16 flex items-center justify-center">

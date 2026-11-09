@@ -135,9 +135,13 @@ export function SeatMapDisplay({
    *  van floor plan naturally end up single-family via the bulk
    *  generator, so this is the common path. */
   const aisleTemplate = 'minmax(0, 1fr) minmax(0, 1fr) 0.35fr minmax(0, 1fr)';
-  const gridTemplate = layout.singleFamily
-    ? aisleTemplate
-    : `repeat(${layout.maxCol}, minmax(0, 1fr))`;
+  /** v-bus-aisle — a multi-letter layout 4+ seats wide (a 2 · 2 bus)
+   *  gets a walkway INSERTED after the middle seat, so no seat is lost
+   *  to it; the mobile picker draws the same cabin. */
+  const busAisleAt = !layout.singleFamily && layout.maxCol >= 4 ? Math.ceil(layout.maxCol / 2) : 0;
+  const busTemplate = Array.from({ length: layout.maxCol }, (_, c) =>
+    (busAisleAt > 0 && c === busAisleAt ? '0.35fr ' : '') + 'minmax(0, 1fr)').join(' ');
+  const gridTemplate = layout.singleFamily ? aisleTemplate : busTemplate;
   const useAisle = layout.singleFamily;
 
   /** v-seat-map-full-name-labels — buttons render the full option
@@ -159,7 +163,7 @@ export function SeatMapDisplay({
             <span className="h-4 w-4 rounded bg-indigo-600" /> Selected
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-4 w-4 rounded bg-gray-300" /> Occupied
+            <span className="h-4 w-4 rounded bg-gray-300" /> Booked
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Accessibility className="h-4 w-4 text-gray-700" /> Accessible
@@ -185,7 +189,7 @@ export function SeatMapDisplay({
             className="grid gap-2 pb-3 border-b border-gray-100 items-end"
             style={{ gridTemplateColumns: useAisle
               ? aisleTemplate
-              : `repeat(${Math.max(3, layout.maxCol)}, minmax(0, 1fr))` }}
+              : busAisleAt > 0 ? busTemplate : `repeat(${Math.max(3, layout.maxCol)}, minmax(0, 1fr))` }}
           >
             <DriverCell hasOpt={!!driverOpt} />
             {useAisle ? (
@@ -194,7 +198,7 @@ export function SeatMapDisplay({
                 <div />
               </>
             ) : (
-              Array.from({ length: Math.max(0, layout.maxCol - 2) }, (_, i) => (
+              Array.from({ length: Math.max(0, layout.maxCol - 2 + (busAisleAt > 0 ? 1 : 0)) }, (_, i) => (
                 <div key={`gap-${i}`} />
               ))
             )}
@@ -228,7 +232,8 @@ export function SeatMapDisplay({
                     <SeatSlot opt={row[layout.singleFamily ? 2 : row.length - 1] ?? null} shortLabel={shortLabel} selectedIds={selectedIds} occupiedIds={occupiedIds} readOnly={readOnly} trigger={trigger} />
                   </>
                 ) : (
-                  row.map((opt, colIdx) => (
+                  row.flatMap((opt, colIdx) => [
+                    ...(busAisleAt > 0 && colIdx === busAisleAt ? [<div key={`aisle-${rowIdx}`} />] : []),
                     <SeatSlot
                       key={`${rowIdx}-${colIdx}`}
                       opt={opt}
@@ -237,8 +242,8 @@ export function SeatMapDisplay({
                       occupiedIds={occupiedIds}
                       readOnly={readOnly}
                       trigger={trigger}
-                    />
-                  ))
+                    />,
+                  ])
                 )}
               </div>
             ))}
@@ -312,7 +317,7 @@ function SeatButton({
       type="button"
       onClick={onClick}
       disabled={occupied || readOnly}
-      title={`${opt.name} — ${opt.price == null ? '—' : `$${Number(opt.price).toFixed(2)}`}${occupied ? ' (occupied)' : ''}${accessible ? ' · accessible' : ''}`}
+      title={`${opt.name} — ${opt.price == null ? '—' : `$${Number(opt.price).toFixed(2)}`}${occupied ? ' (booked)' : ''}${accessible ? ' · accessible' : ''}`}
       className={`relative h-10 rounded-lg text-[11px] font-semibold tabular-nums transition px-1 flex items-center justify-center ${cls}`}
     >
       <span className="truncate leading-tight">{label ?? opt.name}</span>
@@ -363,7 +368,7 @@ function FrontCell({
       type="button"
       onClick={() => onClick(opt)}
       disabled={isOccupied || readOnly}
-      title={`${opt.name} — ${opt.price == null ? '—' : `$${Number(opt.price).toFixed(2)}`}${isOccupied ? ' (occupied)' : ''}`}
+      title={`${opt.name} — ${opt.price == null ? '—' : `$${Number(opt.price).toFixed(2)}`}${isOccupied ? ' (booked)' : ''}`}
       className={`relative h-14 rounded-xl text-sm font-semibold tabular-nums transition flex flex-col items-center justify-center gap-0.5 ${cls}`}
     >
       <span className="text-sm">{label ?? opt.name}</span>
@@ -441,7 +446,7 @@ export function CinemaSeatMap({
             <span className="h-4 w-4 rounded bg-indigo-600" /> Selected
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-4 w-4 rounded bg-gray-300" /> Occupied
+            <span className="h-4 w-4 rounded bg-gray-300" /> Booked
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Accessibility className="h-4 w-4 text-gray-700" /> Accessible
@@ -633,7 +638,7 @@ function CinemaSeat({
       type="button"
       onClick={() => onToggle(opt)}
       disabled={isOccupied || readOnly}
-      title={`${opt.name} — ${opt.price == null ? '—' : `$${Number(opt.price).toFixed(2)}`}${isOccupied ? ' (occupied)' : ''}${isAccessible ? ' · accessible' : ''}`}
+      title={`${opt.name} — ${opt.price == null ? '—' : `$${Number(opt.price).toFixed(2)}`}${isOccupied ? ' (booked)' : ''}${isAccessible ? ' · accessible' : ''}`}
       className={`relative h-8 w-8 rounded-md text-[10px] font-semibold tabular-nums transition flex items-center justify-center ${cls}`}
     >
       {typeof colLabel === 'number' ? colLabel : opt.name}
