@@ -8,7 +8,6 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../ui/dialog';
-import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Textarea } from '../ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { usePagination } from '../../hooks/usePagination';
@@ -44,6 +43,10 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: 'rejected', label: 'Rejected' },
   { value: 'all',      label: 'All' },
 ];
+
+/** The filter-strip dropdown look, shared with Employee's. */
+const FILTER_SELECT =
+  'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
 
 /** Human label for the raw `sourceType` string the backend emits. */
 function sourceLabel(t: string): string {
@@ -138,34 +141,44 @@ export function Approvals() {
     [rows],
   );
 
-  const filtered = useMemo(() => {
-    let list: approvalsApi.Approval[];
-    switch (filter) {
-      case 'active':   list = rows.filter(r => r.viewerRole === 'active'); break;
-      case 'pending':  list = rows.filter(r => r.status === 'pending'); break;
-      case 'approved': list = rows.filter(r => r.status === 'approved' || r.status === 'auto_approved'); break;
-      case 'rejected': list = rows.filter(r => r.status === 'rejected'); break;
-      case 'all':
-      default:         list = rows;
-    }
-    if (typeFilter) list = list.filter(r => r.sourceType === typeFilter);
-    if (dateFrom || dateTo) {
-      // Compare on the LOCAL calendar day the request was submitted.
-      list = list.filter(r => {
-        const day = format(new Date(r.createdAt), 'yyyy-MM-dd');
-        return (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
-      });
-    }
+  /** v-approval-filter-counts — every dropdown option carries the number
+   *  it would show: each one counts the rows that pass the OTHER filters
+   *  (pick Type = Leave and the Status counts are leaves only), the way
+   *  Employee's "Status : Active (12)" reads. */
+  const { filtered, statusCounts, typeCounts } = useMemo(() => {
+    const inStatus = (f: StatusFilter, r: approvalsApi.Approval) => {
+      switch (f) {
+        case 'active':   return r.viewerRole === 'active';
+        // Still moving, not waiting on you — the same rows as the
+        // "In progress" card, so the two numbers agree.
+        case 'pending':  return r.status === 'pending' && r.viewerRole !== 'active';
+        case 'approved': return r.status === 'approved' || r.status === 'auto_approved';
+        case 'rejected': return r.status === 'rejected';
+        case 'all':
+        default:         return true;
+      }
+    };
     const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter(r => {
-        const summary = Object.values(r.sourceSummary ?? {})
-          .filter(v => typeof v === 'string' || typeof v === 'number')
-          .join(' ');
-        return `${sourceLabel(r.sourceType)} ${r.requesterName ?? ''} ${summary}`.toLowerCase().includes(q);
-      });
-    }
-    return list;
+    const inRest = (r: approvalsApi.Approval) => {
+      if (dateFrom || dateTo) {
+        // Compare on the LOCAL calendar day the request was submitted.
+        const day = format(new Date(r.createdAt), 'yyyy-MM-dd');
+        if ((dateFrom && day < dateFrom) || (dateTo && day > dateTo)) return false;
+      }
+      if (!q) return true;
+      const summary = Object.values(r.sourceSummary ?? {})
+        .filter(v => typeof v === 'string' || typeof v === 'number')
+        .join(' ');
+      return `${sourceLabel(r.sourceType)} ${r.requesterName ?? ''} ${summary}`.toLowerCase().includes(q);
+    };
+    const inType = (r: approvalsApi.Approval) => !typeFilter || r.sourceType === typeFilter;
+    const rest = rows.filter(inRest);
+    const status = {} as Record<StatusFilter, number>;
+    for (const tab of STATUS_TABS) status[tab.value] = rest.filter(r => inType(r) && inStatus(tab.value, r)).length;
+    const ofStatus = rest.filter(r => inStatus(filter, r));
+    const type: Record<string, number> = { '': ofStatus.length };
+    for (const r of ofStatus) type[r.sourceType] = (type[r.sourceType] ?? 0) + 1;
+    return { filtered: ofStatus.filter(inType), statusCounts: status, typeCounts: type };
   }, [rows, filter, typeFilter, dateFrom, dateTo, search]);
 
   const hasFilters = !!(search || typeFilter || dateFrom || dateTo);
@@ -221,13 +234,6 @@ export function Approvals() {
       <Card>
         <CardHeader className="pb-2">
           <div className="filter-strip">
-            <Tabs value={filter} onValueChange={(v) => setFilter(v as StatusFilter)}>
-              <TabsList>
-                {STATUS_TABS.map(f => (
-                  <TabsTrigger key={f.value} value={f.value}>{f.label}</TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
             <div className="relative shrink-0">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input
@@ -237,15 +243,28 @@ export function Approvals() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
+            {/* Status, then Type — dropdowns with counts (was a row of
+                tabs). The choice alone, no "Status :" prefix; the "All"
+                rows say what they cover. */}
+            <select
+              value={filter}
+              onChange={e => setFilter(e.target.value as StatusFilter)}
+              className={FILTER_SELECT}
+              aria-label="Filter by status"
+            >
+              {STATUS_TABS.map(f => (
+                <option key={f.value} value={f.value}>{f.value === 'all' ? 'All statuses' : f.label} ({statusCounts[f.value]})</option>
+              ))}
+            </select>
             <select
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value)}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+              className={FILTER_SELECT}
               aria-label="Filter by type"
             >
-              <option value="">Type : All</option>
+              <option value="">All types ({typeCounts[''] ?? 0})</option>
               {sourceTypes.map(st => (
-                <option key={st} value={st}>Type : {sourceLabel(st)}</option>
+                <option key={st} value={st}>{sourceLabel(st)} ({typeCounts[st] ?? 0})</option>
               ))}
             </select>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
