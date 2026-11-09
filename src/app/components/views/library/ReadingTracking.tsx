@@ -28,6 +28,7 @@ import { toast } from 'sonner';
 import {
   Plus, Pencil, Trash2, RefreshCw, Activity, BookOpen, Users2, Presentation, MoreHorizontal, Info, Search,
   Eye, CalendarDays, Clock, MapPin, ImageIcon, UserPlus, X, Check, Crown, Users, Video,
+  List, ListFilter, SquareKanban,
 } from 'lucide-react';
 import { Button, PlainButton } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -48,6 +49,10 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '../../ui/tooltip';
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '../../ui/popover';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '../../ui/dropdown-menu';
+import { Skeleton } from '../../ui/skeleton';
 import {
   Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
 } from '../../ui/command';
@@ -112,22 +117,37 @@ const EMPTY: FormState = {
   notes: '',
 };
 
-const ACTIVITY_TYPES: Array<{ value: ActivityType; label: string; icon: React.ElementType; banner: string; chip: string }> = [
-  { value: 'reading',    label: 'Reading',    icon: BookOpen,       banner: 'from-emerald-500 to-teal-600',  chip: 'bg-emerald-600 text-white border-emerald-600' },
-  { value: 'meeting',    label: 'Meeting',    icon: Users2,         banner: 'from-sky-500 to-blue-600',      chip: 'bg-sky-600 text-white border-sky-600' },
-  { value: 'conference', label: 'Conference', icon: Presentation,   banner: 'from-violet-500 to-purple-600', chip: 'bg-violet-600 text-white border-violet-600' },
-  { value: 'other',      label: 'Other',      icon: MoreHorizontal, banner: 'from-slate-500 to-gray-600',    chip: 'bg-slate-600 text-white border-slate-600' },
+/** `tint` = the soft type tag on board cards, `bar` = the type's bar in
+ *  the "Activity progress" panel. */
+const ACTIVITY_TYPES: Array<{ value: ActivityType; label: string; icon: React.ElementType; banner: string; chip: string; tint: string; bar: string }> = [
+  { value: 'reading',    label: 'Reading',    icon: BookOpen,       banner: 'from-emerald-500 to-teal-600',  chip: 'bg-emerald-600 text-white border-emerald-600', tint: 'bg-emerald-50 text-emerald-700', bar: 'bg-emerald-500' },
+  { value: 'meeting',    label: 'Meeting',    icon: Users2,         banner: 'from-sky-500 to-blue-600',      chip: 'bg-sky-600 text-white border-sky-600',         tint: 'bg-sky-50 text-sky-700',         bar: 'bg-sky-500' },
+  { value: 'conference', label: 'Conference', icon: Presentation,   banner: 'from-violet-500 to-purple-600', chip: 'bg-violet-600 text-white border-violet-600',   tint: 'bg-violet-50 text-violet-700',   bar: 'bg-violet-500' },
+  { value: 'other',      label: 'Other',      icon: MoreHorizontal, banner: 'from-slate-500 to-gray-600',    chip: 'bg-slate-600 text-white border-slate-600',     tint: 'bg-slate-100 text-slate-600',    bar: 'bg-slate-400' },
 ];
 
-/** ONE status map for the form dropdown dots AND the list / detail
- *  badges, so they always agree. Tones come from the app-wide palette
- *  (utils/statusTones): Progress = blue (info), Delay = red (danger),
- *  Done = green (success). */
-const STATUS_CHIPS: Array<{ value: Status; label: string; tone: Tone; dot: string }> = [
-  { value: 'progress', label: 'Progress', tone: 'info',    dot: 'bg-blue-500' },
-  { value: 'delay',    label: 'Delay',    tone: 'danger',  dot: 'bg-red-500' },
-  { value: 'done',     label: 'Done',     tone: 'success', dot: 'bg-emerald-500' },
+/** ONE status map for the form dropdown dots, the list / detail badges
+ *  AND the board lanes + status tabs, so they always agree. Tones come
+ *  from the app-wide palette (utils/statusTones): Progress = blue
+ *  (info), Delay = red (danger), Done = green (success). `name` is the
+ *  tab / lane title, `noun` feeds that status's empty message. */
+const STATUS_CHIPS: Array<{ value: Status; label: string; tone: Tone; dot: string; name: string; noun: string; lane: string }> = [
+  { value: 'progress', label: 'Progress', tone: 'info',    dot: 'bg-blue-500',    name: 'In progress', noun: 'activities in progress', lane: 'bg-blue-50/70' },
+  { value: 'delay',    label: 'Delay',    tone: 'danger',  dot: 'bg-red-500',     name: 'Delayed',     noun: 'delayed activities',     lane: 'bg-red-50/60' },
+  { value: 'done',     label: 'Done',     tone: 'success', dot: 'bg-emerald-500', name: 'Done',        noun: 'completed activities',   lane: 'bg-emerald-50/70' },
 ];
+const statusMetaOf = (s: Status) => STATUS_CHIPS.find(c => c.value === s) ?? STATUS_CHIPS[0];
+
+/** Board (kanban, default) or the original table. */
+type Layout = 'board' | 'list';
+const LAYOUT_KEY = 'hrms:activityLayout';
+function readLayout(): Layout {
+  try { return localStorage.getItem(LAYOUT_KEY) === 'list' ? 'list' : 'board'; }
+  catch { return 'board'; }
+}
+/** Cards per board lane before "Show more" (the board's paging). */
+const LANE_PAGE = 20;
+const LANE_LIMITS: Record<Status, number> = { progress: LANE_PAGE, delay: LANE_PAGE, done: LANE_PAGE };
 const statusBadgeCls = (s: Status) =>
   TONE_CLASS[(STATUS_CHIPS.find(c => c.value === s) ?? STATUS_CHIPS[0]).tone];
 
@@ -247,6 +267,46 @@ function InitialsAvatar({ name, size = 'md' }: { name: string | null | undefined
       {initials(name)}
     </span>
   );
+}
+
+const AVATAR_TINTS = [
+  'bg-emerald-100 text-emerald-700', 'bg-sky-100 text-sky-700', 'bg-violet-100 text-violet-700',
+  'bg-amber-100 text-amber-800', 'bg-rose-100 text-rose-700', 'bg-teal-100 text-teal-700',
+];
+/** Stable tint per name so the same person reads the same everywhere. */
+function avatarTint(name: string | null | undefined): string {
+  let h = 0;
+  for (const ch of name ?? '') h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_TINTS[h % AVATAR_TINTS.length];
+}
+
+/** Overlapping initials circles — first `max`, then a "+N" circle. */
+function AvatarStack({ people, max = 3 }: { people: Array<{ name: string | null; host?: boolean }>; max?: number }) {
+  if (people.length === 0) return null;
+  const shown = people.slice(0, max);
+  const extra = people.length - shown.length;
+  // Light overlap so the next circle never covers the initials.
+  const circle = 'h-6 w-6 rounded-full ring-2 ring-white text-[9px] font-semibold inline-flex items-center justify-center';
+  return (
+    <div className="flex shrink-0 items-center -space-x-1"
+         title={people.map(p => `${p.name ?? 'Member'}${p.host ? ' (host)' : ''}`).join(', ')}>
+      {shown.map((p, i) => (
+        <span key={i} className={`${circle} ${avatarTint(p.name)}`}>{initials(p.name)}</span>
+      ))}
+      {extra > 0 && <span className={`${circle} bg-gray-100 text-gray-600`}>+{extra}</span>}
+      <span className="sr-only">{people.length} {people.length === 1 ? 'person' : 'people'}</span>
+    </div>
+  );
+}
+
+/** "2026-11-24" → "Nov 24" (adds the year when it isn't this year). */
+function shortDate(d: string | null | undefined): string {
+  const dt = parseYmd(d);
+  if (!dt) return '—';
+  const thisYear = dt.getFullYear() === new Date().getFullYear();
+  return dt.toLocaleDateString('en-US', thisYear
+    ? { month: 'short', day: 'numeric' }
+    : { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 /** Checklist of members inside a cmdk list — shared by the form's
@@ -391,6 +451,9 @@ export function ReadingTracking() {
   const [multiDayOpen, setMultiDayOpen] = useState(false);
   const [guestsExpanded, setGuestsExpanded] = useState(false);
   const [locationOnline, setLocationOnline] = useState(false);
+  /** New activity opened from a board lane other than "In progress" —
+   *  shows the Status field so the preset status is visible. */
+  const [statusPreset, setStatusPreset] = useState(false);
 
   // Detail view (Facebook-Event style).
   const [view, setView] = useState<library.ReadingRecord | null>(null);
@@ -420,17 +483,20 @@ export function ReadingTracking() {
   };
   useEffect(() => { void load(); }, []);
 
-  const openNew = () => {
+  /** `status` — the board lane's "+ Add activity" pre-selects its status. */
+  const openNew = (status: Status = 'progress') => {
     coverReq.current++;
     setCoverLoading(false);
     // Local-date today (the old UTC toISOString() gave yesterday before
     // 07:00 in UTC+7, and EMPTY's value went stale past midnight).
-    setEditingId(null); setForm({ ...EMPTY, startDate: format(new Date(), 'yyyy-MM-dd') });
+    setEditingId(null); setForm({ ...EMPTY, startDate: format(new Date(), 'yyyy-MM-dd'), status });
+    setStatusPreset(status !== 'progress');
     setDetailsOpen(false); setMultiDayOpen(false); setGuestsExpanded(false); setLocationOnline(false);
     setDialogOpen(true);
   };
   const openEdit = (r: library.ReadingRecord) => {
     setEditingId(r.id);
+    setStatusPreset(false);
     const loaded = {
       startDate: r.startDate,
       startTime: toHm(r.startTime),
@@ -652,8 +718,44 @@ export function ReadingTracking() {
 
   const filtersActive = !!(search.trim() || typeFilter !== 'all' || dateFrom || dateTo);
   const clearFilters = () => { setSearch(''); setTypeFilter('all'); setDateFrom(''); setDateTo(''); };
+  /** Filters inside the Filter popover (type + date range). */
+  const popoverFilterCount = (typeFilter !== 'all' ? 1 : 0) + (dateFrom || dateTo ? 1 : 0);
 
-  const pagination = usePagination(filteredRows, 25);
+  // Status tabs — narrow the board / table on top of the filters above.
+  // Counts come from the filtered rows so a tab's bubble matches what
+  // clicking it shows.
+  const [statusTab, setStatusTab] = useState<Status | 'all'>('all');
+  const statusCounts = useMemo(() => {
+    const c: Record<Status, number> = { progress: 0, delay: 0, done: 0 };
+    for (const r of filteredRows) if (r.status in c) c[r.status]++;
+    return c;
+  }, [filteredRows]);
+  const listRows = useMemo(
+    () => (statusTab === 'all' ? filteredRows : filteredRows.filter(r => r.status === statusTab)),
+    [filteredRows, statusTab],
+  );
+
+  const [layout, setLayout] = useState<Layout>(readLayout);
+  const changeLayout = (next: Layout) => {
+    setLayout(next);
+    try { localStorage.setItem(LAYOUT_KEY, next); } catch { /* storage off — still switches */ }
+  };
+  const [laneLimit, setLaneLimit] = useState<Record<Status, number>>(LANE_LIMITS);
+
+  /** "Activity progress" panel — done / total per type. */
+  const typeStats = useMemo(
+    () => ACTIVITY_TYPES
+      .map(t => {
+        const ofType = filteredRows.filter(r => r.activityType === t.value);
+        return { meta: t, total: ofType.length, done: ofType.filter(r => r.status === 'done').length };
+      })
+      .filter(s => s.total > 0),
+    [filteredRows],
+  );
+
+  const pagination = usePagination(listRows, 25);
+  const selectStatusTab = (t: Status | 'all') => { setStatusTab(t); pagination.resetPage(); };
+  const canCreateActivity = canCreate('reading') && canView('member') && canView('book');
 
   /** "Sat, 25 Oct 2026 · 2:00 PM – 4:00 PM" style range. */
   const whenText = (r: library.ReadingRecord): string => {
@@ -789,6 +891,172 @@ export function ReadingTracking() {
     </div>
   );
 
+  /* ─── Board (kanban) ──────────────────────────────────────────── */
+
+  /** "No delayed activities." — per status, filter-aware. */
+  const laneEmptyText = (st: (typeof STATUS_CHIPS)[number]) =>
+    filtersActive ? `No ${st.noun} match your filters.` : `No ${st.noun}.`;
+
+  /** One activity card. The whole card opens View; the title is the
+   *  keyboard target and the "…" menu stops the click reaching the card. */
+  const renderCard = (r: library.ReadingRecord) => {
+    const meta = metaOf(r.activityType);
+    const TypeIcon = meta.icon;
+    const st = statusMetaOf(r.status);
+    const pct = r.progress == null ? null : Math.max(0, Math.min(100, Math.round(r.progress)));
+    // Host first (the BE puts it first); pre-V369 rows have no guest rows.
+    const hostName = r.hostName ?? r.memberName ?? null;
+    const people = r.participants && r.participants.length > 0
+      ? r.participants
+      : hostName ? [{ name: hostName, host: true }] : [];
+    const rsvpText = `${r.goingCount ?? 0} going · ${r.maybeCount ?? 0} maybe · ${r.invitedCount ?? 0} invited`
+      + ((r.declinedCount ?? 0) > 0 ? ` · ${r.declinedCount} can't go` : '');
+    return (
+      <article
+        key={r.id}
+        onClick={() => openView(r)}
+        className="min-w-0 cursor-pointer rounded-xl border border-gray-200/70 bg-white px-3 py-3.5 shadow-sm transition-shadow hover:border-gray-300 hover:shadow-md"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={`inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${meta.tint}`}>
+              <TypeIcon className="h-3 w-3 shrink-0" />
+              <span className="truncate">{meta.label}</span>
+            </span>
+            {r.hasCover && (
+              <span className="inline-flex shrink-0 text-gray-400" title="Has cover photo">
+                <ImageIcon className="h-3.5 w-3.5" />
+                <span className="sr-only">Has cover photo</span>
+              </span>
+            )}
+          </div>
+          {/* Row actions — same View / Edit / Delete (with confirm) as the
+              table. Portal events bubble through React, so this wrapper
+              keeps menu clicks from also opening the card. */}
+          <div className="-my-1 -mr-1.5 shrink-0" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <button type="button" title="Actions" aria-label={`Actions for ${r.subject}`}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 data-[state=open]:bg-gray-100 data-[state=open]:text-gray-700">
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-36" onCloseAutoFocus={e => e.preventDefault()}>
+                <DropdownMenuItem onSelect={() => openView(r)}>
+                  <Eye className="h-3.5 w-3.5" /> View
+                </DropdownMenuItem>
+                {canEditActivity && (
+                  <DropdownMenuItem onSelect={() => openEdit(r)}>
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </DropdownMenuItem>
+                )}
+                {canDelete('reading') && (
+                  <DropdownMenuItem variant="destructive" onSelect={() => void remove(r)}>
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        <h3 className="mt-2.5 text-sm font-semibold leading-snug text-gray-900">
+          <button type="button" title={r.subject}
+                  onClick={e => { e.stopPropagation(); openView(r); }}
+                  className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+            <span className="line-clamp-2 break-words">{r.subject}</span>
+          </button>
+        </h3>
+
+        {pct != null && (
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-[11px] text-gray-500">
+              <span>Progress</span>
+              <span className="font-semibold tabular-nums text-gray-700">{pct}%</span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100"
+                 role="progressbar" aria-label="Progress" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+              <div className={`h-full rounded-full ${st.dot}`} style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        )}
+
+        <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-3">
+          <div className="flex min-w-0 items-center gap-2 text-xs text-gray-500">
+            <span className="inline-flex min-w-0 items-center gap-1" title={whenText(r)}>
+              <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate tabular-nums">{shortDate(r.startDate)}</span>
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-1" title={rsvpText}>
+              <Users className="h-3.5 w-3.5" />
+              <span className="tabular-nums">{r.goingCount ?? 0}</span>
+              <span className="sr-only">going</span>
+            </span>
+            {r.location && (
+              <span className="inline-flex shrink-0" title={r.location}>
+                <MapPin className="h-3.5 w-3.5" />
+                <span className="sr-only">Location: {r.location}</span>
+              </span>
+            )}
+          </div>
+          <AvatarStack people={people} />
+        </div>
+        {/* The lane header names the status; screen readers get it here. */}
+        <span className="sr-only">Status: {st.name}</span>
+      </article>
+    );
+  };
+
+  /** One status lane. `single` = its status tab is selected, so the lane
+   *  spans the board and lays its cards out as a grid. */
+  const renderLane = (st: (typeof STATUS_CHIPS)[number], single: boolean) => {
+    const cards = filteredRows.filter(r => r.status === st.value);
+    const shown = cards.slice(0, laneLimit[st.value]);
+    const more = cards.length - shown.length;
+    return (
+      <section
+        key={st.value}
+        aria-label={st.name}
+        className={`flex flex-col rounded-2xl p-2.5 ${st.lane} ${single ? 'w-full min-w-0' : 'min-w-[16rem] flex-1 basis-0 snap-start'}`}
+      >
+        <div className="flex items-center gap-2 px-1.5 pb-2.5 pt-1">
+          <span className={`h-2 w-2 shrink-0 rounded-full ${st.dot}`} aria-hidden="true" />
+          <h3 className="text-sm font-semibold text-gray-800">{st.name}</h3>
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white px-1.5 text-[11px] font-semibold tabular-nums text-gray-600 shadow-xs">
+            {cards.length}
+          </span>
+        </div>
+        {cards.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-gray-300 bg-white/40 px-3 py-6 text-center text-xs text-gray-500">
+            {laneEmptyText(st)}
+          </p>
+        ) : (
+          <div className={single ? 'grid grid-cols-[repeat(auto-fill,minmax(min(16rem,100%),1fr))] gap-2.5' : 'flex flex-col gap-2.5'}>
+            {shown.map(renderCard)}
+          </div>
+        )}
+        {more > 0 && (
+          <button
+            type="button"
+            onClick={() => setLaneLimit(l => ({ ...l, [st.value]: l[st.value] + LANE_PAGE }))}
+            className="mt-2 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-600 hover:bg-white/70 hover:text-gray-900"
+          >
+            Show {Math.min(more, LANE_PAGE)} more · {shown.length} of {cards.length}
+          </button>
+        )}
+        {canCreateActivity && (
+          <button
+            type="button"
+            onClick={() => openNew(st.value)}
+            className="mt-1.5 inline-flex items-center gap-1.5 self-start rounded-lg px-2 py-1.5 text-sm text-gray-500 hover:bg-white/70 hover:text-gray-800"
+          >
+            <Plus className="h-4 w-4" /> Add activity
+          </button>
+        )}
+      </section>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header — matches Members / Vendors page-header-strip pattern. */}
@@ -804,63 +1072,247 @@ export function ReadingTracking() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          {/* v-activity-view-only — the New Activity flow pops the
-              member + book pickers, so it needs `member:view` (to
-              list members) and `book:view` (to seed the reading
-              picker). A role granted `reading:*` but not those two
-              still opens the page in read-only mode; hide the
-              button rather than lead the operator into a 403 chain
-              inside the dialog. */}
-          {canCreate('reading') && canView('member') && canView('book') && (
-            <Button onClick={openNew}>
-              <Plus className="h-4 w-4 mr-1.5" /> New Activity
-            </Button>
-          )}
+          {/* New Activity lives in the toolbar below, so it wraps with
+              the filter row on a phone instead of scrolling off. */}
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          {/* v-library-filter-strip — Invoice-shape strip. */}
-          <div className="filter-strip">
-            <select
-              value={typeFilter}
-              onChange={e => setTypeFilter(e.target.value as ActivityType | 'all')}
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-              aria-label="Filter by type"
-            >
-              <option value="all">Type : All</option>
-              {ACTIVITY_TYPES.map(a => (
-                <option key={a.value} value={a.value}>Type : {a.label}</option>
-              ))}
-            </select>
-            <Label className="text-xs text-gray-500 shrink-0">From</Label>
-            <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
-            <Label className="text-xs text-gray-500 shrink-0">To</Label>
-            <div className="shrink-0"><DateInput value={dateTo || null} onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} /></div>
-            <div className="relative shrink-0">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search host, title, location, notes…"
-                className="h-9 pl-7 w-64 text-sm"
-              />
+      <Card className="gap-5">
+        <CardHeader className="pb-0">
+          {/* Status tabs (left) + layout toggle, Filter, search (right).
+              In a narrow card the controls sit ABOVE the tabs, so the tab
+              underline always lands on the hairline; the controls wrap,
+              and the search box drops to its own full-width line once
+              it would get narrower than ~180px. */}
+          {/* min-w-0: a grid item would otherwise grow to the tabs' width
+              and push the card past the screen edge on a phone. */}
+          <div className="flex min-w-0 flex-col-reverse gap-3 border-b border-gray-200 @min-[960px]:flex-row @min-[960px]:items-end @min-[960px]:gap-6">
+            <div role="tablist" aria-label="Filter by status" className="-mb-px flex min-w-0 items-center gap-5 overflow-x-auto @min-[960px]:shrink-0">
+              {([{ value: 'all', name: 'All' }, ...STATUS_CHIPS] as Array<{ value: Status | 'all'; name: string }>).map(t => {
+                const active = statusTab === t.value;
+                const count = t.value === 'all' ? filteredRows.length : statusCounts[t.value];
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => selectStatusTab(t.value)}
+                    className={`inline-flex shrink-0 items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium whitespace-nowrap transition-colors ${
+                      active ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-800'
+                    }`}
+                  >
+                    {t.name}
+                    <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums ${
+                      active ? 'bg-primary text-primary-foreground' : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            {filtersActive && (
-              <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
-                Clear
-              </Button>
-            )}
+
+            <div className="flex min-w-0 flex-wrap items-center gap-2 @min-[960px]:flex-1 @min-[960px]:justify-end @min-[960px]:pb-2.5">
+              {/* Board / list toggle — remembered per browser. */}
+              <div role="group" aria-label="Layout" className="inline-flex shrink-0 items-center rounded-lg bg-gray-100 p-0.5">
+                {([
+                  { value: 'board', label: 'Board view', icon: SquareKanban },
+                  { value: 'list',  label: 'List view',  icon: List },
+                ] as const).map(o => {
+                  const active = layout === o.value;
+                  return (
+                    <Tooltip key={o.value}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={o.label}
+                          aria-pressed={active}
+                          onClick={() => changeLayout(o.value)}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                            active ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'
+                          }`}
+                        >
+                          <o.icon className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">{o.label}</TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+
+              {/* v-library-filter-strip — Type + start-date range. */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="outline" className="h-9 shrink-0 gap-1.5 px-3">
+                    <ListFilter className="h-4 w-4" />
+                    Filter
+                    {popoverFilterCount > 0 && (
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold tabular-nums text-primary-foreground">
+                        {popoverFilterCount}
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-[min(23rem,calc(100vw-2rem))] space-y-4 p-4">
+                  <div className="space-y-1.5">
+                    <Label className={FORM_LABEL}>Type</Label>
+                    <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Filter by type">
+                      {([
+                        { value: 'all', label: 'All', icon: null, chip: 'bg-gray-800 text-white border-gray-800' },
+                        ...ACTIVITY_TYPES,
+                      ] as Array<{ value: ActivityType | 'all'; label: string; icon: React.ElementType | null; chip: string }>).map(a => {
+                        const active = typeFilter === a.value;
+                        const Icon = a.icon;
+                        return (
+                          <button
+                            key={a.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => setTypeFilter(a.value)}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                              active ? a.chip : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                            }`}
+                          >
+                            {Icon && <Icon className="h-3 w-3" />}
+                            {a.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="min-w-0 space-y-1.5">
+                      <Label className={FORM_LABEL}>From</Label>
+                      <DateInput className="w-full" title="From date" value={dateFrom || null}
+                                 onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} />
+                    </div>
+                    <div className="min-w-0 space-y-1.5">
+                      <Label className={FORM_LABEL}>To</Label>
+                      <DateInput className="w-full" title="To date" value={dateTo || null}
+                                 onChange={v => setDateTo(v ?? '')} min={dateFrom || undefined} />
+                    </div>
+                  </div>
+                  {popoverFilterCount > 0 && (
+                    <div className="flex justify-end border-t pt-3">
+                      <Button type="button" variant="ghost" size="sm" className="h-8"
+                              onClick={() => { setTypeFilter('all'); setDateFrom(''); setDateTo(''); }}>
+                        Reset filters
+                      </Button>
+                    </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+
+              {/* Search — the flexible part, 11rem–28rem like the shared
+                  .filter-strip search. This row WRAPS instead of
+                  scrolling: it fills what the buttons leave, and once
+                  that is under 11rem it drops to its own full-width line
+                  (in a narrow card it sits last, after New). */}
+              <div className="relative order-last min-w-[11rem] max-w-[28rem] flex-[1_1_11rem] @min-[560px]:order-none">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search activities…"
+                  title="Search host, title, location, notes"
+                  aria-label="Search activities"
+                  className="h-9 w-full pl-8 text-sm"
+                />
+              </div>
+              {filtersActive && (
+                <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
+                  Clear
+                </Button>
+              )}
+              {/* v-activity-view-only — the New Activity flow pops the
+                  member + book pickers, so it needs `member:view` (to
+                  list members) and `book:view` (to seed the reading
+                  picker). A role granted `reading:*` but not those two
+                  still opens the page in read-only mode; hide the
+                  button rather than lead the operator into a 403 chain
+                  inside the dialog. */}
+              {canCreateActivity && (
+                <Button onClick={() => openNew()} aria-label="New Activity" className="ml-auto h-9 shrink-0 @min-[560px]:ml-0">
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  <span className="@min-[560px]:hidden">New</span>
+                  <span className="hidden @min-[560px]:inline">New Activity</span>
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
           {loading && rows.length === 0 ? (
-            <TableRowsSkeleton rows={8} columns={9} />
+            layout === 'board' ? (
+              <div className="flex gap-3 overflow-hidden" aria-busy="true" aria-label="Loading activities">
+                {STATUS_CHIPS.map(st => (
+                  <div key={st.value} className={`min-w-[16rem] flex-1 space-y-2.5 rounded-2xl p-2.5 ${st.lane}`}>
+                    <Skeleton className="m-1.5 h-4 w-24 bg-white/80" />
+                    {[0, 1, 2].map(i => (
+                      <div key={i} className="space-y-3 rounded-xl bg-white p-3.5 shadow-sm">
+                        <Skeleton className="h-4 w-20" />
+                        <Skeleton className="h-4 w-full" />
+                        <Skeleton className="h-3 w-2/3" />
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <TableRowsSkeleton rows={8} columns={9} />
+            )
           ) : loadError && rows.length === 0 ? (
             <ListError message={loadError} onRetry={() => void load()} />
           ) : filteredRows.length === 0 ? (
             <ListEmpty noun="activities" filtered={filtersActive && rows.length > 0} />
+          ) : layout === 'board' ? (
+            // Board + "Activity progress" — the panel moves to the right
+            // only when the card is wide enough to keep lanes roomy.
+            <div className="@container">
+              <div className="flex flex-col gap-4 @min-[1180px]:flex-row @min-[1180px]:items-start">
+                <div className="flex min-w-0 flex-1 snap-x gap-3 overflow-x-auto pb-1">
+                  {(statusTab === 'all' ? STATUS_CHIPS : STATUS_CHIPS.filter(s => s.value === statusTab))
+                    .map(st => renderLane(st, statusTab !== 'all'))}
+                </div>
+                {typeStats.length > 0 && (
+                  <aside aria-label="Activity progress"
+                         className="shrink-0 rounded-2xl border border-gray-200 bg-white p-4 @min-[1180px]:w-64">
+                    <h3 className="text-sm font-semibold text-gray-900">Activity progress</h3>
+                    <p className="mt-0.5 text-xs text-gray-500">Done out of total, by type</p>
+                    <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 @min-[540px]:grid-cols-2 @min-[900px]:grid-cols-4 @min-[1180px]:grid-cols-1">
+                      {typeStats.map(({ meta, total, done }) => {
+                        const Icon = meta.icon;
+                        return (
+                          <div key={meta.value} className="min-w-0">
+                            <div className="flex items-center justify-between gap-2 text-sm">
+                              <span className="inline-flex min-w-0 items-center gap-1.5 text-gray-700">
+                                <Icon className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                                <span className="truncate">{meta.label}</span>
+                              </span>
+                              <span className="shrink-0 text-xs tabular-nums text-gray-500">
+                                <span className="font-semibold text-gray-900">{done}</span>/{total}
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-gray-100"
+                                 role="progressbar" aria-label={`${meta.label}: ${done} of ${total} done`}
+                                 aria-valuenow={done} aria-valuemin={0} aria-valuemax={total}>
+                              <div className={`h-full rounded-full ${meta.bar}`} style={{ width: `${(done / total) * 100}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </aside>
+                )}
+              </div>
+            </div>
+          ) : listRows.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-gray-500">{laneEmptyText(statusMetaOf(statusTab as Status))}</p>
+            </div>
           ) : (
             <ListTable>
               <TableHeader>
@@ -971,7 +1423,7 @@ export function ReadingTracking() {
               </TableBody>
             </ListTable>
           )}
-          {pagination.totalPages > 1 && (
+          {layout === 'list' && pagination.totalPages > 1 && (
             <Pagination
               currentPage={pagination.currentPage}
               totalPages={pagination.totalPages}
@@ -1276,9 +1728,11 @@ export function ReadingTracking() {
             {/* No Host field: the signed-in user hosts (V370). */}
 
             {/* Status — edit only: a new activity starts as Progress (the
-                server's default too), so the field would only be noise. */}
-            <div className={`grid grid-cols-1 gap-3 ${editingId ? 'sm:grid-cols-2' : ''}`}>
-              {editingId && (
+                server's default too), so the field would only be noise.
+                Exception: "+ Add activity" under the Delayed / Done board
+                lane presets that status, so show it. */}
+            <div className={`grid grid-cols-1 gap-3 ${editingId || statusPreset ? 'sm:grid-cols-2' : ''}`}>
+              {(editingId || statusPreset) && (
               <div className="space-y-1">
                 <Label className={FORM_LABEL}>Status</Label>
                 {/* A dropdown, not a button row — three fixed choices. */}
