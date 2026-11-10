@@ -182,7 +182,16 @@ export interface AnnouncementEvent {
   join: number;
   maybe: number;
   decline: number;
+  /** Invited and not answered yet. Invitees only. */
   pending: number;
+  /** v-event-guest-link — answered through the shared link. Counted in
+   *  join/maybe/decline (they are coming) but never in invited (the
+   *  organiser did not ask them), so the two stay separable. */
+  guests: number;
+  /** Invitees who have opened their personal link. */
+  seen: number;
+  /** Invitees who have not — who still needs chasing. */
+  notSeen: number;
   /** The signed-in viewer's own answer, when they are invited. */
   myResponse: RsvpResponse | null;
   invitedMe: boolean;
@@ -190,15 +199,20 @@ export interface AnnouncementEvent {
 
 export interface RsvpParticipant {
   id: string;
-  recipientType: 'EMPLOYEE' | 'CUSTOMER';
+  recipientType: 'EMPLOYEE' | 'CUSTOMER' | 'GUEST';
   recipientId: string;
+  /** What a guest typed; the employee or customer name otherwise. */
   name: string;
-  /** Employee no. or customer phone. */
+  /** Employee no., customer phone, or "Guest". */
   detail: string | null;
   response: RsvpResponse | null;
   respondedAt: string | null;
-  /** Their personal RSVP page. */
-  link: string;
+  /** Their personal RSVP page. Null for a guest — a guest's token is
+   *  their own way back in, not the organiser's to pass on. */
+  link: string | null;
+  /** First time they opened their link; null = never. Always null for
+   *  a guest, who was never sent one. */
+  seenAt: string | null;
 }
 
 /** What a personal link (or "my invitation") shows. */
@@ -245,6 +259,38 @@ export const publicRsvp = (token: string): Promise<PublicRsvp> =>
 
 export const answerPublicRsvp = (token: string, response: RsvpResponse): Promise<PublicRsvp> =>
   apiJson(`/api/v1/public/rsvp/${encodeURIComponent(token)}`, { method: 'PUT', json: { response } });
+
+/* ── v-event-guest-link — the SHARED link ───────────────────────────
+ *
+ * A personal link answers AS its invitee, so it cannot be forwarded.
+ * This one names nobody: a guest opens it, types a name and answers as
+ * themselves. Safe to post in a group chat, which is the point.
+ */
+
+/** Organiser: the link to share. POST because the first call mints the
+ *  token; every call after returns the same URL. */
+export const shareLink = (id: string): Promise<{ url: string }> =>
+  apiJson(`/api/v1/announcements/${id}/rsvp/share-link`, { method: 'POST' });
+
+/** The event behind a shared link. inviteeName and response are null:
+ *  the link identifies no one. */
+export const publicInvite = (token: string): Promise<PublicRsvp> =>
+  apiJson(`/api/v1/public/invite/${encodeURIComponent(token)}`);
+
+export interface GuestAnswer {
+  /** Keep it: sending it back on a change edits the same row instead
+   *  of adding a second guest to the head-count. */
+  guestToken: string;
+  response: RsvpResponse | null;
+  event: PublicRsvp;
+}
+
+export const answerAsGuest = (
+  token: string, name: string, response: RsvpResponse, guestToken?: string | null,
+): Promise<GuestAnswer> =>
+  apiJson(`/api/v1/public/invite/${encodeURIComponent(token)}`, {
+    method: 'POST', json: { name, response, guestToken: guestToken ?? null },
+  });
 
 /** "Sat, 20 Dec 2026" — event dates are calendar dates, read as local. */
 export function formatEventDate(date: string | null): string {

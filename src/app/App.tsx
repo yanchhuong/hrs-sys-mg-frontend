@@ -40,6 +40,7 @@ const CambodiaLearnPage  = lazyWithReload(() => import('./components/CambodiaLea
 const ResetPasswordPage  = lazyWithReload(() => import('./components/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
 const PublicInvoiceView  = lazyWithReload(() => import('./components/views/PublicInvoiceView').then(m => ({ default: m.PublicInvoiceView })));
 const PublicRsvpPage     = lazyWithReload(() => import('./components/views/PublicRsvpPage').then(m => ({ default: m.PublicRsvpPage })));
+const PublicInvitePage   = lazyWithReload(() => import('./components/views/PublicInvitePage').then(m => ({ default: m.PublicInvitePage })));
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
@@ -108,6 +109,13 @@ const isPublicInvoicePath = (): boolean =>
 const isPublicRsvpPath = (): boolean =>
   typeof window !== 'undefined'
   && window.location.pathname.startsWith('/rsvp/');
+
+/** v-event-guest-link — /invite/{token} — the SHARED invitation, the
+ *  one an organiser posts in a group chat. Unlike /rsvp/ it names
+ *  nobody: the guest types their own name. No sign-in either. */
+const isPublicInvitePath = (): boolean =>
+  typeof window !== 'undefined'
+  && window.location.pathname.startsWith('/invite/');
 
 function NotAuthorizedView() {
   // Pull the active role from AuthContext so we can name it on the
@@ -354,6 +362,14 @@ export default function App() {
     return (
       <>
         <Suspense fallback={null}><PublicRsvpPage /></Suspense>
+        <Toaster />
+      </>
+    );
+  }
+  if (isPublicInvitePath()) {
+    return (
+      <>
+        <Suspense fallback={null}><PublicInvitePage /></Suspense>
         <Toaster />
       </>
     );

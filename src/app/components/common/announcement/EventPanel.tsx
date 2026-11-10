@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   CalendarDays, Check, CheckCircle2, Clock, HelpCircle, Link2, Loader2, MapPin,
-  Plus, Search, Trash2, User, UserPlus, XCircle,
+  Plus, Search, Share2, Trash2, User, UserPlus, XCircle,
 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -187,6 +187,67 @@ export function EventPanel({ announcement, canManage, onChanged }: {
   );
 }
 
+/**
+ * v-event-guest-link — the one link an organiser posts in a group
+ * chat, as opposed to the personal links in the invitee list below.
+ *
+ * <p>Rendered only while answers are open and only for an organiser.
+ * Open, because a link that refuses everyone who clicks it is worse
+ * than no link; organiser, because handing out something that lets
+ * anyone answer is their decision to make.</p>
+ *
+ * <p>Minting is idempotent on the server, so clicking twice is safe
+ * and always yields the same URL — a link already sent out keeps
+ * working.</p>
+ */
+function ShareInvite({ id }: { id: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const make = async () => {
+    setBusy(true);
+    try {
+      const res = await api.shareLink(id);
+      setUrl(res.url);
+      try {
+        await navigator.clipboard.writeText(res.url);
+        toast.success('Invite link copied');
+      } catch {
+        // Clipboard blocked (no permission, or an insecure origin).
+        // The link is on screen, so it can still be copied by hand.
+        toast.success('Invite link ready');
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not make the link');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-gray-50 px-3 py-2 space-y-2">
+      <div className="flex items-center gap-2">
+        <Share2 className="h-4 w-4 text-gray-500 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium">Share invite link</div>
+          <div className="text-xs text-gray-500">Anyone with it can RSVP as a guest</div>
+        </div>
+        <Button size="sm" variant="outline" className="h-7 shrink-0" onClick={() => void make()} disabled={busy}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : url ? 'Copy again' : 'Get link'}
+        </Button>
+      </div>
+      {url && (
+        <input
+          readOnly
+          value={url}
+          onFocus={e => e.currentTarget.select()}
+          className="w-full rounded border bg-white px-2 py-1 text-xs text-gray-600"
+        />
+      )}
+    </div>
+  );
+}
+
 type Filter = 'ALL' | api.RsvpResponse | 'PENDING';
 
 function AttendanceOverview({ announcement, canManage, onChanged }: {
@@ -224,6 +285,9 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
   }, [rows, filter, q]);
 
   const copyLink = async (r: api.RsvpParticipant) => {
+    // A guest has no personal link: their token is their own way back
+    // in to change an answer, not the organiser's to pass on.
+    if (!r.link) return;
     try {
       await navigator.clipboard.writeText(r.link);
       setCopied(r.id);
@@ -256,7 +320,14 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
     ['Join', ev.join, 'text-emerald-600'],
     ['Maybe', ev.maybe, 'text-amber-600'],
     ['Not Join', ev.decline, 'text-red-600'],
+    // Seen / Not seen are about invitees only: a guest came through
+    // the shared link and was never sent one, so neither applies.
+    ['Seen', ev.seen, 'text-blue-600'],
+    ['Not seen', ev.notSeen, 'text-gray-500'],
   ];
+  // Only once someone has actually come in that way — an always-on
+  // "Guests 0" would imply a shared link exists when none was made.
+  if (ev.guests > 0) tiles.push(['Guests', ev.guests, 'text-emerald-600']);
   const filters: [Filter, string, number][] = [
     ['ALL', 'All', ev.invited],
     ['JOIN', 'Join', ev.join],
@@ -274,6 +345,8 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
           {ev.open ? 'Taking responses' : 'Responses closed'}
         </span>
       </div>
+
+      {canManage && ev.open && <ShareInvite id={announcement.id} />}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {tiles.map(([label, n, tone]) => (
@@ -341,10 +414,13 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
                   m ? m.badge : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
                   {m ? m.label : 'No reply'}
                 </span>
-                <button type="button" onClick={() => void copyLink(r)} title="Copy this person's RSVP link"
-                  className="shrink-0 h-7 w-7 rounded-md text-gray-500 hover:bg-gray-100 flex items-center justify-center">
-                  {copied === r.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Link2 className="h-4 w-4" />}
-                </button>
+                {/* A guest has no personal link to hand out. */}
+                {r.link && (
+                  <button type="button" onClick={() => void copyLink(r)} title="Copy this person's RSVP link"
+                    className="shrink-0 h-7 w-7 rounded-md text-gray-500 hover:bg-gray-100 flex items-center justify-center">
+                    {copied === r.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Link2 className="h-4 w-4" />}
+                  </button>
+                )}
                 {canManage && (
                   <button type="button" onClick={() => void remove(r)} title="Remove from the invite list"
                     className="shrink-0 h-7 w-7 rounded-md text-red-500 hover:bg-red-50 flex items-center justify-center">
