@@ -29,7 +29,8 @@
            Capacitor / Tauri builds (https://localhost) never redirect.
            Public pages customers open from a phone stay on this site: the
            mobile app has no /scan, /pos/display, /shop, /kitchen,
-           /requirement-survey, /cambodia, /reset-password or /invoice/view.
+           /requirement-survey, /cambodia, /reset-password, /invoice/view,
+           /rsvp (personal invitation) or /invite (shared invitation).
 
            ?desktop=1 keeps a phone here and is remembered in the
            prefer_desktop cookie (this host only); ?desktop=0 clears it. -->
@@ -46,7 +47,9 @@
             if (choice) document.cookie = 'prefer_desktop=; path=/; max-age=0; SameSite=Lax';
             else if (/(^|;\s*)prefer_desktop=1/.test(document.cookie)) return;
             if (!/iPhone|iPod|Android.*Mobile|Windows Phone|BlackBerry|BB10|Opera Mini|IEMobile/i.test(navigator.userAgent || '')) return;
-            if (/^\/(scan|pos\/display|requirement-survey|cambodia|reset-password)(\/|$)|^\/(shop|kitchen|invoice\/view|rsvp)\//.test(location.pathname)) return;
+            // Public pages (no sign-in) are never sent to the mobile app —
+            // it has none of them. Add every new public route here.
+            if (/^\/(scan|pos\/display|requirement-survey|cambodia|reset-password)(\/|$)|^\/(shop|kitchen|invoice\/view|rsvp|invite)\//.test(location.pathname)) return;
             location.replace(MOBILE_SITE);
           } catch (e) { /* never keep anyone off the site */ }
         })();
