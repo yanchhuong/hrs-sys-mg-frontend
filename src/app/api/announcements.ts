@@ -1,4 +1,4 @@
-import { apiJson } from './client';
+import { apiJson, apiVoid, resolveAssetUrl } from './client';
 
 /**
  * Announcement (V122). Broadcast message published by an admin /
@@ -77,6 +77,8 @@ export interface Announcement {
   /** Opaque storage path of the cached PNG plate. Use {@link plateImageUrl}
    *  to compose the full served URL when rendering / debugging. */
   imagePath: string | null;
+  /** v-event-rsvp — null unless this is an event (date, place, RSVP). */
+  event?: AnnouncementEvent | null;
   createdAt: string;
   updatedAt: string;
   createdById: string | null;
@@ -136,6 +138,130 @@ export interface AnnouncementRequest {
   /** {@code data:image/png;base64,...} URL of the plate PNG rendered
    *  in the admin's browser via html2canvas at submit time. */
   imageDataUrl?: string;
+  /* v-event-rsvp — event invitation. All optional. */
+  eventDate?: string;          // yyyy-MM-dd
+  eventStartTime?: string;     // HH:mm
+  eventEndTime?: string;       // HH:mm
+  eventLocation?: string;
+  eventOrganizer?: string;
+  rsvpEnabled?: boolean;
+  rsvpDeadline?: string;       // ISO instant
+  coverImageDataUrl?: string;
+  /** v-event-kind — the invitation's look. */
+  eventKind?: EventKind;
+}
+
+/** v-event-kind — what the event is for; sets the invitation's look. */
+export type EventKind = 'WEDDING' | 'BIRTHDAY' | 'OTHERS';
+
+export const EVENT_KINDS: Record<EventKind, { label: string; invite: string; emoji: string; chip: string }> = {
+  WEDDING:  { label: 'Wedding',  invite: 'Wedding Invitation',  emoji: '💍', chip: 'bg-rose-50 text-rose-700 border-rose-200' },
+  BIRTHDAY: { label: 'Birthday', invite: 'Birthday Invitation', emoji: '🎂', chip: 'bg-amber-50 text-amber-700 border-amber-200' },
+  OTHERS:   { label: 'Others',   invite: 'Event Invitation',    emoji: '🎉', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+};
+export const kindMeta = (k: string | null | undefined) => EVENT_KINDS[(k as EventKind) in EVENT_KINDS ? (k as EventKind) : 'OTHERS'];
+
+/* ── v-event-rsvp — event invitations ─────────────────────────── */
+
+export type RsvpResponse = 'JOIN' | 'MAYBE' | 'DECLINE';
+
+export interface AnnouncementEvent {
+  kind?: EventKind | null;
+  date: string | null;
+  startTime: string | null;    // HH:mm:ss
+  endTime: string | null;
+  location: string | null;
+  organizer: string | null;
+  /** Relative API path; use {@link apiAsset}. */
+  coverUrl: string | null;
+  rsvpEnabled: boolean;
+  rsvpDeadline: string | null;
+  /** Answers still accepted. */
+  open: boolean;
+  invited: number;
+  join: number;
+  maybe: number;
+  decline: number;
+  pending: number;
+  /** The signed-in viewer's own answer, when they are invited. */
+  myResponse: RsvpResponse | null;
+  invitedMe: boolean;
+}
+
+export interface RsvpParticipant {
+  id: string;
+  recipientType: 'EMPLOYEE' | 'CUSTOMER';
+  recipientId: string;
+  name: string;
+  /** Employee no. or customer phone. */
+  detail: string | null;
+  response: RsvpResponse | null;
+  respondedAt: string | null;
+  /** Their personal RSVP page. */
+  link: string;
+}
+
+/** What a personal link (or "my invitation") shows. */
+export interface PublicRsvp {
+  title: string;
+  body: string;
+  kind?: EventKind | null;
+  coverUrl: string | null;
+  date: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  organizer: string | null;
+  companyName: string | null;
+  companyLogo: string | null;
+  inviteeName: string | null;
+  response: RsvpResponse | null;
+  respondedAt: string | null;
+  rsvpDeadline: string | null;
+  open: boolean;
+}
+
+/** A relative API path (cover photo, logo) as a loadable URL — composed
+ *  like request URLs, so production's /api-02 prefix comes out right. */
+export const apiAsset = resolveAssetUrl;
+
+export const listParticipants = (id: string): Promise<RsvpParticipant[]> =>
+  apiJson(`/api/v1/announcements/${id}/rsvp/participants`);
+
+export const addParticipants = (id: string, recipientType: 'EMPLOYEE' | 'CUSTOMER', recipientIds: string[]): Promise<{ added: number }> =>
+  apiJson(`/api/v1/announcements/${id}/rsvp/participants`, { method: 'POST', json: { recipientType, recipientIds } });
+
+export const removeParticipant = (id: string, rsvpId: string): Promise<void> =>
+  apiVoid(`/api/v1/announcements/${id}/rsvp/participants/${rsvpId}`, { method: 'DELETE' });
+
+export const myRsvp = (id: string): Promise<PublicRsvp> =>
+  apiJson(`/api/v1/announcements/${id}/rsvp/me`);
+
+export const answerMyRsvp = (id: string, response: RsvpResponse): Promise<PublicRsvp> =>
+  apiJson(`/api/v1/announcements/${id}/rsvp/me`, { method: 'PUT', json: { response } });
+
+export const publicRsvp = (token: string): Promise<PublicRsvp> =>
+  apiJson(`/api/v1/public/rsvp/${encodeURIComponent(token)}`);
+
+export const answerPublicRsvp = (token: string, response: RsvpResponse): Promise<PublicRsvp> =>
+  apiJson(`/api/v1/public/rsvp/${encodeURIComponent(token)}`, { method: 'PUT', json: { response } });
+
+/** "Sat, 20 Dec 2026" — event dates are calendar dates, read as local. */
+export function formatEventDate(date: string | null): string {
+  if (!date) return '';
+  const d = new Date(date + 'T00:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** "6:00 PM – 10:00 PM" from HH:mm(:ss) wall-clock times. */
+export function formatEventTime(start: string | null, end: string | null): string {
+  const one = (t: string | null) => {
+    if (!t) return '';
+    const [h, m] = t.split(':').map(Number);
+    const d = new Date(2000, 0, 1, h, m);
+    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  };
+  return [one(start), one(end)].filter(Boolean).join(' – ');
 }
 
 export type LogStatus = 'SENT' | 'FAILED' | 'NOT_LINKED';

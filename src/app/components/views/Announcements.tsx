@@ -48,6 +48,8 @@ import { Checkbox } from '../ui/checkbox';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
 import { DocAuditLine } from '../common/DocAuditLine';
+import { EventFields, emptyEventDraft, eventRequestFields, type EventDraft } from '../common/announcement/EventFields';
+import { EventPanel } from '../common/announcement/EventPanel';
 
 /**
  * Announcements (V122). Admin / manager publishes a broadcast to
@@ -150,6 +152,8 @@ export function Announcements() {
   /** V126 — category dropdown. Defaults to OTHERS for the everyday
    *  "miscellaneous notice" use case. */
   const [type, setType] = useState<api.AnnouncementType>('OTHERS');
+  // v-event-rsvp — date, place, cover and RSVP for Type = Events.
+  const [eventDraft, setEventDraft] = useState<EventDraft>(emptyEventDraft);
 
   // Cache the roster + customer list once when the dialog opens —
   // both are bounded sets that don't need pagination at this scale.
@@ -294,6 +298,7 @@ export function Announcements() {
     setExpiresEnabled(false);
     setHolidayId('');
     setType('OTHERS');
+    setEventDraft(emptyEventDraft());
     setCreateOpen(true);
     // Merge two sources so a fresh tenant — who hasn't copied any
     // system holidays yet — still gets a populated picker:
@@ -360,6 +365,13 @@ export function Announcements() {
       if (ts.getTime() <= lower) { toast.error('Expiry must be after the publish time.'); return; }
       expiresAtIso = ts.toISOString();
     }
+    // v-event-rsvp — the event part, for Type = Events only.
+    let eventFields: Partial<api.AnnouncementRequest> = {};
+    if (type === 'EVENTS') {
+      const r = eventRequestFields(eventDraft);
+      if (typeof r === 'string') { toast.error(r); return; }
+      eventFields = r;
+    }
     setCreating(true);
     try {
       // V147 — when the rich-template toggle is on, capture the live
@@ -398,6 +410,7 @@ export function Announcements() {
         expiresAt: expiresAtIso,
         holidayId: holidayId || undefined,
         type,
+        ...eventFields,
         // V147 — only send the rich fields when the toggle is on, so
         // the server's simple-row code path stays bit-identical for
         // legacy compositions.
@@ -667,6 +680,13 @@ export function Announcements() {
                           {a.readCount}
                         </Badge>
                       )}
+                      {/* v-event-rsvp — joined of invited, at a glance. */}
+                      {a.event?.rsvpEnabled && a.event.invited > 0 && (
+                        <Badge variant="outline" className="text-[10px] text-emerald-700 border-emerald-200 bg-emerald-50 gap-1"
+                          title={`Join ${a.event.join} · Maybe ${a.event.maybe} · Not join ${a.event.decline} · No reply ${a.event.pending}`}>
+                          ✓ {a.event.join}/{a.event.invited}
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-[11px] text-gray-500 truncate max-w-md mt-0.5">{a.body}</div>
                   </TableCell>
@@ -812,6 +832,11 @@ export function Announcements() {
                 </Select>
               </div>
             </div>
+
+            {/* v-event-rsvp — when, where, cover and RSVP for an event. */}
+            {type === 'EVENTS' && (
+              <EventFields value={eventDraft} onChange={p => setEventDraft(d => ({ ...d, ...p }))} />
+            )}
 
             {/* Title + Message. On the Rich Bulletin tab the inputs
                 go bilingual — a side-by-side KH | EN pair under a
@@ -1319,8 +1344,20 @@ export function Announcements() {
                     stamp={detail.stamp}
                   />
                 </div>
-              ) : (
+              ) : detail.event ? null : (
                 <div className="bg-gray-50 rounded-md p-3 text-sm whitespace-pre-wrap">{detail.body}</div>
+              )}
+
+              {/* v-event-rsvp — event card, my answer, attendance overview. */}
+              {detail.event && (
+                <EventPanel
+                  announcement={detail}
+                  canManage={canCreateAnnouncement}
+                  onChanged={async () => {
+                    try { setDetail(await api.get(detail.id)); } catch { /* keep what is shown */ }
+                    void load();
+                  }}
+                />
               )}
 
               {/* "Seen by" — distinct from Telegram delivery: counts

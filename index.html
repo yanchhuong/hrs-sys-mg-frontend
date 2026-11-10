@@ -46,7 +46,7 @@
             if (choice) document.cookie = 'prefer_desktop=; path=/; max-age=0; SameSite=Lax';
             else if (/(^|;\s*)prefer_desktop=1/.test(document.cookie)) return;
             if (!/iPhone|iPod|Android.*Mobile|Windows Phone|BlackBerry|BB10|Opera Mini|IEMobile/i.test(navigator.userAgent || '')) return;
-            if (/^\/(scan|pos\/display|requirement-survey|cambodia|reset-password)(\/|$)|^\/(shop|kitchen|invoice\/view)\//.test(location.pathname)) return;
+            if (/^\/(scan|pos\/display|requirement-survey|cambodia|reset-password)(\/|$)|^\/(shop|kitchen|invoice\/view|rsvp)\//.test(location.pathname)) return;
             location.replace(MOBILE_SITE);
           } catch (e) { /* never keep anyone off the site */ }
         })();

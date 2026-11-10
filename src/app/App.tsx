@@ -39,6 +39,7 @@ const RequirementSurveyForm = lazyWithReload(() => import('./components/views/Re
 const CambodiaLearnPage  = lazyWithReload(() => import('./components/CambodiaLearnPage').then(m => ({ default: m.CambodiaLearnPage })));
 const ResetPasswordPage  = lazyWithReload(() => import('./components/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
 const PublicInvoiceView  = lazyWithReload(() => import('./components/views/PublicInvoiceView').then(m => ({ default: m.PublicInvoiceView })));
+const PublicRsvpPage     = lazyWithReload(() => import('./components/views/PublicRsvpPage').then(m => ({ default: m.PublicRsvpPage })));
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
@@ -100,6 +101,13 @@ const isResetPasswordPath = (): boolean =>
 const isPublicInvoicePath = (): boolean =>
   typeof window !== 'undefined'
   && window.location.pathname.startsWith('/invoice/view/');
+
+/** v-event-rsvp — /rsvp/{token} — a person's own event invitation,
+ *  opened from Telegram or a shared link. The token is the capability;
+ *  no sign-in. */
+const isPublicRsvpPath = (): boolean =>
+  typeof window !== 'undefined'
+  && window.location.pathname.startsWith('/rsvp/');
 
 function NotAuthorizedView() {
   // Pull the active role from AuthContext so we can name it on the
@@ -342,6 +350,14 @@ export default function App() {
   }
   // V271 — /invoice/view/{id} — anonymous invoice view opened from the
   // emailed link. UUID in the URL is the whole capability; no auth.
+  if (isPublicRsvpPath()) {
+    return (
+      <>
+        <Suspense fallback={null}><PublicRsvpPage /></Suspense>
+        <Toaster />
+      </>
+    );
+  }
   if (isPublicInvoicePath()) {
     return (
       <>
