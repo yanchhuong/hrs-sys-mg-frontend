@@ -22,6 +22,7 @@ import {
 import { Checkbox } from '../../ui/checkbox';
 import { useConfirm } from '../../../context/ConfirmContext';
 import * as api from '../../../api/announcements';
+import { CoverGallery } from './CoverGallery';
 import * as employeesApi from '../../../api/employees';
 import * as customersApi from '../../../api/customers';
 
@@ -106,17 +107,19 @@ export function RsvpChoices({ current, open, saving, onSubmit, disabled = false,
 }
 
 /** Cover + date / time / location / organiser. */
-export function EventCard({ kind, title, body, coverUrl, date, startTime, endTime, location, organizer }: {
+export function EventCard({ kind, title, body, coverUrl, coverUrls, date, startTime, endTime, location, organizer }: {
   /** v-event-kind — the badge's wording and colour. */
   kind?: string | null;
   title?: string;
   /** The invitation's message, under the cover (and title). */
   body?: string;
   coverUrl: string | null;
+  /** v-event-gallery — several photos swipe; falls back to coverUrl. */
+  coverUrls?: string[];
   date: string | null; startTime: string | null; endTime: string | null;
   location: string | null; organizer: string | null;
 }) {
-  const cover = api.apiAsset(coverUrl);
+  const covers = coverUrls && coverUrls.length ? coverUrls : coverUrl ? [coverUrl] : [];
   const time = api.formatEventTime(startTime, endTime);
   const rows: [typeof CalendarDays, string, string][] = [];
   if (date) rows.push([CalendarDays, 'Date', api.formatEventDate(date)]);
@@ -125,7 +128,7 @@ export function EventCard({ kind, title, body, coverUrl, date, startTime, endTim
   if (organizer) rows.push([User, 'Organizer', organizer]);
   return (
     <div className="space-y-3">
-      {cover && <img src={cover} alt="" className="w-full max-h-64 object-cover rounded-xl" />}
+      {covers.length > 0 && <CoverGallery urls={covers} className="rounded-xl" />}
       {/* The badge shows with a title, or alone when a kind is given
           (the detail dialog already has the title in its header). */}
       {(title || kind) && (
@@ -187,7 +190,7 @@ export function EventPanel({ announcement, canManage, onChanged }: {
       {/* The message sits under the cover, as on the guest's page; the
           dialog leaves out its own message box for an event. */}
       <EventCard kind={ev.kind ?? 'OTHERS'} body={announcement.richTemplate ? undefined : announcement.body}
-        coverUrl={ev.coverUrl} date={ev.date} startTime={ev.startTime} endTime={ev.endTime}
+        coverUrl={ev.coverUrl} coverUrls={ev.coverUrls} date={ev.date} startTime={ev.startTime} endTime={ev.endTime}
         location={ev.location} organizer={ev.organizer} />
       {ev.rsvpEnabled && ev.invitedMe && (
         <div className="rounded-lg border p-3">

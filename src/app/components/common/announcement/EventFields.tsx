@@ -25,11 +25,12 @@ export interface EventDraft {
   rsvp: boolean;
   /** <input type="datetime-local"> value; blank = until the event day ends. */
   deadline: string;
-  coverDataUrl: string | null;
+  /** v-event-gallery — photos / GIFs in order; the first is the cover. */
+  coverDataUrls: string[];
 }
 
 export const emptyEventDraft = (): EventDraft => ({
-  kind: 'OTHERS', date: '', start: '', end: '', location: '', organizer: '', rsvp: true, deadline: '', coverDataUrl: null,
+  kind: 'OTHERS', date: '', start: '', end: '', location: '', organizer: '', rsvp: true, deadline: '', coverDataUrls: [],
 });
 
 /** Validate and turn the draft into request fields. Returns an error
@@ -52,12 +53,18 @@ export function eventRequestFields(d: EventDraft): Partial<AnnouncementRequest> 
     eventOrganizer: d.organizer.trim() || undefined,
     rsvpEnabled: d.rsvp,
     rsvpDeadline,
-    coverImageDataUrl: d.coverDataUrl ?? undefined,
+    // One photo goes as before; several go as the list.
+    coverImageDataUrl: d.coverDataUrls.length === 1 ? d.coverDataUrls[0] : undefined,
+    coverImageDataUrls: d.coverDataUrls.length > 1 ? d.coverDataUrls : undefined,
     eventKind: d.kind,
   };
 }
 
 const MAX_COVER_BYTES = 5 * 1024 * 1024;
+/** v-event-gallery — the server's limits: 8 photos, 14 MB together. */
+const MAX_COVERS = 8;
+const MAX_COVERS_TOTAL = 14 * 1024 * 1024;
+const dataUrlBytes = (u: string) => Math.round((u.length - u.indexOf(',') - 1) * 3 / 4);
 
 /** A GIF goes up as it is — re-drawing it would keep only its first
  *  frame. A photo is shrunk to at most 1600 px wide JPEG so a phone
@@ -97,14 +104,27 @@ export function EventFields({ value, onChange }: {
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const pickCover = async (file: File | undefined) => {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) { toast.error('Pick an image file'); return; }
-    try {
-      onChange({ coverDataUrl: await toCoverDataUrl(file) });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not read that image');
+  const pickCovers = async (files: File[]) => {
+    const next = [...value.coverDataUrls];
+    for (const file of files) {
+      if (next.length >= MAX_COVERS) { toast.error(`Up to ${MAX_COVERS} photos`); break; }
+      if (!file.type.startsWith('image/')) { toast.error('Pick image files'); continue; }
+      try {
+        const url = await toCoverDataUrl(file);
+        const total = next.reduce((s, u) => s + dataUrlBytes(u), 0) + dataUrlBytes(url);
+        if (total > MAX_COVERS_TOTAL) { toast.error('Photos together are over 14 MB — use fewer or smaller ones'); break; }
+        next.push(url);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Could not read that image');
+      }
     }
+    onChange({ coverDataUrls: next });
+  };
+  const removeCover = (i: number) => onChange({ coverDataUrls: value.coverDataUrls.filter((_, j) => j !== i) });
+  const makeFirst = (i: number) => {
+    const l = [...value.coverDataUrls];
+    const [x] = l.splice(i, 1);
+    onChange({ coverDataUrls: [x, ...l] });
   };
 
   return (
@@ -126,18 +146,34 @@ export function EventFields({ value, onChange }: {
         })}
       </div>
 
-      {/* Cover photo — the banner guests see first. */}
-      {value.coverDataUrl ? (
-        <div className="relative">
-          <img src={value.coverDataUrl} alt="" className="w-full h-36 object-cover rounded-md" />
-          <button
-            type="button"
-            onClick={() => onChange({ coverDataUrl: null })}
-            className="absolute top-2 right-2 h-7 w-7 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/70"
-            aria-label="Remove cover photo"
-          >
-            <X className="h-4 w-4" />
-          </button>
+      {/* v-event-gallery — photos guests swipe through; the first is the cover. */}
+      {value.coverDataUrls.length > 0 ? (
+        <div className="grid grid-cols-4 gap-2">
+          {value.coverDataUrls.map((u, i) => (
+            <div key={i} className="relative aspect-square">
+              <button type="button" onClick={() => i > 0 && makeFirst(i)} title={i === 0 ? 'Cover' : 'Make this the cover'}
+                className="block h-full w-full">
+                <img src={u} alt="" className="h-full w-full object-cover rounded-md border" />
+              </button>
+              {i === 0 && (
+                <span className="absolute bottom-1 left-1 rounded bg-purple-600 px-1 text-[10px] font-medium text-white">Cover</span>
+              )}
+              <button
+                type="button"
+                onClick={() => removeCover(i)}
+                className="absolute top-1 right-1 h-6 w-6 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/70"
+                aria-label={`Remove photo ${i + 1}`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          {value.coverDataUrls.length < MAX_COVERS && (
+            <button type="button" onClick={() => fileRef.current?.click()} aria-label="Add more photos"
+              className="aspect-square rounded-md border border-dashed border-purple-300 bg-white text-purple-700 flex flex-col items-center justify-center gap-0.5 text-[11px] hover:bg-purple-50">
+              <ImagePlus className="h-5 w-5" /> Add
+            </button>
+          )}
         </div>
       ) : (
         <button
@@ -146,11 +182,11 @@ export function EventFields({ value, onChange }: {
           className="w-full h-24 rounded-md border border-dashed border-purple-300 bg-white text-sm text-purple-700 flex flex-col items-center justify-center gap-1 hover:bg-purple-50"
         >
           <ImagePlus className="h-5 w-5" />
-          Add a cover photo or GIF <span className="text-[11px] text-gray-500">(optional · up to 5 MB)</span>
+          Add photos or GIFs <span className="text-[11px] text-gray-500">(optional · up to 8, 5 MB each · guests swipe through them)</span>
         </button>
       )}
-      <input ref={fileRef} type="file" accept="image/*" hidden
-        onChange={e => { void pickCover(e.target.files?.[0]); e.target.value = ''; }} />
+      <input ref={fileRef} type="file" accept="image/*" multiple hidden
+        onChange={e => { void pickCovers(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
 
       <div className="grid grid-cols-3 gap-2">
         <div className="space-y-1">

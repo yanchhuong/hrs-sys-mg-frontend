@@ -147,6 +147,8 @@ export interface AnnouncementRequest {
   rsvpEnabled?: boolean;
   rsvpDeadline?: string;       // ISO instant
   coverImageDataUrl?: string;
+  /** v-event-gallery — several photos / GIFs, in order (max 8). */
+  coverImageDataUrls?: string[];
   /** v-event-kind — the invitation's look. */
   eventKind?: EventKind;
 }
@@ -174,6 +176,8 @@ export interface AnnouncementEvent {
   organizer: string | null;
   /** Relative API path; use {@link apiAsset}. */
   coverUrl: string | null;
+  /** v-event-gallery — every photo, the cover first. */
+  coverUrls?: string[];
   rsvpEnabled: boolean;
   rsvpDeadline: string | null;
   /** Answers still accepted. */
@@ -223,6 +227,8 @@ export interface PublicRsvp {
   body: string;
   kind?: EventKind | null;
   coverUrl: string | null;
+  /** v-event-gallery — every photo, the cover first. */
+  coverUrls?: string[];
   date: string | null;
   startTime: string | null;
   endTime: string | null;
