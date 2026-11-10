@@ -136,7 +136,11 @@ export function PublicInvitePage() {
                   buttons stay disabled until there is one. */}
               <RsvpChoices
                 current={answer}
-                open={data.open && name.trim().length > 0}
+                // Open is the event's; a missing name only holds the buttons
+                // back, it does not make the event "closed".
+                open={data.open}
+                disabled={!name.trim()}
+                closedByHost={data.closedByHost}
                 saving={saving}
                 onSubmit={r => void submit(r)}
               />

@@ -79,7 +79,7 @@ export function PublicRsvpPage() {
             )}
 
             <div className="border-t pt-3">
-              <RsvpChoices current={data.response} open={data.open} saving={saving} onSubmit={r => void submit(r)} />
+              <RsvpChoices current={data.response} open={data.open} closedByHost={data.closedByHost} saving={saving} onSubmit={r => void submit(r)} />
             </div>
           </div>
         )}

@@ -178,6 +178,8 @@ export interface AnnouncementEvent {
   rsvpDeadline: string | null;
   /** Answers still accepted. */
   open: boolean;
+  /** v-rsvp-host-close — the host closed answers (e.g. full). */
+  closedByHost?: boolean;
   invited: number;
   join: number;
   maybe: number;
@@ -233,6 +235,8 @@ export interface PublicRsvp {
   respondedAt: string | null;
   rsvpDeadline: string | null;
   open: boolean;
+  /** v-rsvp-host-close — closed by the host (e.g. full). */
+  closedByHost?: boolean;
 }
 
 /** A relative API path (cover photo, logo) as a loadable URL — composed
@@ -244,6 +248,12 @@ export const listParticipants = (id: string): Promise<RsvpParticipant[]> =>
 
 export const addParticipants = (id: string, recipientType: 'EMPLOYEE' | 'CUSTOMER', recipientIds: string[]): Promise<{ added: number }> =>
   apiJson(`/api/v1/announcements/${id}/rsvp/participants`, { method: 'POST', json: { recipientType, recipientIds } });
+
+/** v-rsvp-host-close — the host stops answers (full) / lets them in again. */
+export const closeRsvp = (id: string): Promise<void> =>
+  apiVoid(`/api/v1/announcements/${id}/rsvp/close`, { method: 'POST' });
+export const reopenRsvp = (id: string): Promise<void> =>
+  apiVoid(`/api/v1/announcements/${id}/rsvp/reopen`, { method: 'POST' });
 
 export const removeParticipant = (id: string, rsvpId: string): Promise<void> =>
   apiVoid(`/api/v1/announcements/${id}/rsvp/participants/${rsvpId}`, { method: 'DELETE' });

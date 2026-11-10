@@ -190,7 +190,7 @@ export function EventFields({ value, onChange }: {
       </label>
       {value.rsvp && (
         <div className="space-y-1">
-          <Label className="text-xs">RSVP deadline <span className="text-gray-400">(optional — default: end of the event day)</span></Label>
+          <Label className="text-xs">RSVP deadline <span className="text-gray-400">(optional — default: when the event ends; you can also close it early)</span></Label>
           <Input type="datetime-local" value={value.deadline}
             onChange={e => onChange({ deadline: e.target.value })} className="h-9 max-w-xs" />
         </div>

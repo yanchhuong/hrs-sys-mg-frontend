@@ -44,11 +44,17 @@ export const RESPONSE_META: Record<api.RsvpResponse, {
 const ORDER: api.RsvpResponse[] = ['JOIN', 'MAYBE', 'DECLINE'];
 
 /** "Will you attend?" — pick one, then Submit. */
-export function RsvpChoices({ current, open, saving, onSubmit }: {
+export function RsvpChoices({ current, open, saving, onSubmit, disabled = false, closedByHost = false }: {
   current: api.RsvpResponse | null;
+  /** The event takes answers. False shows the closed note. */
   open: boolean;
   saving: boolean;
   onSubmit: (r: api.RsvpResponse) => void;
+  /** This person can't answer yet (e.g. no name typed) — the buttons wait,
+   *  but nothing says "closed". */
+  disabled?: boolean;
+  /** v-rsvp-host-close — closed by the host, so say it is full. */
+  closedByHost?: boolean;
 }) {
   const [picked, setPicked] = useState<api.RsvpResponse | null>(current);
   useEffect(() => { setPicked(current); }, [current]);
@@ -66,7 +72,7 @@ export function RsvpChoices({ current, open, saving, onSubmit }: {
               type="button"
               role="radio"
               aria-checked={on}
-              disabled={!open || saving}
+              disabled={!open || saving || disabled}
               onClick={() => setPicked(r)}
               className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition ${
                 on ? m.tile : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
@@ -84,14 +90,16 @@ export function RsvpChoices({ current, open, saving, onSubmit }: {
       </div>
       {open ? (
         <>
-          <Button className="w-full" disabled={!changed || saving} onClick={() => picked && onSubmit(picked)}>
+          <Button className="w-full" disabled={!changed || saving || disabled} onClick={() => picked && onSubmit(picked)}>
             {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
             {current ? 'Update response' : 'Submit response'}
           </Button>
           <p className="text-[11px] text-center text-gray-500">You can change your response before the RSVP deadline.</p>
         </>
       ) : (
-        <p className="text-xs text-center text-gray-500">Responses for this event are closed.</p>
+        <p className="text-xs text-center text-gray-500">
+          {closedByHost ? 'The host has closed responses — this event is full.' : 'Responses for this event are closed.'}
+        </p>
       )}
     </div>
   );
@@ -183,7 +191,7 @@ export function EventPanel({ announcement, canManage, onChanged }: {
         location={ev.location} organizer={ev.organizer} />
       {ev.rsvpEnabled && ev.invitedMe && (
         <div className="rounded-lg border p-3">
-          <RsvpChoices current={ev.myResponse} open={ev.open} saving={saving} onSubmit={answer} />
+          <RsvpChoices current={ev.myResponse} open={ev.open} closedByHost={ev.closedByHost} saving={saving} onSubmit={answer} />
         </div>
       )}
       {ev.rsvpEnabled && announcement.status !== 'DRAFT' && (
@@ -284,6 +292,29 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
   }, [announcement.id]);
   useEffect(() => { void load(); }, [load]);
 
+  const [closing, setClosing] = useState(false);
+  const toggleClosed = async () => {
+    if (!ev.closedByHost) {
+      const ok = await confirm({
+        title: 'Close responses?',
+        message: 'Nobody can answer any more — use this when the event is full. Answers already given stay, and you can reopen it.',
+        confirmLabel: 'Close responses',
+        variant: 'destructive',
+      });
+      if (!ok) return;
+    }
+    setClosing(true);
+    try {
+      if (ev.closedByHost) await api.reopenRsvp(announcement.id); else await api.closeRsvp(announcement.id);
+      toast.success(ev.closedByHost ? 'Responses reopened' : 'Responses closed');
+      await onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not change it');
+    } finally {
+      setClosing(false);
+    }
+  };
+
   const answered = ev.join + ev.maybe + ev.decline;
   const rate = ev.invited > 0 ? Math.round((answered / ev.invited) * 100) : 0;
   const pct = (n: number) => (ev.invited > 0 ? (n / ev.invited) * 100 : 0);
@@ -351,10 +382,21 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
     <div className="rounded-xl border p-4 space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div className="text-sm font-semibold">Event Attendance Overview</div>
-        <span className={`text-[11px] rounded-full px-2 py-0.5 border ${ev.open
-          ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-          {ev.open ? 'Taking responses' : 'Responses closed'}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-[11px] rounded-full px-2 py-0.5 border ${ev.open
+            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : ev.closedByHost ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+            {ev.open ? 'Taking responses' : ev.closedByHost ? 'Closed — full' : 'Responses closed'}
+          </span>
+          {/* v-rsvp-host-close — stop answers when the event is full;
+              reopen is shown only while the event is still ahead. */}
+          {canManage && (ev.open || (ev.closedByHost && !api.eventOver(ev))) && (
+            <Button size="sm" variant="outline" className="h-7" disabled={closing} onClick={() => void toggleClosed()}>
+              {closing && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+              {ev.closedByHost ? 'Reopen responses' : 'Close responses'}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
