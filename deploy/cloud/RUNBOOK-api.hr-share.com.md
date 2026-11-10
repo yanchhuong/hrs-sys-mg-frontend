@@ -53,22 +53,40 @@ Vercel edge no longer routes to it.
 Follow in order. Each phase has a verification command; do not proceed
 until the previous phase verifies.
 
-### Phase 1 — DNS record on Cloudflare
+### Phase 1 — DNS record on GoDaddy
 
-`hr-share.com` DNS is managed on Cloudflare. Add an `A` record for the
-API subdomain:
+> **2026-11-10:** `hr-share.com` DNS is now served by **GoDaddy**
+> (name servers `ns09`/`ns10.domaincontrol.com`). It was on Cloudflare
+> before, and the Cloudflare zone still exists but is NOT in use — edit
+> GoDaddy. When the name servers moved, the `api` record was not copied
+> and every API call failed with Vercel 502 `DNS_HOSTNAME_NOT_FOUND`
+> until it was re-added. If the name servers ever move again, copy
+> every record first.
+
+Add an `A` record for the API subdomain (GoDaddy → My Products →
+hr-share.com → DNS):
 
 | Field | Value |
 |---|---|
 | Type | `A` |
 | Name | `api` |
-| IPv4 address | `198.211.108.211` |
-| Proxy status | **DNS only** (gray cloud) — NOT Proxied (orange) |
-| TTL | Auto |
+| Value | `198.211.108.211` |
+| TTL | 600 seconds |
 
-The gray cloud matters: if it's orange, Cloudflare intercepts traffic
-and Let's Encrypt's HTTP-01 challenge in Phase 4 will fail with a
-connection timeout.
+Records the zone needs besides `api` (all present as of 2026-11-10):
+
+| Type | Name | Value | For |
+|---|---|---|---|
+| A | `@` | `216.198.79.1` | Vercel (apex) |
+| CNAME | `www`, `m` | the `…vercel-dns-017.com` names Vercel shows | Vercel |
+| CNAME | `brevo1._domainkey` | `b1.hr-share-com.dkim.brevo.com` | Brevo DKIM (app email) |
+| CNAME | `brevo2._domainkey` | `b2.hr-share-com.dkim.brevo.com` | Brevo DKIM |
+| TXT | `@` | `brevo-code:de9a76d49e9c729542775113c2a9755a` | Brevo domain verification |
+| TXT | `_dmarc` | `v=DMARC1; p=quarantine; rua=mailto:rua@dmarc.brevo.com` | DMARC, reports to Brevo |
+
+(If DNS ever goes back to Cloudflare: the `api` record must be **DNS
+only** (gray cloud). Proxied (orange) breaks Let's Encrypt's HTTP-01
+challenge in Phase 4.)
 
 **Verify from any machine (Windows PowerShell):**
 
