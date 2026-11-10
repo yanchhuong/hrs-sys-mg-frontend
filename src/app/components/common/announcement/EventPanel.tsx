@@ -170,6 +170,12 @@ export function EventPanel({ announcement, canManage, onChanged }: {
 
   return (
     <div className="space-y-4">
+      {/* v-share-till-over — first thing the organiser sees, and kept
+          until the event is over: after the RSVP deadline the link still
+          shows the invitation, it just no longer takes answers. */}
+      {canManage && ev.rsvpEnabled && announcement.status !== 'DRAFT' && !api.eventOver(ev) && (
+        <ShareInvite id={announcement.id} open={ev.open} />
+      )}
       {/* The message sits under the cover, as on the guest's page; the
           dialog leaves out its own message box for an event. */}
       <EventCard kind={ev.kind ?? 'OTHERS'} body={announcement.richTemplate ? undefined : announcement.body}
@@ -191,16 +197,17 @@ export function EventPanel({ announcement, canManage, onChanged }: {
  * v-event-guest-link — the one link an organiser posts in a group
  * chat, as opposed to the personal links in the invitee list below.
  *
- * <p>Rendered only while answers are open and only for an organiser.
- * Open, because a link that refuses everyone who clicks it is worse
- * than no link; organiser, because handing out something that lets
- * anyone answer is their decision to make.</p>
+ * <p>Rendered for an organiser until the event is over
+ * (v-share-till-over). Past the RSVP deadline the link still opens the
+ * invitation — it only stops taking answers — so it is still worth
+ * passing on; the card says which. Organiser, because handing out
+ * something that lets anyone answer is their decision to make.</p>
  *
  * <p>Minting is idempotent on the server, so clicking twice is safe
  * and always yields the same URL — a link already sent out keeps
  * working.</p>
  */
-function ShareInvite({ id }: { id: string }) {
+function ShareInvite({ id, open }: { id: string; open: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -225,14 +232,18 @@ function ShareInvite({ id }: { id: string }) {
   };
 
   return (
-    <div className="rounded-lg border bg-gray-50 px-3 py-2 space-y-2">
+    <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-3 py-2.5 space-y-2">
       <div className="flex items-center gap-2">
-        <Share2 className="h-4 w-4 text-gray-500 shrink-0" />
+        <Share2 className="h-4 w-4 text-blue-600 shrink-0" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium">Share invite link</div>
-          <div className="text-xs text-gray-500">Anyone with it can RSVP as a guest</div>
+          <div className="text-sm font-semibold text-blue-900">Share invite link</div>
+          <div className="text-xs text-blue-800/80">
+            {open
+              ? 'Anyone with it can RSVP as a guest — post it in a group chat.'
+              : 'Responses are closed; the link still shows the invitation until the event is over.'}
+          </div>
         </div>
-        <Button size="sm" variant="outline" className="h-7 shrink-0" onClick={() => void make()} disabled={busy}>
+        <Button size="sm" className="h-8 shrink-0" onClick={() => void make()} disabled={busy}>
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : url ? 'Copy again' : 'Get link'}
         </Button>
       </div>
@@ -345,8 +356,6 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
           {ev.open ? 'Taking responses' : 'Responses closed'}
         </span>
       </div>
-
-      {canManage && ev.open && <ShareInvite id={announcement.id} />}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {tiles.map(([label, n, tone]) => (

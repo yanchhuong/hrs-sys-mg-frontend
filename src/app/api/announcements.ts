@@ -299,6 +299,15 @@ export function formatEventDate(date: string | null): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+/** v-share-till-over — the event has happened: its date at its end time
+ *  (or the end of that day when it has none) is in the past. An event
+ *  with no date is never "over". */
+export function eventOver(ev: Pick<AnnouncementEvent, 'date' | 'endTime'>, now = new Date()): boolean {
+  if (!ev.date) return false;
+  const end = new Date(`${ev.date}T${ev.endTime ? ev.endTime.slice(0, 5) : '23:59'}:59`);
+  return !Number.isNaN(end.getTime()) && end.getTime() < now.getTime();
+}
+
 /** "6:00 PM – 10:00 PM" from HH:mm(:ss) wall-clock times. */
 export function formatEventTime(start: string | null, end: string | null): string {
   const one = (t: string | null) => {
