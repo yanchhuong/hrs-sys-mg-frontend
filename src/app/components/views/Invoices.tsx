@@ -1619,6 +1619,25 @@ function InvoiceFormDialog({
     })),
   });
 
+  /** v-invoice-stock-cap — how many units line idx may still take: the
+   *  picked item's on hand less what other lines of the same item hold.
+   *  Infinity when nothing caps it: an untracked or free-text line, an
+   *  edit (the server draws stock down on create only), or a credit /
+   *  debit note — a credit note puts goods back. */
+  const capsStock = !isEdit && (kind === 'commercial' || kind === 'tax');
+  const stockLimit = (idx: number): { cap: number; remaining: number } => {
+    const it = items[idx];
+    const none = { cap: Infinity, remaining: Infinity };
+    if (!capsStock || !it?.stockItemId) return none;
+    const src = stockCatalog.find(c => c.id === it.stockItemId);
+    if (!src || !src.deductionEnabled) return none;
+    const cap = Math.max(0, src.stockQty ?? 0);
+    const others = items.reduce((sum, other, oi) => (
+      oi === idx || other.stockItemId !== it.stockItemId ? sum : sum + (Number(other.quantity) || 0)
+    ), 0);
+    return { cap, remaining: Math.max(0, cap - others) };
+  };
+
   const validate = (): boolean => {
     if (!invoiceNo) { toast.error('Invoice No. is required'); return false; }
     if (!issueDate) { toast.error('Issue date is required'); return false; }
@@ -1630,6 +1649,14 @@ function InvoiceFormDialog({
     }
     const badQty = items.findIndex(it => !(toNum(it.quantity) > 0));
     if (badQty !== -1) { toast.error(`Line ${badQty + 1}: quantity must be more than 0`); return false; }
+    // v-invoice-stock-cap — typing is capped, but an item picked onto a
+    // line that already held a larger quantity is not; stop it here
+    // rather than at the server.
+    const over = items.findIndex((it, idx) => (toNum(it.quantity) || 0) > stockLimit(idx).remaining);
+    if (over !== -1) {
+      toast.error(`Line ${over + 1}: only ${stockLimit(over).remaining} left of "${items[over].name || 'this item'}"`);
+      return false;
+    }
     if (discountType === 'percent' && discountValue.trim() !== '' && !isValidPercent(discountValue)) {
       toast.error('Discount % must be between 0 and 100');
       return false;
@@ -2020,20 +2047,7 @@ function InvoiceFormDialog({
               // (no stockItemId) stay uncapped. The BE's V270 atomic
               // decrement is the last-word gate at checkout time;
               // this UI cap catches the mistake at data-entry time.
-              let stockCap = Infinity;
-              let stockRemaining = Infinity;
-              if (it.stockItemId) {
-                const src = stockCatalog.find(c => c.id === it.stockItemId);
-                if (src && src.deductionEnabled) {
-                  stockCap = Math.max(0, src.stockQty ?? 0);
-                  const others = items.reduce((sum, other, oi) => (
-                    oi === idx || other.stockItemId !== it.stockItemId
-                      ? sum
-                      : sum + (Number(other.quantity) || 0)
-                  ), 0);
-                  stockRemaining = Math.max(0, stockCap - others);
-                }
-              }
+              const { cap: stockCap, remaining: stockRemaining } = stockLimit(idx);
               const overStock = Number.isFinite(stockRemaining)
                 && (Number(it.quantity) || 0) > stockRemaining;
               return (
