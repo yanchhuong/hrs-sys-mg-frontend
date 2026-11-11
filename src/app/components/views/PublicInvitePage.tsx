@@ -36,6 +36,27 @@ const writeGuestToken = (token: string, value: string) => {
   try { window.localStorage.setItem(storeKey(token), value); } catch { /* not remembered; still answered */ }
 };
 
+/** v-invite-link-seen — an anonymous id for this device, so the host's
+ *  "Seen" counts each person who opened the shared link once, however
+ *  often they come back. Names no one. Without storage (private window)
+ *  it lives for this page load only. */
+const visitorKey = (token: string) => `event.visitor.${token}`;
+const newVisitorId = () => {
+  try { if (window.crypto?.randomUUID) return window.crypto.randomUUID(); } catch { /* fall through */ }
+  return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+};
+const visitorId = (token: string): string => {
+  try {
+    const kept = window.localStorage.getItem(visitorKey(token));
+    if (kept) return kept;
+    const id = newVisitorId();
+    window.localStorage.setItem(visitorKey(token), id);
+    return id;
+  } catch {
+    return newVisitorId();
+  }
+};
+
 export function PublicInvitePage() {
   const token = tokenFromPath();
   const [data, setData] = useState<api.PublicRsvp | null>(null);
@@ -48,7 +69,7 @@ export function PublicInvitePage() {
 
   useEffect(() => {
     setGuestToken(readGuestToken(token));
-    api.publicInvite(token)
+    api.publicInvite(token, visitorId(token))
       .then(d => { setData(d); document.title = `${d.title} · Invitation`; })
       .catch(() => setError('This invitation link is not valid any more.'));
   }, [token]);

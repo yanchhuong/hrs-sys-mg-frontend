@@ -198,6 +198,9 @@ export interface AnnouncementEvent {
   seen: number;
   /** Invitees who have not — who still needs chasing. */
   notSeen: number;
+  /** v-invite-link-seen — devices that opened the shared link; already
+   *  included in `seen`. */
+  linkViews?: number;
   /** The signed-in viewer's own answer, when they are invited. */
   myResponse: RsvpResponse | null;
   invitedMe: boolean;
@@ -290,8 +293,8 @@ export const shareLink = (id: string): Promise<{ url: string }> =>
 
 /** The event behind a shared link. inviteeName and response are null:
  *  the link identifies no one. */
-export const publicInvite = (token: string): Promise<PublicRsvp> =>
-  apiJson(`/api/v1/public/invite/${encodeURIComponent(token)}`);
+export const publicInvite = (token: string, visitor?: string | null): Promise<PublicRsvp> =>
+  apiJson(`/api/v1/public/invite/${encodeURIComponent(token)}${visitor ? `?visitor=${encodeURIComponent(visitor)}` : ''}`);
 
 export interface GuestAnswer {
   /** Keep it: sending it back on a change edits the same row instead

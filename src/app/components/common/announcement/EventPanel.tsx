@@ -319,8 +319,12 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
   };
 
   const answered = ev.join + ev.maybe + ev.decline;
-  const rate = ev.invited > 0 ? Math.round((answered / ev.invited) * 100) : 0;
-  const pct = (n: number) => (ev.invited > 0 ? (n / ev.invited) * 100 : 0);
+  // Out of everyone who could answer: the invited plus the guests who
+  // came in through the shared link (a guest only exists by answering).
+  // Over invited alone it read "1 of 0" once a guest answered.
+  const base = ev.invited + ev.guests;
+  const rate = base > 0 ? Math.round((answered / base) * 100) : 0;
+  const pct = (n: number) => (base > 0 ? (n / base) * 100 : 0);
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -365,8 +369,9 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
     ['Join', ev.join, 'text-emerald-600'],
     ['Maybe', ev.maybe, 'text-amber-600'],
     ['Not Join', ev.decline, 'text-red-600'],
-    // Seen / Not seen are about invitees only: a guest came through
-    // the shared link and was never sent one, so neither applies.
+    // v-invite-link-seen — Seen is everyone who looked: invitees who
+    // opened theirs plus each device that opened the shared link. Not
+    // seen stays invitees only (the people to chase).
     ['Seen', ev.seen, 'text-blue-600'],
     ['Not seen', ev.notSeen, 'text-gray-500'],
   ];
@@ -407,6 +412,9 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
           <div key={label} className="rounded-lg bg-gray-50 px-3 py-2">
             <div className={`text-2xl font-bold tabular-nums ${tone}`}>{n}</div>
             <div className="text-xs text-gray-500">{label}</div>
+            {label === 'Seen' && (ev.linkViews ?? 0) > 0 && (
+              <div className="text-[11px] text-gray-400">{ev.linkViews} via shared link</div>
+            )}
           </div>
         ))}
       </div>
@@ -414,7 +422,7 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
       <div className="space-y-1.5">
         <div className="flex items-baseline justify-between text-sm">
           <span className="font-medium">Response rate</span>
-          <span className="tabular-nums font-semibold">{rate}% <span className="text-xs font-normal text-gray-500">({answered} of {ev.invited})</span></span>
+          <span className="tabular-nums font-semibold">{rate}% <span className="text-xs font-normal text-gray-500">({answered} of {base})</span></span>
         </div>
         <div className="h-2.5 w-full rounded-full bg-gray-200 overflow-hidden flex">
           <div className="bg-emerald-500" style={{ width: `${pct(ev.join)}%` }} />
