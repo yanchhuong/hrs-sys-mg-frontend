@@ -1,8 +1,8 @@
 /**
  * Financial Market widget (V392) — the latest gold and currency buy /
  * sell prices against the day before, on the Dashboard, drawn like the
- * mobile Home: each title on a band (gold for gold, blue for currency)
- * over its two raised Sell / Buy cards. Each section spans the page, and
+ * mobile Home: each title on a band (gold-lettered for gold, blue for
+ * currency) over its two raised Sell / Buy cards. Each section spans the page, and
  * its titles share the row — one fills it, two halve it, three a third
  * each — so a wide screen is not left half empty. The badge on
  * each card says which day it is showing, so a card nobody has
@@ -23,10 +23,31 @@ import { MarketPriceHistoryDialog } from './MarketPriceHistoryDialog';
 import { GoldCalculatorDialog } from './GoldCalculatorDialog';
 
 
-/** The title bands: gold for gold, blue for currency (mobile's colours). */
+/**
+ * The title bands.
+ *
+ * v-market-quiet-bands — the colour used to be the fill (amber-300 /
+ * blue-300) with near-black text on it. A fully saturated block the
+ * width of the card made the label the loudest thing on the Dashboard
+ * when the thing worth looking at is the price underneath it. The
+ * colour now lives in the text and the fill is the same neutral tint
+ * the Exchange-spread block below already uses, so the section still
+ * reads as gold or currency at a glance while the Sell / Buy cards
+ * keep the eye.
+ *
+ * Not transparent: the band groups a title with its own pair of
+ * cards, and several gold titles sit side by side in ITEMS_ROW on a
+ * wide screen. With no fill at all the grouping goes and it stops
+ * being obvious which title owns which pair.
+ *
+ * amber-700 / blue-700 rather than a brighter gold or blue: this is
+ * 16px bold, which WCAG still counts as normal-size text, so it needs
+ * 4.5:1. amber-600 on this tint is about 3.9:1 and fails; amber-700
+ * is about 5.7:1.
+ */
 const BAND = {
-  gold:     'bg-amber-300 text-amber-950',
-  currency: 'bg-blue-300 text-blue-950',
+  gold:     'bg-slate-50 text-amber-700',
+  currency: 'bg-slate-50 text-blue-700',
 } as const;
 
 /** Calculate on the band: a white pill with a blue outline, as on mobile. */
@@ -106,10 +127,16 @@ export function MarketPricesWidget() {
                 <div className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 ${BAND.gold}`}>
                   <button type="button" className="text-left text-base font-bold hover:underline"
                     onClick={() => setHistoryFor(g.title)}>
-                    {g.title}{g.unit && <span className="ml-1.5 text-xs font-normal opacity-75">({g.unit})</span>}
+                    {/* The unit is grey, not faded gold: at 12px a
+                        dimmed amber on the pale band drops under the
+                        contrast floor, while grey stays legible and
+                        still reads as secondary. */}
+                    {g.title}{g.unit && <span className="ml-1.5 text-xs font-normal text-gray-500">({g.unit})</span>}
                   </button>
-                  {/* Prices a weight at this gold's Buy In / Sell Out. White
-                      on the band, so it stays a button. */}
+                  {/* Prices a weight at this gold's Buy In / Sell Out.
+                      Still a white pill: on the pale band it is the
+                      blue outline rather than the fill that marks it
+                      out as something to press. */}
                   <button type="button" onClick={() => setCalcFor(g)} title={`Calculate ${g.title} by weight`}
                     className={CALC_BTN}>
                     <Calculator className="h-3.5 w-3.5" /> {t('market.calculate', 'Calculate')}
@@ -150,7 +177,7 @@ export function MarketPricesWidget() {
             <div className={ITEMS_ROW}>
             {currency.map(c => (
               <div key={c.title} className="space-y-3">
-                {/* The pair on its blue band, as on mobile. */}
+                {/* The pair on its blue-lettered band, as on mobile. */}
                 <div className={`rounded-lg px-3 py-2 ${BAND.currency}`}>
                   <button type="button" className="text-left text-base font-bold hover:underline"
                     onClick={() => setHistoryFor(c.title)}>
