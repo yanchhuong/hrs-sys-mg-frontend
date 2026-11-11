@@ -42,6 +42,7 @@ const ResetPasswordPage  = lazyWithReload(() => import('./components/ResetPasswo
 const PublicInvoiceView  = lazyWithReload(() => import('./components/views/PublicInvoiceView').then(m => ({ default: m.PublicInvoiceView })));
 const PublicRsvpPage     = lazyWithReload(() => import('./components/views/PublicRsvpPage').then(m => ({ default: m.PublicRsvpPage })));
 const PublicInvitePage   = lazyWithReload(() => import('./components/views/PublicInvitePage').then(m => ({ default: m.PublicInvitePage })));
+const PublicBookingPage  = lazyWithReload(() => import('./components/views/PublicBookingPage').then(m => ({ default: m.PublicBookingPage })));
 
 /** True when the URL path is the public QR-scan landing. Read once
  *  at App mount — this page is meant to be a one-shot landing, so we
@@ -67,6 +68,14 @@ const isPosDisplayPath = (): boolean =>
 const isPublicShopPath = (): boolean =>
   typeof window !== 'undefined'
   && window.location.pathname.startsWith('/shop/');
+
+/** v-booking-public-link — /booking/{code} — the anonymous booking
+ *  page. Same posture as /shop: the 5-char code is the whole secret,
+ *  no auth and no HRMS chrome, and a guest asks to book rather than
+ *  buying outright. */
+const isPublicBookingPath = (): boolean =>
+  typeof window !== 'undefined'
+  && window.location.pathname.startsWith('/booking/');
 
 /** V306 — anonymous kitchen KDS board reached via /kitchen/{code}.
  *  Same "no auth, no sidebar" posture as /shop, but the 8-char code
@@ -325,6 +334,16 @@ export default function App() {
     return (
       <>
         <Suspense fallback={null}><PublicShopPage /></Suspense>
+        <Toaster />
+      </>
+    );
+  }
+  // v-booking-public-link — anonymous booking page. Same opt-out as
+  // /shop: no sidebar, no /me, the code in the URL is the only auth.
+  if (isPublicBookingPath()) {
+    return (
+      <>
+        <Suspense fallback={null}><PublicBookingPage /></Suspense>
         <Toaster />
       </>
     );
