@@ -58,6 +58,10 @@ const BarcodeLabelsDialog = lazyWithReload(() =>
   import('../common/BarcodeLabelsDialog')
     .then(m => ({ default: m.BarcodeLabelsDialog })),
 );
+const BulkBarcodeLabelsDialog = lazyWithReload(() =>
+  import('../common/BulkBarcodeLabelsDialog')
+    .then(m => ({ default: m.BulkBarcodeLabelsDialog })),
+);
 import { SearchablePicker } from '../common/SearchablePicker';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import { FilterStrip } from '../common/FilterStrip';
@@ -773,6 +777,13 @@ export function Items() {
    *  Only ever set for a row that HAS a barcode — there is nothing to
    *  print otherwise, so the action does not render. */
   const [labelsFor, setLabelsFor] = useState<itemsApi.Item | null>(null);
+  /** Bulk label sheet — snapshot of the filtered rows taken when the
+   *  header button is pressed, so a background reload does not reshuffle
+   *  the list while the operator is editing copies. */
+  const [bulkLabels, setBulkLabels] = useState<{
+    items: { id: string; name: string; sku?: string | null; barcode: string; stockQty?: number | null }[];
+    skipped: number;
+  } | null>(null);
   /** v-items-scan-to-stock-in — separate scanner state for the
    *  toolbar barcode icon (as opposed to the one inside the edit
    *  form). Decoded value routes through itemsApi.getByBarcode; on
@@ -1225,11 +1236,11 @@ export function Items() {
     if (!deleteTarget) return;
     try {
       await itemsApi.remove(deleteTarget.id);
-      toast.success(`Removed ${deleteTarget.name}`);
+      toast.success(t('items.delete.success').replace('{name}', deleteTarget.name));
       setDeleteTarget(null);
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Delete failed');
+      toast.error(e instanceof Error ? e.message : t('items.delete.failed'));
     }
   };
 
@@ -1387,6 +1398,34 @@ export function Items() {
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
           </Button>
+          {/* Bulk barcode labels — every barcoded item in the current
+              filter, onto one PDF to print and stick on the products.
+              Scoped to `filtered` like the Excel export beside it. */}
+          {barcodeFeatureOn && (() => {
+            const withCode = filtered.filter(it => !!it.barcode?.trim());
+            return (
+              <Button
+                variant="outline"
+                size="icon"
+                disabled={withCode.length === 0}
+                onClick={() => setBulkLabels({
+                  items: withCode.map(it => ({
+                    id: it.id, name: it.name, sku: it.sku,
+                    barcode: it.barcode!.trim(), stockQty: it.stockQty,
+                  })),
+                  skipped: filtered.length - withCode.length,
+                })}
+                title={withCode.length === 0
+                  ? 'No items in this list have a barcode'
+                  : filtered.length === rows.length
+                    ? `Print barcode labels for all ${withCode.length} barcoded items`
+                    : `Print barcode labels for ${withCode.length} barcoded items in the current filter`}
+                aria-label="Print barcode labels"
+              >
+                <ScanBarcode className="h-4 w-4 text-indigo-600" />
+              </Button>
+            );
+          })()}
           {canAdd && (
             <Button
               variant="outline"
@@ -1443,6 +1482,15 @@ export function Items() {
           <BarcodeLabelsDialog
             item={{ name: labelsFor.name, sku: labelsFor.sku, barcode: labelsFor.barcode }}
             onClose={() => setLabelsFor(null)}
+          />
+        </Suspense>
+      )}
+      {bulkLabels && (
+        <Suspense fallback={null}>
+          <BulkBarcodeLabelsDialog
+            items={bulkLabels.items}
+            skippedNoBarcode={bulkLabels.skipped}
+            onClose={() => setBulkLabels(null)}
           />
         </Suspense>
       )}
@@ -2589,16 +2637,15 @@ export function Items() {
       <AlertDialog open={!!deleteTarget} onOpenChange={o => !o && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove this item?</AlertDialogTitle>
+            <AlertDialogTitle>{t('items.delete.title')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget?.name} will be deleted. Existing invoice / bill
-              lines that reference this item by snapshot stay intact.
+              {t('items.delete.desc').replace('{name}', deleteTarget?.name ?? '')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t('action.cancel')}</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} className="bg-red-600 text-white hover:bg-red-700">
-              Remove
+              {t('items.delete.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

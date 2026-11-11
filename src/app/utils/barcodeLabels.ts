@@ -164,19 +164,73 @@ export interface LabelSheetOptions {
  * use only because their layout is HTML.
  */
 export async function buildLabelsPdf(opts: LabelSheetOptions): Promise<Blob> {
+  const total = Math.max(1, opts.count);
+  const label: LabelSpec = { value: opts.value, caption: opts.caption };
+  return buildLabelSheetPdf({
+    labels: Array.from({ length: total }, () => label),
+    paper: opts.paper,
+    cols: opts.cols,
+  });
+}
+
+/** One label on a sheet: the barcode value and the line printed above it. */
+export interface LabelSpec {
+  value: string;
+  caption?: string | null;
+}
+
+/** Labels per PDF beyond which we stop — a "match stock" run on a
+ *  catalogue with a 50,000-unit row would otherwise build a PDF the
+ *  browser cannot hold. 5,000 is ~100 A4 sheets at 4 across. */
+export const MAX_LABELS_PER_PDF = 5000;
+
+/**
+ * Build a sheet of MIXED labels — many items, each repeated as often
+ * as its entry appears in `labels`, laid out in order and flowing onto
+ * new pages as needed.
+ *
+ * Each distinct barcode value is encoded once and placed by alias, so
+ * forty copies of one item cost one embedded image, not forty.
+ * Values that cannot be encoded (Code 128 is ASCII-only) are skipped
+ * and returned, rather than failing the whole sheet over one item.
+ */
+export async function buildLabelSheetPdf(opts: {
+  labels: LabelSpec[];
+  paper: PaperSize;
+  cols: number;
+}): Promise<Blob> {
   const { jsPDF } = await import('jspdf');
-  const png = await barcodePngDataUrl(opts.value);
   const grid = labelGrid(opts.paper, opts.cols);
+  const pngs = await encodeAll(opts.labels.map(l => l.value));
+  const printable = opts.labels.filter(l => pngs.has(l.value));
+  if (printable.length === 0) throw new Error('None of these barcodes could be encoded');
+  if (printable.length > MAX_LABELS_PER_PDF) {
+    throw new Error(`Too many labels (${printable.length}) — the limit is ${MAX_LABELS_PER_PDF} per PDF`);
+  }
 
   const doc = new jsPDF({ unit: 'mm', format: opts.paper.toLowerCase() as 'a4' | 'a5' });
-  const total = Math.max(1, opts.count);
-
-  for (let i = 0; i < total; i++) {
+  printable.forEach((label, i) => {
     if (i > 0 && i % grid.perPage === 0) doc.addPage();
     const { x, y } = labelOrigin(grid, i);
-    drawLabel(doc, x, y, grid, png, opts);
-  }
+    drawLabel(doc, x, y, grid, pngs.get(label.value)!, label);
+  });
   return doc.output('blob');
+}
+
+/**
+ * PNG data URL for each distinct value. Values jsbarcode rejects are
+ * left out of the map, which is how callers learn which to skip.
+ */
+export async function encodeAll(values: readonly string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const v of new Set(values)) {
+    try {
+      out.set(v, await barcodePngDataUrl(v));
+    } catch {
+      /* not encodable as Code 128 — caller sees it missing */
+    }
+  }
+  return out;
 }
 
 /* Label interior, as fractions of the label's height: caption band,
@@ -194,9 +248,9 @@ function drawLabel(
     setFontSize: (n: number) => void;
     setTextColor: (r: number, g: number, b: number) => void;
     text: (t: string, x: number, y: number, o?: { align?: string; maxWidth?: number }) => void;
-    addImage: (d: string, f: string, x: number, y: number, w: number, h: number) => void;
+    addImage: (d: string, f: string, x: number, y: number, w: number, h: number, alias?: string) => void;
   },
-  x: number, y: number, grid: LabelGrid, png: string, opts: LabelSheetOptions,
+  x: number, y: number, grid: LabelGrid, png: string, opts: LabelSpec,
 ) {
   const innerW = grid.labelW - PAD * 2;
   const innerH = grid.labelH - PAD * 2;
@@ -212,7 +266,9 @@ function drawLabel(
     doc.text(truncate(opts.caption, maxChars(innerW, 2.0)), cx, y + PAD + captionH * 0.78, { align: 'center' });
   }
 
-  doc.addImage(png, 'PNG', x + PAD, y + PAD + captionH, innerW, barsH);
+  // Alias by value so jsPDF embeds each barcode once and references it
+  // for every copy — without it, it hashes the whole data URL per call.
+  doc.addImage(png, 'PNG', x + PAD, y + PAD + captionH, innerW, barsH, `bc-${opts.value}`);
 
   doc.setFontSize(Math.max(5, Math.min(9, valueH * 2.4)));
   doc.setTextColor(55, 65, 81);

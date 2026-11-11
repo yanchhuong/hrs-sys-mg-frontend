@@ -210,6 +210,11 @@ export const dict: Dict = {
   'payrollCat.type.percentage':{ en: 'Percentage',          km: 'ភាគរយ',             zh: '百分比' },
   'payrollCat.delete.title':  { en: 'Delete category?',     km: 'លុបប្រភេទនេះ?',      zh: '删除类别？' },
   'payrollCat.delete.desc':   { en: 'Category "{name}" will be removed. Historical payslips are not affected.', km: 'ប្រភេទ "{name}" នឹងត្រូវលុប។ ប័ណ្ណប្រាក់ខែពីមុនមិនរងឥទ្ធិពលទេ។', zh: '类别"{name}"将被删除，不影响历史工资单。' },
+  'items.delete.title':       { en: 'Remove this item?',    km: 'លុបទំនិញនេះ?',        zh: '删除此商品？' },
+  'items.delete.desc':        { en: '{name} will be deleted. Existing invoice / bill lines that reference this item by snapshot stay intact.', km: '{name} នឹងត្រូវលុប។ បន្ទាត់វិក្កយបត្រ / វិក្កយបត្រទិញដែលមានស្រាប់ ដែលយោងទំនិញនេះ នៅតែរក្សាទុកដដែល។', zh: '{name} 将被删除。已有发票 / 账单中引用此商品的明细行将保持不变。' },
+  'items.delete.confirm':     { en: 'Remove',               km: 'លុប',                zh: '删除' },
+  'items.delete.success':     { en: 'Removed {name}',       km: 'បានលុប {name}',       zh: '已删除 {name}' },
+  'items.delete.failed':      { en: 'Delete failed',        km: 'លុបមិនបានសម្រេច',      zh: '删除失败' },
   'payrollCat.reset.title':   { en: 'Restore default categories?', km: 'ស្ដារប្រភេទលំនាំដើម?', zh: '恢复默认类别？' },
   'payrollCat.reset.desc':    { en: 'All custom categories will be removed and the original Earnings (Basic, Position, OT, Allowances, Bonus) and Deductions (Tax, Advance, Loan, NSSF, Others) restored.', km: 'ប្រភេទដែលបានកែប្រែទាំងអស់នឹងត្រូវលុប ហើយប្រភេទលំនាំដើមនឹងត្រូវស្ដារឡើងវិញ។', zh: '所有自定义类别将被删除，并恢复原始收入和扣款项目。' },
 
