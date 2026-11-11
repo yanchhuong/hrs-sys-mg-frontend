@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, lazy, Suspense } from 'react';
+import { useEffect, useMemo, useState, Suspense } from 'react';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -47,13 +48,13 @@ import { MultiImageDropZone } from '../common/MultiImageDropZone';
 import { ThumbnailImage } from '../common/ThumbnailImage';
 // v-perf-lazy-scanner — @zxing/library is ~250KB gz. Only loaded
 // when the operator clicks the barcode-scan button.
-const CameraBarcodeScanner = lazy(() =>
+const CameraBarcodeScanner = lazyWithReload(() =>
   import('../common/CameraBarcodeScanner')
     .then(m => ({ default: m.CameraBarcodeScanner })),
 );
 // Same deal for printing labels: jsbarcode + jspdf ride in this
 // chunk, and neither is touched until somebody opens the sheet.
-const BarcodeLabelsDialog = lazy(() =>
+const BarcodeLabelsDialog = lazyWithReload(() =>
   import('../common/BarcodeLabelsDialog')
     .then(m => ({ default: m.BarcodeLabelsDialog })),
 );

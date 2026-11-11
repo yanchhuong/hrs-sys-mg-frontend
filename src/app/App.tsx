@@ -1,5 +1,6 @@
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { lazyWithReload } from './utils/lazyWithReload';
+import { readLastView, rememberView } from './utils/lastView';
 // Side-effect import — monkey-patches sonner's toast.error to swallow
 // module-disabled messages so a tenant with an uninstalled module sees
 // the page render empty instead of a red toast on every fetch.
@@ -153,11 +154,28 @@ function AppContent() {
    *  Back so a normal Sign In click doesn't carry the demo values over. */
   const [loginPrefill, setLoginPrefill] = useState<{ email: string; password: string } | null>(null);
 
+  /** v-remember-current-view — the single entry point for "the user
+   *  chose to go here". Everything that navigates deliberately (the
+   *  sidebar, and a page's own cross-page links via `onNavigate`)
+   *  goes through this so the choice is remembered for the tab. The
+   *  forced fallback in `v-first-allowed-view-redirect` deliberately
+   *  does NOT: a view the user was pushed onto is not a view they
+   *  picked, and writing it would overwrite the page they want back. */
+  const goToView = useCallback((view: string) => {
+    setCurrentView(view);
+    rememberView(currentUser?.id, view);
+  }, [currentUser?.id]);
+
   // Reset the view whenever the logged-in user changes (logout → login as a
   // different role). Without this, currentView is sticky and a freshly-
   // logged-in approver may briefly land on the previous admin's last page.
+  //
+  // v-remember-current-view — on a RELOAD this is also the moment the
+  // user becomes known again, so it is where the remembered page is
+  // restored. Nothing is trusted: an unknown or no-longer-permitted id
+  // still falls through to the first-allowed redirect below.
   useEffect(() => {
-    setCurrentView('dashboard');
+    setCurrentView(readLastView(currentUser?.id) ?? 'dashboard');
     // Reset the login-vs-landing flag on EVERY user transition (login
     // AND logout). Without the logout branch, a signed-out user stays
     // stuck on the login card instead of dropping back to the marketing
@@ -265,11 +283,11 @@ function AppContent() {
   // Display, both `hideFromSidebar`) call it to switch views without
   // duplicating the setCurrentView wiring. Components that don't
   // navigate cross-page just ignore the prop.
-  const viewProps: Record<string, unknown> = { onNavigate: setCurrentView };
+  const viewProps: Record<string, unknown> = { onNavigate: goToView };
   if (entry?.initialView) viewProps.initialView = entry.initialView;
 
   return (
-    <Layout currentView={currentView} onViewChange={setCurrentView}>
+    <Layout currentView={currentView} onViewChange={goToView}>
       <ViewComponent {...viewProps} />
     </Layout>
   );

@@ -1,4 +1,5 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useState, Suspense } from 'react';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -22,7 +23,7 @@ import { QrDisplayDialog } from '../common/QrDisplayDialog';
 // v-perf-lazy-map — leaflet + react-leaflet weigh ~250KB gz. Only
 // paid when the operator opens the office-edit dialog with the
 // map picker inside; the office list itself never loads it.
-const MapPicker = lazy(() =>
+const MapPicker = lazyWithReload(() =>
   import('../common/MapPicker').then(m => ({ default: m.MapPicker })),
 );
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';

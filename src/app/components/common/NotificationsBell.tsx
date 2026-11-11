@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock, MessageCircle, ClipboardCheck, CircleCheck, CircleX, Send, ShoppingBag, Gift, Check, X, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -18,7 +19,7 @@ import { Textarea } from '../ui/textarea';
 
 // The full approval dialog lives with the (lazy) Approvals page; load it
 // only when a notification actually opens one.
-const ApprovalDetailDialog = lazy(() =>
+const ApprovalDetailDialog = lazyWithReload(() =>
   import('../views/Approvals').then(m => ({ default: m.ApprovalDetailDialog })));
 
 /**

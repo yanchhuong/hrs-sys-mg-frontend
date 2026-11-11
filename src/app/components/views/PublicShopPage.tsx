@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
+import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 import {
   Loader2, Search, MapPin, AlertCircle, Store, Package,
   ShoppingCart, Plus, Minus, X, CheckCircle2, StickyNote,
@@ -20,7 +21,7 @@ import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryCh
 // v-perf-lazy-map — customer-facing storefront page; most customers
 // never open the delivery-location picker. Deferring leaflet keeps
 // the shop menu's cold-load fast on mobile.
-const MapPicker = lazy(() =>
+const MapPicker = lazyWithReload(() =>
   import('../common/MapPicker').then(m => ({ default: m.MapPicker })),
 );
 

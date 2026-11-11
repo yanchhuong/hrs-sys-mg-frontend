@@ -1,4 +1,5 @@
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useRef, useState } from 'react';
+import { lazyWithReload } from '../utils/lazyWithReload';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
@@ -40,7 +41,7 @@ import imgBrandLogo   from '../../imports/smrt-web-logo1.png';
 // languages of text) is its own chunk: it sits several screens down, so
 // the first paint should not wait to download, parse and lay it out.
 const loadModulesGrid = () => import('./landing/ModulesGrid');
-const ModulesGrid = lazy(() => loadModulesGrid().then(m => ({ default: m.ModulesGrid })));
+const ModulesGrid = lazyWithReload(() => loadModulesGrid().then(m => ({ default: m.ModulesGrid })));
 
 export type Lang = 'en' | 'km' | 'zh';
 

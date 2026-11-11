@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, memo, lazy, Suspense, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, memo, Suspense, type MutableRefObject } from 'react';
+import { lazyWithReload } from '../../utils/lazyWithReload';
 import {
   ShoppingCart, Loader2, Search, Plus, Minus, X, FileText, CreditCard,
   Banknote, QrCode, Receipt, Printer, AlertCircle, Landmark, ScrollText,
@@ -31,7 +32,7 @@ import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import { NumericInput } from '../common/NumericInput';
 // v-perf-lazy-scanner — @zxing/library is ~250KB gz. Deferred
 // until the operator first opens the scanner dialog.
-const CameraBarcodeScanner = lazy(() =>
+const CameraBarcodeScanner = lazyWithReload(() =>
   import('../common/CameraBarcodeScanner')
     .then(m => ({ default: m.CameraBarcodeScanner })),
 );
