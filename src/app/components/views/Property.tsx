@@ -17,8 +17,9 @@ import {
 } from '../ui/dialog';
 import {
   Plus, Pencil, Trash2, Loader2, ImageIcon, Search,
-  ChevronDown, ChevronRight, Home, Eye,
+  ChevronDown, ChevronRight, Home, Eye, Ban,
 } from 'lucide-react';
+import { ResourcesDialog } from '../booking/ResourcesDialog';
 import * as itemsApi from '../../api/paymentPlanItems';
 // v-property-view-as-editor — booking + customer / schedule / trip
 // imports removed. This popup no longer creates bookings; that flow
@@ -94,6 +95,8 @@ export function Property() {
   const [active, setActive]     = useState(true);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [category, setCategory] = useState<itemsApi.PaymentPlanItemCategory>('others');
+  /** v-booking-hourly — what a unit's price covers. */
+  const [priceUnit, setPriceUnit] = useState<itemsApi.PriceUnit>('night');
   const [selectMode, setSelectMode] = useState<itemsApi.PaymentPlanItemSelectMode>('single');
   /** v-property-groups-only — options are always children of a
    *  group post-V298; this stays null-ish in the editor state
@@ -111,6 +114,8 @@ export function Property() {
    *  eye-icon row action. Holds the row currently being previewed
    *  (null = closed). */
   const [viewingRow, setViewingRow] = useState<itemsApi.PaymentPlanItem | null>(null);
+  /** v-booking-phase2 — the property whose Units & blocks dialog is open. */
+  const [unitsFor, setUnitsFor] = useState<itemsApi.PaymentPlanItem | null>(null);
   /** V286 — per-row expand state for the Options preview. */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleExpand = (id: string) => setExpanded(prev => {
@@ -293,6 +298,12 @@ export function Property() {
             imageUrl: o.imageUrl || null,
             active: o.active ?? true,
             sortOrder: i,
+            gridRow: o.gridRow ?? null,
+            gridCol: o.gridCol ?? null,
+            // v-booking-phase2 — undefined leaves as is; '' / 0 clear.
+            code: o.code ?? undefined,
+            capacity: o.capacity ?? undefined,
+            location: o.location ?? undefined,
           });
         }
         cleanedGroups.push({
@@ -317,6 +328,7 @@ export function Property() {
         imageUrl: imageUrls[0] ?? '',
         category,
         selectMode,
+        priceUnit,
         // v-property-edit-groups-only — groups + options are edited
         // here (tabular). Cinema screen positions (gridRow/gridCol)
         // live on the options themselves so they round-trip whether
@@ -349,6 +361,7 @@ export function Property() {
     setImageUrls(r.imageUrl ? [r.imageUrl] : []);
     setCategory(r.category ?? 'others');
     setSelectMode(r.selectMode ?? 'single');
+    setPriceUnit(r.priceUnit ?? 'night');
     // v-property-groups-only — ungrouped options are no longer edited
     // as a standalone panel. On save we'll send `options: []` to
     // clear any legacy rows; here we migrate legacy ungrouped
@@ -363,6 +376,14 @@ export function Property() {
       imageUrl: o.imageUrl ?? null,
       active: o.active,
       sortOrder: o.sortOrder,
+      // Carried so a save sends them back: the server writes the seat
+      // position as sent, and leaving it out erased the seat map.
+      gridRow: o.gridRow ?? null,
+      gridCol: o.gridCol ?? null,
+      // v-booking-phase2 — resource fields.
+      code: o.code ?? null,
+      capacity: o.capacity ?? null,
+      location: o.location ?? null,
     });
     const groups: itemsApi.UpsertPaymentPlanItemOptionGroup[] = [];
     if ((r.options ?? []).length > 0) {
@@ -620,6 +641,10 @@ export function Property() {
                           {/* View eye moved to the Options column
                               (v-property-view-icon-in-options) — Actions
                               now only carries the write ops. */}
+                          {/* v-booking-phase2 — units (resource fields) + maintenance blocks. */}
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-amber-600" onClick={() => setUnitsFor(r)} title="Units & blocks">
+                            <Ban className="h-3.5 w-3.5" />
+                          </Button>
                           {canWrite && (
                             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(r)} title="Edit">
                               <Pencil className="h-3.5 w-3.5" />
@@ -803,6 +828,17 @@ export function Property() {
                     />
                     Allow multi-select
                   </label>
+                  {/* v-booking-hourly — per night (stays), per hour (one unit booked
+                      many times a day), or one price per booking. */}
+                  <Select value={priceUnit} onValueChange={v => setPriceUnit(v as itemsApi.PriceUnit)} disabled={saving}>
+                    <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {itemsApi.PRICE_UNITS.map(u => <SelectItem key={u.key} value={u.key}>{u.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {priceUnit !== 'night' && (
+                    <span className="text-[11px] text-amber-700">Not on the public booking page yet</span>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -875,6 +911,9 @@ export function Property() {
        *  affordances — the operator uses the Edit button for that.
        *  Kept mounted only while `viewingRow` is set so the DOM
        *  stays lean between opens. */}
+      {unitsFor && (
+        <ResourcesDialog item={unitsFor} canWrite={canWrite} onClose={() => setUnitsFor(null)} />
+      )}
       {viewingRow && (
         <ViewPropertyDialog
           row={viewingRow}
@@ -947,6 +986,10 @@ function ViewPropertyDialog({
       sortOrder: o.sortOrder,
       gridRow: o.gridRow ?? null,
       gridCol: o.gridCol ?? null,
+      // v-booking-phase2 — undefined = leave as is on the server.
+      code: o.code ?? undefined,
+      capacity: o.capacity ?? undefined,
+      location: o.location ?? undefined,
     });
     const out: itemsApi.UpsertPaymentPlanItemOptionGroup[] = [];
     if ((row.options ?? []).length > 0) {
@@ -1028,6 +1071,10 @@ function ViewPropertyDialog({
             sortOrder: oi,
             gridRow: o.gridRow ?? null,
             gridCol: o.gridCol ?? null,
+            // v-booking-phase2 — '' / 0 clear, undefined leaves as is.
+            code: o.code ?? undefined,
+            capacity: o.capacity ?? undefined,
+            location: o.location ?? undefined,
           });
         }
         cleaned.push({
@@ -1454,7 +1501,7 @@ function GroupEditor({
             const named = (o.name ?? '').trim().length > 0;
             const priceMissing = named && (o.price == null || !(Number(o.price) >= 0));
             return (
-              <div key={o.id ?? `newgo-${idx}`} className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <div key={o.id ?? `newgo-${idx}`} className="flex items-center gap-2 flex-wrap">
                 <Input
                   value={o.name}
                   onChange={e => setOptions(list => list.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
@@ -1477,6 +1524,38 @@ function GroupEditor({
                   disabled={disabled}
                   title={priceMissing ? 'Price is required on this option' : undefined}
                 />
+                {/* v-booking-phase2 — resource fields on their own line. */}
+                <div className="basis-full flex items-center gap-2 order-last">
+                <Input
+                  value={o.code ?? ''}
+                  onChange={e => setOptions(list => list.map((x, i) => i === idx ? { ...x, code: e.target.value } : x))}
+                  placeholder="Code"
+                  maxLength={32}
+                  className="h-8 text-sm w-20"
+                  disabled={disabled}
+                  title="Unit code, unique in this property"
+                />
+                <Input
+                  type="number"
+                  min="1"
+                  value={o.capacity ? String(o.capacity) : ''}
+                  onChange={e => setOptions(list => list.map((x, i) => i === idx ? {
+                    ...x, capacity: e.target.value === '' ? 0 : Math.max(0, Math.floor(Number(e.target.value))),
+                  } : x))}
+                  placeholder="Cap."
+                  className="h-8 text-sm w-16 text-right tabular-nums"
+                  disabled={disabled}
+                  title="Capacity (people or items)"
+                />
+                <Input
+                  value={o.location ?? ''}
+                  onChange={e => setOptions(list => list.map((x, i) => i === idx ? { ...x, location: e.target.value } : x))}
+                  placeholder="Location"
+                  maxLength={120}
+                  className="h-8 text-sm flex-1 min-w-0"
+                  disabled={disabled}
+                />
+                </div>
                 <label className="inline-flex items-center gap-1.5 text-[11px] cursor-pointer shrink-0">
                   <Switch
                     checked={o.active ?? true}

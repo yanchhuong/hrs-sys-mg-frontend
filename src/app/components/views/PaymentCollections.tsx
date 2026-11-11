@@ -251,8 +251,9 @@ export function PaymentCollections() {
                         <span className="text-gray-400">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums font-medium text-emerald-700">
-                      ${formatMoney(r.amount)}
+                    {/* v-booking-phase1 — a refund is a negative line: red, −$. */}
+                    <TableCell className={`text-right tabular-nums font-medium ${Number(r.amount) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                      {Number(r.amount) < 0 ? '−' : ''}${formatMoney(Math.abs(Number(r.amount)))}
                     </TableCell>
                   </TableRow>
                 );

@@ -30,6 +30,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { SeatMapDisplay, CinemaSeatMap, parseSeatLayout, type SeatLayout } from '../common/SeatMap';
 import { BookingSchedulesDialog } from '../common/BookingSchedulesDialog';
+import { DayView } from '../booking/DayView';
 import * as bookingSchedulesApi from '../../api/bookingSchedules';
 import * as bookingTripsApi from '../../api/bookingTrips';
 
@@ -89,6 +90,8 @@ export function Bookings() {
   const [items, setItems] = useState<paymentPlanItemsApi.PaymentPlanItem[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  /** v-booking-hourly — List of bookings, or one property's Day. */
+  const [view, setView] = useState<'list' | 'day'>('list');
   /** v-booking-schedule-mvp — gear-icon Settings dialog manages
    *  time-anchored slots (Van departures, cinema showtimes). */
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -196,6 +199,15 @@ export function Bookings() {
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          {/* v-booking-hourly — List / Day. */}
+          <div className="inline-flex rounded-md border p-0.5 bg-gray-50">
+            {(['list', 'day'] as const).map(v => (
+              <button key={v} type="button" onClick={() => setView(v)}
+                className={`px-3 h-8 rounded text-sm ${view === v ? 'bg-white shadow-sm font-medium' : 'text-gray-500'}`}>
+                {v === 'list' ? 'List' : 'Day'}
+              </button>
+            ))}
+          </div>
           {/* Gear — opens the Schedules settings dialog. Sits left of
               New booking so operators can curate departure /
               showtime slots BEFORE writing bookings against them. */}
@@ -227,7 +239,16 @@ export function Bookings() {
 
       <BookingSchedulesDialog open={settingsOpen} onOpenChange={o => { setSettingsOpen(o); if (!o) void load(); }} />
 
-      <Card>
+      {view === 'day' && (
+        <DayView items={items} customers={customers} canWrite={canWrite}
+          onOpenBooking={id => {
+            if (!rows.some(r => r.id === id)) { setStatusFilter('all'); }
+            setDetailId(id);
+          }}
+          onChanged={() => { void load(); }} />
+      )}
+
+      <Card className={view === 'day' ? 'hidden' : undefined}>
         <CardHeader className="pb-3">
           {/* One filter strip, same as Transactions: search, Status
               select (was a tab row), From/To on booking date, one Clear. */}
@@ -336,7 +357,10 @@ export function Bookings() {
                           <span className="text-gray-400">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs">{formatDate(r.bookingDate)}</TableCell>
+                      <TableCell className="text-xs">
+                        {formatDate(r.bookingDate)}
+                        {r.endAt && <div className="text-[10px] text-gray-500">→ {formatDate(r.endAt.slice(0, 10))}</div>}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">${formatMoney(r.amount)}</TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className={statusBadgeClass(r.status)}>
@@ -400,7 +424,29 @@ function CreateBookingDialogContent({
   const [tripId, setTripId] = useState('');
   const [selectedOptionIds, setSelectedOptionIds] = useState<Set<string>>(new Set());
   const [amount, setAmount] = useState('');
+  /** v-booking-phase1 — typed by hand: picking seats no longer overwrites
+   *  it (the mobile rule). Picking another schedule starts over. */
+  const [amountTouched, setAmountTouched] = useState(false);
   const [bookingDate, setBookingDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  /** v-booking-phase4 — optional period (check-in → check-out, 09:00–11:00),
+   *  as datetime-local strings. Both set = the units are held for it. */
+  const [periodFrom, setPeriodFrom] = useState('');
+  const [periodTo, setPeriodTo] = useState('');
+  const period = periodFrom && periodTo && new Date(periodTo) > new Date(periodFrom)
+    ? { startAt: new Date(periodFrom).toISOString(), endAt: new Date(periodTo).toISOString() }
+    : null;
+  const nights = period ? bookingsApi.nightsBetween(periodFrom, periodTo) : 0;
+  /** v-booking-phase3 — the picked session's seats left; places for a
+   *  session without a seat map; who sits in each picked seat. */
+  const [session, setSession] = useState<bookingsApi.SessionAvailability | null>(null);
+  const [places, setPlaces] = useState('');
+  const [passengerNames, setPassengerNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!tripId) { setSession(null); return; }
+    let live = true;
+    bookingsApi.sessionAvailability(tripId).then(s => { if (live) setSession(s); }).catch(() => { if (live) setSession(null); });
+    return () => { live = false; };
+  }, [tripId]);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   /** v-new-booking-view-shape — the flat-form fallback for non-seat
@@ -483,18 +529,33 @@ function CreateBookingDialogContent({
    *  7 AM and 5 PM have independent inventories. Refetched
    *  whenever either the Item or Schedule changes. */
   const [occupiedIds, setOccupiedIds] = useState<Set<string>>(new Set());
+  /** v-booking-phase2 — units blocked (maintenance…) at this time. */
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   useEffect(() => {
-    if (!itemId) { setOccupiedIds(new Set()); return; }
+    if (!itemId) { setOccupiedIds(new Set()); setBlockedIds(new Set()); return; }
     let cancelled = false;
     // v-booking-trip-mvp — Trip scope wins over schedule scope for
     // occupancy. When the operator picks a specific trip, only
     // bookings on THAT trip paint seats grey.
-    const opts = tripId ? { tripId } : (scheduleId ? { scheduleId } : undefined);
+    const opts = period ? { startAt: period.startAt, endAt: period.endAt }
+      : tripId ? { tripId } : (scheduleId ? { scheduleId, date: bookingDate || undefined } : { date: bookingDate || undefined });
     bookingsApi.occupiedOptions(itemId, opts)
-      .then(res => { if (!cancelled) setOccupiedIds(new Set(res.occupiedOptionIds ?? [])); })
-      .catch(() => { if (!cancelled) setOccupiedIds(new Set()); });
+      .then(res => {
+        if (cancelled) return;
+        setOccupiedIds(new Set(res.occupiedOptionIds ?? []));
+        setBlockedIds(new Set(res.blockedOptionIds ?? []));
+      })
+      .catch(() => { if (!cancelled) { setOccupiedIds(new Set()); setBlockedIds(new Set()); } });
     return () => { cancelled = true; };
-  }, [itemId, scheduleId, tripId]);
+  }, [itemId, scheduleId, tripId, bookingDate, period?.startAt, period?.endAt]);
+
+  /** v-booking-phase2 — book a category: add the first free unit of a
+   *  group (the server re-checks it on save). */
+  const addAnyFree = (options: paymentPlanItemsApi.PaymentPlanItemOption[]) => {
+    const free = options.find(o => !occupiedIds.has(o.id) && !selectedOptionIds.has(o.id));
+    if (!free) { toast.error('No free units left in this category'); return; }
+    toggleOption(free);
+  };
 
   /** v-booking-seat-map — parse option names into (row, col) tuples.
    *  Delegated to the shared parser so the Property view popup can
@@ -521,12 +582,13 @@ function CreateBookingDialogContent({
    *  before any seat was picked. Total now reads cleanly as 0 until
    *  the operator actually picks something.
    */
-  const applyPricing = (picks: paymentPlanItemsApi.PaymentPlanItemOption[], _parent: paymentPlanItemsApi.PaymentPlanItem | null) => {
+  const applyPricing = (picks: paymentPlanItemsApi.PaymentPlanItemOption[], _parent: paymentPlanItemsApi.PaymentPlanItem | null, force = false) => {
+    if (amountTouched && !force) return;
     if (picks.length === 0) {
       setAmount('0');
     } else {
       const sum = picks.reduce((s, x) => s + (Number(x.price) || 0), 0);
-      setAmount(String(sum));
+      setAmount(String(nights >= 1 ? sum * nights : sum));
     }
   };
 
@@ -542,7 +604,9 @@ function CreateBookingDialogContent({
     const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     return t.tripDate < iso;
   })();
-  const canSave = Boolean(customerId) && Number(amount) >= 0 && Boolean(bookingDate) && !isPastTripSelected;
+  const capacityOnly = !!session?.capacityOnly;
+  const canSave = Boolean(customerId) && Number(amount) >= 0 && Boolean(bookingDate) && !isPastTripSelected
+    && (!capacityOnly || Number(places) >= 1);
 
   const handleSave = async () => {
     if (!canSave) return;
@@ -577,8 +641,15 @@ function CreateBookingDialogContent({
         tripId: tripId || null,
         selectedOptionIds: Array.from(selectedOptionIds),
         amount: Number(amount) || 0,
-        bookingDate,
+        bookingDate: period ? periodFrom.slice(0, 10) : bookingDate,
         notes: notesToSave,
+        ...(period ? { startAt: period.startAt, endAt: period.endAt } : {}),
+        // v-booking-phase3
+        ...(capacityOnly ? { seats: Math.floor(Number(places)) } : {}),
+        ...(Object.values(passengerNames).some(v => v.trim())
+          ? { passengers: Object.fromEntries(Object.entries(passengerNames)
+              .filter(([id, v]) => selectedOptionIds.has(id) && v.trim())) }
+          : {}),
       });
       toast.success('Booking created');
       onSaved();
@@ -636,7 +707,8 @@ function CreateBookingDialogContent({
             const nextItemId = sched?.itemId ?? '';
             setItemId(nextItemId);
             const picked = nextItemId ? items.find(i => i.id === nextItemId) ?? null : null;
-            applyPricing([], picked);
+            setAmountTouched(false);
+            applyPricing([], picked, true);
           }}
           options={schedules.filter(s => s.active).map(s => {
             const item = items.find(i => i.id === s.itemId);
@@ -663,6 +735,68 @@ function CreateBookingDialogContent({
           disabled={schedules.length === 0}
         />
       </div>
+
+      {/* v-booking-phase2 — book a category: one tap adds its next free
+          unit, on the seat map and the list alike. The server re-checks. */}
+      {/* v-booking-phase3 — how full the session is; book places when there
+          is no seat map. */}
+      {session && (
+        <div className="flex flex-wrap items-center gap-3 mb-2 text-xs">
+          <span className={`rounded-full px-2.5 py-1 font-medium ${session.available === 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>
+            {session.available} of {session.capacity} {capacityOnly ? 'places' : 'seats'} left
+          </span>
+          {session.held > 0 && <span className="text-amber-700">{session.held} held</span>}
+          {capacityOnly && (
+            <span className="inline-flex items-center gap-2">
+              <Label className="text-xs">Places</Label>
+              <Input type="number" min={1} max={session.available || undefined} value={places}
+                onChange={e => {
+                  setPlaces(e.target.value);
+                  const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                  setAmount(String((Number(pickedItem?.price) || 0) * n));
+                }}
+                className="h-8 w-20 tabular-nums" />
+            </span>
+          )}
+        </div>
+      )}
+
+      {pickedItem && (pickedItemOptionsByGroup.groups.length > 0 || pickedItemOptionsByGroup.ungrouped.length > 0) && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {pickedItemOptionsByGroup.ungrouped.length > 0 && (() => {
+            const free = pickedItemOptionsByGroup.ungrouped.filter(o => !occupiedIds.has(o.id) && !selectedOptionIds.has(o.id)).length;
+            return (
+              <Button type="button" size="sm" variant="outline" className="h-7 text-xs"
+                disabled={free === 0} onClick={() => addAnyFree(pickedItemOptionsByGroup.ungrouped)}>
+                <Plus className="h-3 w-3 mr-1" /> Any seat · {free} free
+              </Button>
+            );
+          })()}
+          {pickedItemOptionsByGroup.groups.map(({ group, options }) => {
+            const free = options.filter(o => !occupiedIds.has(o.id) && !selectedOptionIds.has(o.id)).length;
+            return (
+              <Button key={group.id} type="button" size="sm" variant="outline" className="h-7 text-xs"
+                disabled={free === 0} onClick={() => addAnyFree(options)}>
+                <Plus className="h-3 w-3 mr-1" /> {group.name} · {free} free
+              </Button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* v-booking-phase3 — who sits where (optional). */}
+      {tripId && pickedOptionsList.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {pickedOptionsList.map(o => (
+            <label key={o.id} className="inline-flex items-center gap-1.5 text-xs">
+              <span className="font-medium text-gray-600 tabular-nums">{o.name}</span>
+              <Input value={passengerNames[o.id] ?? ''} placeholder="Passenger" maxLength={160}
+                onChange={e => setPassengerNames(p => ({ ...p, [o.id]: e.target.value }))}
+                className="h-7 w-36 text-xs" />
+            </label>
+          ))}
+        </div>
+      )}
 
       {!pickedItem ? (
         // v-new-booking-empty-shell — keep the dialog at full
@@ -728,7 +862,7 @@ function CreateBookingDialogContent({
           </div>
           <div className="space-y-1">
             <Label>Amount <span className="text-red-500">*</span></Label>
-            <NumericInput value={amount} onChange={setAmount}
+            <NumericInput value={amount} onChange={v => { setAmount(v); setAmountTouched(true); }}
               className="text-right tabular-nums" placeholder="0.00" />
           </div>
           <div className="space-y-1">
@@ -769,6 +903,10 @@ function CreateBookingDialogContent({
           saving={saving}
           canSave={Boolean(canSave)}
           isPastTripSelected={isPastTripSelected}
+          periodFrom={periodFrom}
+          periodTo={periodTo}
+          nights={nights}
+          onPeriodChange={(f, t) => { setPeriodFrom(f); setPeriodTo(t); }}
         />
       ) : (
         // Non-seat property with options (Rooms/Trims): keep the
@@ -792,6 +930,7 @@ function CreateBookingDialogContent({
                     key={o.id}
                     o={o}
                     checked={selectedOptionIds.has(o.id)}
+                    blocked={blockedIds.has(o.id)}
                     disabled={occupiedIds.has(o.id)}
                     mode={pickedItem.selectMode}
                     itemId={pickedItem.id}
@@ -802,13 +941,18 @@ function CreateBookingDialogContent({
             )}
             {pickedItemOptionsByGroup.groups.map(({ group, options }) => (
               <div key={group.id} className="space-y-1.5">
-                <div className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
-                  {group.name}
-                  {group.description && (
-                    <span className="ml-1 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
-                      — {group.description}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">
+                    {group.name}
+                    {group.description && (
+                      <span className="ml-1 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
+                        — {group.description}
+                      </span>
+                    )}
+                    <span className="ml-1.5 text-[10px] font-normal text-gray-500 normal-case tracking-normal">
+                      · {options.filter(o => !occupiedIds.has(o.id)).length} free
                     </span>
-                  )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                   {options.map(o => (
@@ -816,6 +960,7 @@ function CreateBookingDialogContent({
                       key={o.id}
                       o={o}
                       checked={selectedOptionIds.has(o.id)}
+                      blocked={blockedIds.has(o.id)}
                       disabled={occupiedIds.has(o.id)}
                       mode={pickedItem.selectMode}
                       itemId={pickedItem.id}
@@ -833,6 +978,8 @@ function CreateBookingDialogContent({
                   <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 min-w-[64px]">Date</Label>
                   <div className="flex-1"><DateInput value={bookingDate} onChange={setBookingDate} /></div>
                 </div>
+                <PeriodInputs from={periodFrom} to={periodTo} nights={nights}
+                  onChange={(f, t) => { setPeriodFrom(f); setPeriodTo(t); }} />
               </div>
             </div>
             <div className="rounded-xl border bg-white p-3">
@@ -905,7 +1052,7 @@ function CreateBookingDialogContent({
 
 function SeatMapPanel({
   layout, isCinema, property, selectedIds, occupiedIds, pickedList, amount,
-  bookingDate, onDateChange,
+  bookingDate, onDateChange, periodFrom, periodTo, nights, onPeriodChange,
   schedules, tripsForSchedule, scheduleId, onScheduleChange, tripId, onTripChange,
   customers, customerId, onCustomerChange,
   onToggle,
@@ -942,6 +1089,11 @@ function SeatMapPanel({
    *  historical (view-only). Renders the "not bookable" hint
    *  above Create booking. */
   isPastTripSelected: boolean;
+  /** v-booking-phase4 */
+  periodFrom: string;
+  periodTo: string;
+  nights: number;
+  onPeriodChange: (from: string, to: string) => void;
 }) {
   // v-session-picker-date-format — Session dropdown formats trip
   // dates using the app-wide user format (matches the Date field
@@ -997,6 +1149,8 @@ function SeatMapPanel({
               <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 min-w-[64px]">Date</Label>
               <div className="flex-1"><DateInput value={bookingDate} onChange={onDateChange} /></div>
             </div>
+            {/* A session sets the time; a period is for bookings without one. */}
+            {!tripId && <PeriodInputs from={periodFrom} to={periodTo} nights={nights} onChange={onPeriodChange} />}
             {/* Schedule row removed — the top-level picker on the
                 dialog already carries this. Session picker below
                 still surfaces here since it's schedule-scoped. */}
@@ -1140,14 +1294,18 @@ function BookingDetailDialog({
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  /** v-booking-phase1 — Mark as Paid asks how it was paid. */
+  const [payOpen, setPayOpen] = useState(false);
+  const [payMethod, setPayMethod] = useState('cash');
   const confirm = useConfirm();
   const { formatDate } = useDateFormat();
   const picks = (item?.options ?? []).filter(o => booking.selectedOptionIds.includes(o.id));
 
-  const doTransition = async (target: bookingsApi.BookingStatus, verb: string) => {
+  const doTransition = async (target: bookingsApi.BookingStatus, verb: string, method?: string) => {
     // Cancel / Refund undo the booking → destructive styling.
     const destructive = target === 'cancelled' || target === 'refunded';
-    if (!(await confirm({
+    // Paying is confirmed by the method picker itself.
+    if (target !== 'paid' && !(await confirm({
       title: `${verb} booking ${booking.bookingNo}?`,
       confirmLabel: verb === 'Mark paid on' ? 'Mark as Paid' : verb,
       cancelLabel: 'Back',
@@ -1155,7 +1313,7 @@ function BookingDetailDialog({
     }))) return;
     setBusy(true);
     try {
-      await bookingsApi.setStatus(booking.id, target);
+      await bookingsApi.setStatus(booking.id, target, target === 'paid' ? method : undefined);
       toast.success(`Booking ${target}`);
       onChanged();
       onClose();
@@ -1211,7 +1369,30 @@ function BookingDetailDialog({
             </div>
           )}
           <div><Label className="text-xs">Amount</Label><div className="tabular-nums font-semibold">${formatMoney(booking.amount)}</div></div>
-          <div><Label className="text-xs">Paid Date</Label><div>{booking.paidDate ? formatDate(booking.paidDate) : <span className="text-gray-400">—</span>}</div></div>
+          <div><Label className="text-xs">Paid Date</Label><div>{booking.paidDate
+            ? <>{formatDate(booking.paidDate)}{booking.paymentMethod && <span className="text-gray-500"> · {bookingsApi.paymentMethodLabel(booking.paymentMethod)}</span>}</>
+            : <span className="text-gray-400">—</span>}</div></div>
+          {booking.refundedAt && (
+            <div><Label className="text-xs">Refunded</Label><div>{formatDate(booking.refundedAt.slice(0, 10))}</div></div>
+          )}
+          {payOpen && (
+            <div className="col-span-2 rounded-lg border p-3 space-y-2">
+              <Label className="text-xs">Paid by</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {bookingsApi.PAYMENT_METHODS.map(m => (
+                  <Button key={m.key} type="button" size="sm"
+                    variant={payMethod === m.key ? 'default' : 'outline'}
+                    onClick={() => setPayMethod(m.key)}>{m.label}</Button>
+                ))}
+              </div>
+              <div className="flex justify-end gap-1.5">
+                <Button variant="ghost" size="sm" onClick={() => setPayOpen(false)} disabled={busy}>Back</Button>
+                <Button size="sm" onClick={() => doTransition('paid', 'Mark paid on', payMethod)} disabled={busy}>
+                  <DollarSign className="h-3.5 w-3.5 mr-1.5" /> Record ${formatMoney(booking.amount)}
+                </Button>
+              </div>
+            </div>
+          )}
           {booking.notes && (
             <div className="col-span-2"><Label className="text-xs">Notes</Label><div className="text-xs text-gray-700 whitespace-pre-wrap">{booking.notes}</div></div>
           )}
@@ -1222,8 +1403,8 @@ function BookingDetailDialog({
               <CheckCircle2 className="h-3.5 w-3.5 mr-1.5 text-blue-600" /> Confirm
             </Button>
           )}
-          {canWrite && canPay && (
-            <Button onClick={() => doTransition('paid', 'Mark paid on')} disabled={busy}>
+          {canWrite && canPay && !payOpen && (
+            <Button onClick={() => setPayOpen(true)} disabled={busy}>
               <DollarSign className="h-3.5 w-3.5 mr-1.5" /> Mark as Paid
             </Button>
           )}
@@ -1254,11 +1435,13 @@ function BookingDetailDialog({
  *  stay pixel-identical (single-select radio vs multi checkbox,
  *  occupied styling, price alignment). */
 function OptionPickRow({
-  o, checked, disabled, mode, itemId, onToggle,
+  o, checked, disabled, blocked = false, mode, itemId, onToggle,
 }: {
   o: paymentPlanItemsApi.PaymentPlanItemOption;
   checked: boolean;
   disabled: boolean;
+  /** v-booking-phase2 — under maintenance / blocked at this time. */
+  blocked?: boolean;
   mode: paymentPlanItemsApi.PaymentPlanItemSelectMode;
   itemId: string;
   onToggle: () => void;
@@ -1281,10 +1464,37 @@ function OptionPickRow({
           className="shrink-0"
         />
         <span className={`truncate ${disabled ? 'line-through text-gray-400' : ''}`}>{o.name}</span>
+        {blocked && <span className="shrink-0 rounded bg-amber-100 px-1 text-[10px] text-amber-700">Blocked</span>}
+        {!blocked && disabled && <span className="shrink-0 text-[10px] text-gray-400">Booked</span>}
       </span>
       <span className="tabular-nums text-gray-700 shrink-0">
         {o.price == null ? '—' : `$${Number(o.price).toFixed(2)}`}
       </span>
     </label>
+  );
+}
+
+/** v-booking-phase4 — optional From / To (date + time). Both set = the
+ *  booking holds its units for that period; the server re-checks it. */
+function PeriodInputs({ from, to, nights, onChange }: {
+  from: string; to: string; nights: number;
+  onChange: (from: string, to: string) => void;
+}) {
+  const bad = from && to && new Date(to) <= new Date(from);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 min-w-[64px]">From</Label>
+        <Input type="datetime-local" value={from} onChange={e => onChange(e.target.value, to)} className="h-8 flex-1" />
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <Label className="text-[10px] font-semibold tracking-wide uppercase text-gray-500 min-w-[64px]">To</Label>
+        <Input type="datetime-local" value={to} onChange={e => onChange(from, e.target.value)}
+          className={`h-8 flex-1 ${bad ? 'border-red-400' : ''}`} />
+      </div>
+      {from && to && !bad && nights >= 1 && (
+        <div className="text-[11px] text-gray-500 text-right">{nights} night{nights === 1 ? '' : 's'}</div>
+      )}
+    </div>
   );
 }

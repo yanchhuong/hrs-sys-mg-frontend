@@ -35,6 +35,8 @@ export interface BookingTrip {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** v-booking-phase3 — places a capacity-only session sells (no seat map). */
+  capacity?: number | null;
 }
 
 export interface UpsertBookingTrip {
@@ -45,6 +47,8 @@ export interface UpsertBookingTrip {
   sessionType?: SessionType;
   active?: boolean;
   notes?: string | null;
+  /** v-booking-phase3 — 0 clears; omitted leaves as is. */
+  capacity?: number;
 }
 
 export function list(scheduleId?: string): Promise<BookingTrip[]> {

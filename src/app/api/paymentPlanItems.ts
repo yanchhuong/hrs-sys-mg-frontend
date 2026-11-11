@@ -54,6 +54,11 @@ export interface PaymentPlanItemOption {
    *  name-parsing. Both non-null pins the seat to that cell. */
   gridRow?: number | null;
   gridCol?: number | null;
+  /** v-booking-phase2 — resource fields: code (unique per property),
+   *  capacity (people / units), location (floor, building). */
+  code?: string | null;
+  capacity?: number | null;
+  location?: string | null;
 }
 
 export interface UpsertPaymentPlanItemOption {
@@ -70,6 +75,10 @@ export interface UpsertPaymentPlanItemOption {
    *  to leave it unplaced. */
   gridRow?: number | null;
   gridCol?: number | null;
+  /** v-booking-phase2 — omitted / null = leave as is; '' / 0 = clear. */
+  code?: string | null;
+  capacity?: number | null;
+  location?: string | null;
 }
 
 /** V298 — optional group layer between a Property and its options.
@@ -121,6 +130,8 @@ export interface PaymentPlanItem {
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  /** v-booking-hourly — what a unit's price covers when booked for a period. */
+  priceUnit?: PriceUnit;
 }
 
 export interface UpsertPaymentPlanItem {
@@ -146,6 +157,8 @@ export interface UpsertPaymentPlanItem {
    *  deleted unless re-listed under `options` as ungrouped). */
   optionGroups?: UpsertPaymentPlanItemOptionGroup[];
   active?: boolean;
+  /** v-booking-hourly — omitted = leave as is. */
+  priceUnit?: PriceUnit;
 }
 
 /** All items for the tenant (optionally filtered by plan type). */
@@ -170,3 +183,12 @@ export function update(id: string, req: UpsertPaymentPlanItem): Promise<PaymentP
 export function remove(id: string): Promise<void> {
   return apiVoid(`/api/v1/payment-plan-items/${id}`, { method: 'DELETE' });
 }
+
+/** v-booking-hourly — per night (stays), per hour (meeting rooms, courts),
+ *  or one price per booking. */
+export type PriceUnit = 'night' | 'hour' | 'booking';
+export const PRICE_UNITS: { key: PriceUnit; label: string }[] = [
+  { key: 'night', label: 'Per night' },
+  { key: 'hour', label: 'Per hour' },
+  { key: 'booking', label: 'Per booking' },
+];

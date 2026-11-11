@@ -37,6 +37,8 @@ interface FormState {
   sessionType: bookingTripsApi.SessionType;
   active: boolean;
   notes: string;
+  /** v-booking-phase3 — places for a session without a seat map ('' = none). */
+  capacity: string;
   /** v-session-frequency — false = one-off session on a specific
    *  date (current behaviour). true = repeat across the schedule's
    *  slots between `tripDate` (Start) and `endDate` (End). */
@@ -87,7 +89,7 @@ function isoDayOfWeek(iso: string): number {
 export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, items, onSaved }: Props) {
   const [form, setForm] = useState<FormState>({
     scheduleId: '', tripDate: todayIso(), departureTime: '08:00', endTime: '',
-    sessionType: 'trip', active: true, notes: '',
+    sessionType: 'trip', active: true, notes: '', capacity: '',
     frequency: false, endDate: '',
   });
   const [saving, setSaving] = useState(false);
@@ -106,6 +108,7 @@ export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, i
         departureTime: editing.departureTime.slice(0, 5),
         endTime: editing.endTime ? editing.endTime.slice(0, 5) : '',
         sessionType: editing.sessionType ?? 'trip',
+        capacity: editing.capacity ? String(editing.capacity) : '',
         active: editing.active,
         notes: editing.notes ?? '',
         // v-session-frequency — editing a session is always one-off
@@ -126,6 +129,7 @@ export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, i
         departureTime: (schedules[0]?.slots?.[0]?.fromTime ?? '08:00').slice(0, 5),
         endTime: '',
         sessionType: 'trip',
+        capacity: '',
         active: true,
         notes: '',
         frequency: false,
@@ -210,6 +214,7 @@ export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, i
             sessionType: form.sessionType,
             active: form.active,
             notes: form.notes.trim() || null,
+            ...(Number(form.capacity) > 0 ? { capacity: Math.floor(Number(form.capacity)) } : {}),
           });
           created++;
         }
@@ -223,6 +228,7 @@ export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, i
           sessionType: form.sessionType,
           active: form.active,
           notes: form.notes.trim() || null,
+          capacity: Number(form.capacity) > 0 ? Math.floor(Number(form.capacity)) : 0,
         };
         if (editing) {
           await bookingTripsApi.update(editing.id, payload);
@@ -464,6 +470,15 @@ export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, i
                 </div>
               </>
             )}
+          </div>
+
+          {/* v-booking-phase3 — for a session without a seat map (a workshop,
+              a general-admission event): how many places it sells. */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Places <span className="text-gray-400 font-normal">(no seat map)</span></Label>
+            <Input type="number" min={1} value={form.capacity}
+              onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))}
+              placeholder="Uses the seats" className="w-40 tabular-nums" />
           </div>
 
           <div className="space-y-1.5">
