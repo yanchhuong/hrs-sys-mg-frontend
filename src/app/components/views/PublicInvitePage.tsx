@@ -14,12 +14,18 @@
  * is one duplicate, not a broken page, so it is not worth more than
  * this.
  */
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { CalendarX, CheckCircle2, Loader2 } from 'lucide-react';
 import * as api from '../../api/announcements';
 import { EventCard, RsvpChoices, RESPONSE_META } from '../common/announcement/EventPanel';
-import { CoverGallery, coverList } from '../common/announcement/CoverGallery';
+import { CoverGallery, inviteCovers } from '../common/announcement/CoverGallery';
+// v-invite-wedding — the wedding look is its own page, lazily loaded:
+// it pulls in the motion runtime, and a company all-hands invite
+// should not pay for that.
+import { lazyWithReload } from '../../utils/lazyWithReload';
+const WeddingInvite = lazyWithReload(() =>
+  import('./invite/WeddingInvite').then(m => ({ default: m.WeddingInvite })));
 
 const tokenFromPath = () =>
   decodeURIComponent(window.location.pathname.replace(/^\/invite\//, '').split('/')[0] || '');
@@ -95,6 +101,21 @@ export function PublicInvitePage() {
     }
   };
 
+  // v-invite-wedding — eventKind has always described itself as "the
+  // invitation's look"; this is the first look that is more than a
+  // chip colour. Every other kind keeps the plain card below, so a
+  // company event never acquires wedding ornament.
+  if (data && data.kind === 'WEDDING') {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-[#FBF7F2]" />}>
+        <WeddingInvite
+          data={data} name={name} onName={setName} answer={answer}
+          done={done} saving={saving} onSubmit={r => void submit(r)}
+        />
+      </Suspense>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex justify-center sm:px-3 sm:py-10">
       <div className="w-full max-w-md">
@@ -110,7 +131,17 @@ export function PublicInvitePage() {
           // v-event-gallery — on a phone the card fills the screen and the
           // photos run edge to edge; the company name is left out.
           <div className="bg-white sm:rounded-2xl sm:shadow-sm sm:border overflow-hidden min-h-screen sm:min-h-0">
-            <CoverGallery urls={coverList(data)} />
+            {/* v-invite-cover — photos, else the shared bulletin plate,
+                else a drawn band tinted by kind. Never an empty gap: an
+                invitation that opens on nothing reads as a failed image
+                rather than as a plain card. Mobile draws the same. */}
+            {inviteCovers(data).length > 0
+              ? <CoverGallery urls={inviteCovers(data)} />
+              : (
+                <div className={'flex h-28 items-center justify-center border-b ' + api.kindMeta(data.kind).chip}>
+                  <span className="text-4xl" aria-hidden>{api.kindMeta(data.kind).emoji}</span>
+                </div>
+              )}
             <div className="p-4 space-y-4">
             <EventCard kind={data.kind} title={data.title} coverUrl={null} date={null} startTime={null} endTime={null}
               location={null} organizer={null} />

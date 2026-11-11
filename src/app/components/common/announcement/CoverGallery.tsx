@@ -91,3 +91,24 @@ export function CoverGallery({ urls, className = '' }: {
 /** Every photo of an event — the list, or the single cover from an older API. */
 export const coverList = (e: { coverUrl: string | null; coverUrls?: string[] | null } | null | undefined): string[] =>
   !e ? [] : e.coverUrls && e.coverUrls.length ? e.coverUrls : e.coverUrl ? [e.coverUrl] : [];
+
+/**
+ * v-invite-cover — what goes on an invitation cover, in order:
+ *
+ *   1. the uploaded photos or GIFs,
+ *   2. failing that, the rendered bulletin plate (V147), if the event
+ *      uses the rich template,
+ *   3. failing that, nothing — and the caller draws its own default
+ *      rather than leaving a blank band.
+ *
+ * Photos beat the plate deliberately. Someone who uploaded a picture
+ * of the couple meant that to BE the invitation; the plate is the
+ * fallback, not the headline.
+ */
+export const inviteCovers = (
+  e: { coverUrl: string | null; coverUrls?: string[] | null; templateUrl?: string | null } | null | undefined,
+): string[] => {
+  const photos = coverList(e);
+  if (photos.length) return photos;
+  return e?.templateUrl ? [e.templateUrl] : [];
+};

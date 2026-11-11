@@ -232,6 +232,9 @@ export interface PublicRsvp {
   coverUrl: string | null;
   /** v-event-gallery — every photo, the cover first. */
   coverUrls?: string[];
+  /** v-invite-cover — the rendered bulletin plate (V147), when this
+   *  event uses one. Falls in behind any uploaded photo. */
+  templateUrl?: string | null;
   date: string | null;
   startTime: string | null;
   endTime: string | null;
