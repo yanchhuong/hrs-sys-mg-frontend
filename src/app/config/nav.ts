@@ -102,6 +102,7 @@ const ReadingTracking        = lazyView(() => import('../components/views/librar
 const Attendances            = lazyView(() => import('../components/views/Attendances'),            'Attendances');
 const Appointments           = lazyView(() => import('../components/views/Appointments'),           'Appointments');
 const StockAdjustments       = lazyView(() => import('../components/views/StockAdjustments'),       'StockAdjustments');
+const StockCounts            = lazyView(() => import('../components/views/StockCounts'),            'StockCounts');
 const Consignment            = lazyView(() => import('../components/views/Consignment'),            'Consignment');
 const Announcements          = lazyView(() => import('../components/views/Announcements'),          'Announcements');
 const SaleLedger             = lazyView(() => import('../components/views/LedgerReport'),           'SaleLedger');
@@ -266,6 +267,10 @@ export const NAV_LEAVES: NavLeaf[] = [
   { id: 'items',             labelKey: 'nav.items',                  icon: Package,         module: 'stock',              component: Items,                    group: 'stock-group' },
   { id: 'stock-movement',    labelKey: 'nav.stock.movement',         icon: History,         module: 'movement',           component: StockMovements,           group: 'stock-group' },
   { id: 'stock-adjustment',  labelKey: 'nav.stock.adjustment',       icon: ClipboardEdit,   module: 'adjustment',         component: StockAdjustments,         group: 'stock-group' },
+  // v-stock-count-phase1 — physical verification. Sits after
+  // Adjustment because that is the order of the work: you count, then
+  // approving the count produces the adjustment.
+  { id: 'stock-count',       labelKey: 'nav.stock.count',            icon: ClipboardCheck,  module: 'stock_count',        component: StockCounts,              group: 'stock-group' },
   { id: 'transactions',      labelKey: 'nav.cashflow.transactions',  icon: ArrowLeftRight,  module: 'transaction',        component: Transactions,             group: 'cashflow-group' },
   { id: 'cash-advances',     labelKey: 'nav.cashflow.advance',       icon: Banknote,        module: 'cashadvance',        component: CashAdvances,             group: 'cashflow-group' },
   // Hospital Business Base leaves (V181 / v-hospital-fe +

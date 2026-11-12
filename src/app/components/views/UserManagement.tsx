@@ -218,6 +218,11 @@ const MODULES: ModuleDef[] = [
   { key: 'stock',             label: 'Items',             description: 'Sellable products / services catalog',                        parent: 'stock-group' },
   { key: 'movement',          label: 'Movement',          description: 'Append-only history of every IN / OUT / Adjustment',          parent: 'stock-group' },
   { key: 'adjustment',        label: 'Adjustment',        description: 'Manual stock corrections (damaged / lost / counting error)',  parent: 'stock-group' },
+  // Stock Count (V410). The four menu actions mean something specific
+  // here: Update = enter quantities + submit (counting staff), Create =
+  // start a count AND approve it (posts the adjustments), so only
+  // grant Create to roles trusted to move stock.
+  { key: 'stock_count',       label: 'Stock Count',       description: 'Physical counts. Update = count & submit; Create = start & approve (posts adjustments)', parent: 'stock-group' },
 
   // Cash Flow group (V155 / V156). One leaf for now — Transactions
   // is the unified ledger; Cash Advance + Internal Transfer ship in

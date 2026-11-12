@@ -27,7 +27,7 @@ export type PermissionModule =
   | 'customer' | 'quotation' | 'invoice' | 'pos' | 'voucher' | 'payment'
   | 'vendor' | 'bill' | 'receipt' | 'expenses' | 'sales'
   // Stock (V150)
-  | 'stock' | 'movement' | 'adjustment'
+  | 'stock' | 'movement' | 'adjustment' | 'stock_count'
   // Cash Flow (V156 / V158)
   | 'transaction' | 'cashadvance'
   // Business-base verticals — Healthcare (V181), Education (V181),

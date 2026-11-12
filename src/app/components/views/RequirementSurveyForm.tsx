@@ -16,7 +16,7 @@ import {
   DollarSign, Calculator, TrendingUp, Minus,
   UserCheck, ReceiptText, ShoppingCart,
   FileMinus,
-  Package, History, ClipboardEdit,
+  Package, History, ClipboardEdit, ClipboardCheck,
   ArrowLeftRight, Banknote,
   BarChart3,
   type LucideIcon,
@@ -127,6 +127,7 @@ const APP_GROUPS: {
       { code: 'stock',      label: 'Items',             icon: Package,       tone: T_INDIGO },
       { code: 'movement',   label: 'Stock Movements',   icon: History,       tone: T_BLUE   },
       { code: 'adjustment', label: 'Stock Adjustments', icon: ClipboardEdit, tone: T_AMBER  },
+      { code: 'stock_count', label: 'Stock Counts',     icon: ClipboardCheck, tone: T_TEAL  },
     ],
   },
   {

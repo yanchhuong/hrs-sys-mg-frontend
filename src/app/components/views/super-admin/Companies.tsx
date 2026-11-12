@@ -171,6 +171,7 @@ const INSTALL_GROUPS: Array<{ label: string; modules: Array<{ key: string; label
     { key: 'stock',       label: 'Items' },
     { key: 'movement',    label: 'Movement' },
     { key: 'adjustment',  label: 'Adjustment' },
+    { key: 'stock_count', label: 'Stock Count' },
     { key: 'consignment', label: 'Consignment' },
   ] },
   { label: 'Cash Flow', modules: [
