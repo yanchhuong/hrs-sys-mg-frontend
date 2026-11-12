@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useMemo, useCallback } from 'react';
+import { memo, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { mockUsers, mockEmployees, mockDepartments } from '../../data/mockData';
 import { Employee, User, UserRole } from '../../types/hrms';
@@ -63,7 +63,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   Users, UserPlus, Edit, Trash2, Shield, UserCheck, UserX, Key, Lock,
-  Save, AlertTriangle, ChevronsUpDown, Check, Info, Mail, KeyRound,
+  Save, AlertTriangle, ChevronsUpDown, Check, Info, Mail, KeyRound, RotateCcw,
 } from 'lucide-react';
 import { Textarea } from '../ui/textarea';
 import { toast } from 'sonner';
@@ -1359,6 +1359,88 @@ export function UserManagement() {
     }));
   }, []);
 
+  /* ---------------- Reset to default (V412) ----------------
+   * Per role (header icon) and per module (row icon). Both only rewrite
+   * the DRAFT — the admin sees the change, then Save Changes or Discard
+   * Changes as for any other edit. Defaults come from the server's
+   * canonical table, fetched once per role and cached for the session;
+   * a custom role resolves to its base role's defaults server-side. */
+  const defaultsCache = useRef(new Map<string, Map<string, Partial<Record<Action, boolean>>>>());
+  // Latest draft for change-counting without making the reset callbacks
+  // depend on `permissions` (which would defeat ModuleRow's memo).
+  const permissionsRef = useRef(permissions);
+  permissionsRef.current = permissions;
+
+  const loadDefaults = useCallback(async (roleKeys: string[]) => {
+    const missing = roleKeys.filter(k => !defaultsCache.current.has(k));
+    await Promise.all(missing.map(async k => {
+      const rows = await rolesApi.getPermissionDefaults(k);
+      const byModule = new Map<string, Partial<Record<Action, boolean>>>();
+      for (const r of rows) {
+        const m = byModule.get(r.module) ?? {};
+        m[r.action as Action] = !!r.granted;
+        byModule.set(r.module, m);
+      }
+      defaultsCache.current.set(k, byModule);
+    }));
+  }, []);
+
+  /** Overwrite (module × role) cells with their defaults; returns how
+   *  many checkboxes actually changed so the toast can say so. */
+  const applyDefaults = useCallback((moduleKeys: string[], roleKeys: string[]): number => {
+    const cur = permissionsRef.current;
+    let changed = 0;
+    const patch: PermissionMatrix = {};
+    for (const mk of moduleKeys) {
+      for (const rk of roleKeys) {
+        const def = defaultsCache.current.get(rk)?.get(mk) ?? {};
+        const before = cur[mk]?.[rk];
+        const after = ACTIONS.reduce(
+          (acc, a) => ({ ...acc, [a]: !!def[a] }), {} as Record<Action, boolean>);
+        if (ACTIONS.some(a => !!before?.[a] !== after[a])) {
+          changed += ACTIONS.filter(a => !!before?.[a] !== after[a]).length;
+          patch[mk] = { ...(patch[mk] ?? cur[mk] ?? {}), [rk]: after };
+        }
+      }
+    }
+    if (changed > 0) setPermissions(prev => ({ ...prev, ...patch }));
+    return changed;
+  }, []);
+
+  /** Real permission rows only — headers and inherited rows have no
+   *  backend grant (same filter as handleSavePermissions). */
+  const resettableModuleKeys = useMemo(
+    () => MODULES.filter(m => !m.header && !m.inheritsFromLabel).map(m => m.key), []);
+
+  const resetToDefault = useCallback(async (
+    moduleKeys: string[], roleKeys: string[], what: string,
+  ) => {
+    if (USE_MOCKS) { toast.info('Reset to default needs the live API'); return; }
+    try {
+      await loadDefaults(roleKeys);
+      const n = applyDefaults(moduleKeys, roleKeys);
+      if (n === 0) toast.info(`${what} is already at default`);
+      else toast.success(`${what} reset to default — ${n} change${n === 1 ? '' : 's'}. Review, then Save Changes.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not load default permissions');
+    }
+  }, [loadDefaults, applyDefaults]);
+
+  const resetRole = useCallback((role: RoleDef) => {
+    void resetToDefault(resettableModuleKeys, [role.key], role.name);
+  }, [resetToDefault, resettableModuleKeys]);
+
+  // One app × one role — the "Reset" link beside Grant all / Clear.
+  // Stable (no state deps) so ModuleRow's memo still skips untouched rows.
+  const resetCell = useCallback((mod: ModuleDef, role: RoleDef) => {
+    void resetToDefault([mod.key], [role.key], `${mod.label} for ${role.name}`);
+  }, [resetToDefault]);
+
+  /** Every app × every editable role — the toolbar button. */
+  const resetAll = useCallback(() => {
+    void resetToDefault(resettableModuleKeys, nonAdminRoles.map(r => r.key), 'All roles');
+  }, [resetToDefault, resettableModuleKeys, nonAdminRoles]);
+
   const handleSavePermissions = async () => {
     if (USE_MOCKS) {
       toast.success('Permissions saved');
@@ -2228,6 +2310,16 @@ export function UserManagement() {
                   </CardTitle>
                 </div>
                 <div className="flex gap-2">
+                  {/* Whole matrix back to defaults (draft only — Save to
+                      keep, Discard to undo). Mock mode already labels
+                      the button beside it "Reset to Defaults". */}
+                  {!USE_MOCKS && (
+                    <Button variant="outline" onClick={resetAll}
+                            title="Every role, every app back to default. Review, then Save Changes.">
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      Reset All to Default
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => handleResetPermissions()}>
                     {USE_MOCKS ? 'Reset to Defaults' : 'Discard Changes'}
                   </Button>
@@ -2249,6 +2341,20 @@ export function UserManagement() {
                           <div className="flex items-center justify-center gap-1.5">
                             <role.icon className={`h-3.5 w-3.5 ${role.iconColor}`} />
                             {role.name}
+                            {/* Reset this whole column to the role's
+                                defaults (custom roles: their base
+                                role's). Draft only — Save to keep. */}
+                            <button
+                              type="button"
+                              onClick={() => resetRole(role)}
+                              className="ml-0.5 rounded p-0.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                              title={role.builtIn
+                                ? `Reset ${role.name} to default permissions`
+                                : `Reset ${role.name} to its base role's default permissions`}
+                              aria-label={`Reset ${role.name} to default permissions`}
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                            </button>
                           </div>
                           {/* Two grouped header rows. The 4 menu cells +
                               3 gaps below total 9rem; the 3 data cells +
@@ -2281,6 +2387,7 @@ export function UserManagement() {
                         modulePermissions={permissions[mod.key]}
                         onToggle={togglePermission}
                         onToggleAll={toggleAllForRoleModule}
+                        onReset={resetCell}
                       />
                     ))}
                   </TableBody>
@@ -2465,13 +2572,15 @@ export function UserManagement() {
  * references from the parent for the same reason.
  */
 const ModuleRow = memo(function ModuleRow({
-  mod, nonAdminRoles, modulePermissions, onToggle, onToggleAll,
+  mod, nonAdminRoles, modulePermissions, onToggle, onToggleAll, onReset,
 }: {
   mod: ModuleDef;
   nonAdminRoles: RoleDef[];
   modulePermissions: Record<string, Record<Action, boolean>> | undefined;
   onToggle: (moduleKey: string, role: string, action: Action) => void;
   onToggleAll: (moduleKey: string, role: string, value: boolean) => void;
+  /** Reset this module for one role to defaults (draft only). */
+  onReset: (mod: ModuleDef, role: RoleDef) => void;
 }) {
   // Section headers (Time Tracking, Payroll Management, Settings) span
   // every column — they're sidebar group labels, not permission gates.
@@ -2608,13 +2717,26 @@ const ModuleRow = memo(function ModuleRow({
                 </>
               )}
             </div>
-            <div className="flex justify-center mt-2">
+            <div className="flex justify-center items-center gap-1.5 mt-2">
               <button
                 type="button"
                 onClick={() => onToggleAll(mod.key, role.key, !allMenuOn)}
                 className="text-[10px] text-blue-600 hover:underline"
               >
                 {allMenuOn ? 'Clear' : 'Grant all'}
+              </button>
+              <span className="text-[10px] text-gray-300" aria-hidden>·</span>
+              {/* Reset this one app for this one role — Menu AND Data
+                  Access back to default. Draft only, like Grant all. */}
+              <button
+                type="button"
+                onClick={() => onReset(mod, role)}
+                className="text-[10px] text-gray-500 hover:text-blue-600 hover:underline"
+                title={role.builtIn
+                  ? `Reset ${mod.label} for ${role.name} to default`
+                  : `Reset ${mod.label} for ${role.name} to its base role's default`}
+              >
+                Reset
               </button>
             </div>
           </TableCell>

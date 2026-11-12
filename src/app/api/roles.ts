@@ -86,6 +86,16 @@ export async function getPermissions(key: string): Promise<RolePermission[]> {
   return apiJson(`/api/v1/roles/${encodeURIComponent(key)}/permissions`);
 }
 
+/**
+ * The canonical default grid for a role (V412) — what it looked like
+ * before anyone edited it. Built-in roles get their own; custom roles
+ * get their base role's (empty when they have none). A (module, action)
+ * missing from the list means not granted. Read-only.
+ */
+export async function getPermissionDefaults(key: string): Promise<RolePermission[]> {
+  return apiJson(`/api/v1/roles/${encodeURIComponent(key)}/permission-defaults`);
+}
+
 /** Replace the entire grid for one role. PUT semantics. */
 export async function replacePermissions(
   key: string,
