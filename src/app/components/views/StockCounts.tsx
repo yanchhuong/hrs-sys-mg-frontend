@@ -28,6 +28,7 @@ import * as api from '../../api/stockCounts';
 import * as warehousesApi from '../../api/warehouses';
 import * as itemsApi from '../../api/items';
 import { KNOWN_ITEM_CATEGORIES } from '../../api/items';
+import { useOpenIntent } from '../../utils/openIntent';
 
 /**
  * Stock Count (v-stock-count-phase1) — the manager's side.
@@ -76,6 +77,8 @@ export function StockCounts() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>('all');
   const [openId, setOpenId] = useState<string | null>(null);
+  // A stock count notification opens that count.
+  useOpenIntent('stock-count', setOpenId);
   const [formOpen, setFormOpen] = useState(false);
 
   const load = useCallback(async () => {

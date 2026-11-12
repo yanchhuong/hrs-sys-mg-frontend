@@ -42,6 +42,8 @@ function targetOf(n: api.Notification): Target | null {
   if (t === 'tax_declaration') return { kind: 'view', view: 'tax-declarations' };
   // A new gold / currency price: the Dashboard's market widget shows it.
   if (t === 'market_price') return { kind: 'view', view: 'dashboard' };
+  // Stock count pings open that count.
+  if (t === 'stock_count') return { kind: 'view', view: 'stock-count', id };
   if (t.includes('invoice'))   return { kind: 'view', view: 'invoices', id };
   if (t.includes('bill'))      return { kind: 'view', view: 'bills', id };
   if (t.includes('quotation')) return { kind: 'view', view: 'quotations', id };
