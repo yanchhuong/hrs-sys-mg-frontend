@@ -46,6 +46,7 @@ import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 // Adapts a backend Employee to the front-end Employee shape used by this
 // view. Mirrors the pattern from AllLeave.tsx / Employees.tsx.
@@ -511,7 +512,7 @@ export function Exception() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={mode}
               onChange={e => setMode(e.target.value as 'employee' | 'day')}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -522,7 +523,7 @@ export function Exception() {
             >
               <option value="employee">View : Long-term (Employee) ({exceptionEmployees.length})</option>
               <option value="day">View : Day Exception ({dayExceptionRows.length})</option>
-            </select>
+            </DropdownSelect>
             {showScopePicker && mode === 'day' && (
               <div className="shrink-0"><ScopePicker value={scopeMode} onChange={setScopeMode} /></div>
             )}

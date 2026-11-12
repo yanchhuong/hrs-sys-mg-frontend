@@ -40,6 +40,7 @@ import { notify } from '../../utils/notify';
 import { selfManagerKey, nextManagerForDeptChange } from '../../utils/deptManager';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 type DeptGroupType = 'department' | 'group' | 'team';
 
@@ -664,7 +665,7 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={filterType}
               onChange={e => setFilterType(e.target.value as typeof filterType)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -674,7 +675,7 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
               <option value="department">Type : Departments</option>
               <option value="group">Type : Groups</option>
               <option value="team">Type : Teams</option>
-            </select>
+            </DropdownSelect>
             {isFiltered && (
               <Button
                 size="sm" variant="ghost"

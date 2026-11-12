@@ -45,6 +45,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
 import { useOpenIntent } from '../../utils/openIntent';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 const STATUS_TABS: { value: '' | cashAdvancesApi.CashAdvanceStatus; label: string }[] = [
   { value: '',                  label: 'All' },
@@ -220,7 +221,7 @@ export function CashAdvances() {
                 className="h-9 w-64 pl-7 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -228,7 +229,7 @@ export function CashAdvances() {
               {STATUS_TABS.map(o => (
                 <option key={o.value || 'all'} value={o.value}>Status : {o.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500">From</Label>
             <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} />
             <Label className="text-xs text-gray-500">To</Label>

@@ -13,6 +13,7 @@ import * as classroomsApi from '../../api/classrooms';
 import * as employeesApi from '../../api/employees';
 import * as schedulesApi from '../../api/courseSchedules';
 import { SearchablePicker } from './SearchablePicker';
+import { DropdownSelect } from './DropdownSelect';
 
 /**
  * V213 / v-course-schedule-model — the "teaching session" popup.
@@ -363,7 +364,7 @@ export function AddCourseScheduleDialog({ open, onOpenChange, editing, onSaved }
             <div className="col-span-2 grid grid-cols-3 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Term</Label>
-                <select
+                <DropdownSelect
                   className="w-full h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={term}
                   onChange={e => {
@@ -383,7 +384,7 @@ export function AddCourseScheduleDialog({ open, onOpenChange, editing, onSaved }
                   {TERM_OPTIONS.map(o => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
-                </select>
+                </DropdownSelect>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Start date</Label>
@@ -441,7 +442,7 @@ export function AddCourseScheduleDialog({ open, onOpenChange, editing, onSaved }
               <div className="space-y-2">
                 {form.learnTimes.map((r, i) => (
                   <div key={i} className="grid grid-cols-[120px_1fr_1fr_auto] gap-2 items-center">
-                    <select
+                    <DropdownSelect
                       className="h-9 px-2 border rounded-md text-sm bg-white"
                       value={r.dayOfWeek}
                       onChange={e => setRow(i, { dayOfWeek: Number(e.target.value) })}
@@ -449,7 +450,7 @@ export function AddCourseScheduleDialog({ open, onOpenChange, editing, onSaved }
                       {DAY_LABELS.map((d, idx) => (
                         <option key={idx} value={idx + 1}>{d}</option>
                       ))}
-                    </select>
+                    </DropdownSelect>
                     <Input
                       type="time"
                       value={r.fromTime}

@@ -26,6 +26,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import * as devicesApi from '../../api/attendanceDevices';
 import { importFingerprint } from '../../utils/apiClient';
+import { DropdownSelect } from './DropdownSelect';
 
 const COMM_TYPES = ['Ethernet', 'RS-232', 'RS-485', 'USB'] as const;
 type CommType = (typeof COMM_TYPES)[number];
@@ -609,13 +610,13 @@ export function DevicesCard() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Comm Type</Label>
-                <select
+                <DropdownSelect
                   value={form.commType}
                   onChange={e => setForm({ ...form, commType: e.target.value as CommType })}
                   className="w-full h-9 px-3 border rounded-md text-sm bg-white"
                 >
                   {COMM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
+                </DropdownSelect>
               </div>
               <div className="space-y-1.5">
                 <Label>Machine No <span className="text-red-500">*</span></Label>
@@ -651,7 +652,7 @@ export function DevicesCard() {
             {(form.commType === 'RS-232' || form.commType === 'RS-485') && (
               <div className="space-y-1.5">
                 <Label>Baud rate</Label>
-                <select
+                <DropdownSelect
                   value={form.baudRate}
                   onChange={e => setForm({ ...form, baudRate: e.target.value })}
                   className="w-full h-9 px-3 border rounded-md text-sm bg-white"
@@ -659,7 +660,7 @@ export function DevicesCard() {
                   {[9600, 19200, 38400, 57600, 115200].map(b => (
                     <option key={b} value={b}>{b.toLocaleString()}</option>
                   ))}
-                </select>
+                </DropdownSelect>
               </div>
             )}
             <div className="space-y-1.5">

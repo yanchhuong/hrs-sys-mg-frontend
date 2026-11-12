@@ -26,6 +26,7 @@ import type { ClubProgram } from '../../api/clubPrograms';
 import type { EmployeeRecord } from '../../api/employeeRecords';
 import { RECORD_TYPES, subtypeLabel } from './employeeRecordTypes';
 import { RecordStatusBadge, type RecordEmployeeOption } from './EmployeeRecords';
+import { DropdownSelect } from './DropdownSelect';
 
 const selectCls =
   'h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
@@ -212,9 +213,9 @@ function ProgramFormDialog({ open, onOpenChange, program, employees, onSaved }: 
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-gray-600">Subtype</Label>
-            <select className={selectCls} value={subtype} onChange={e => setSubtype(e.target.value)}>
+            <DropdownSelect className={selectCls} value={subtype} onChange={e => setSubtype(e.target.value)}>
               {CLUB_SUBTYPES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
+            </DropdownSelect>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-gray-600">Fee / company subsidy ($)</Label>
@@ -374,10 +375,10 @@ export function MyClubsPanel() {
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Role</Label>
-              <select className={selectCls} value={role} onChange={e => setRole(e.target.value as 'member' | 'leader')}>
+              <DropdownSelect className={selectCls} value={role} onChange={e => setRole(e.target.value as 'member' | 'leader')}>
                 <option value="member">Member</option>
                 <option value="leader">Leader</option>
-              </select>
+              </DropdownSelect>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Note (optional)</Label>

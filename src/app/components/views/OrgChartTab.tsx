@@ -9,6 +9,7 @@ import { Search, ChevronDown, CornerLeftUp, List, LayoutGrid } from 'lucide-reac
 import { Employee } from '../../types/hrms';
 import { EmployeeAvatar } from '../common/EmployeeAvatar';
 import { OrgChartProfile } from './OrgChartProfile';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /**
  * Org Chart — the reporting hierarchy, read from the same `managerId`
@@ -328,7 +329,7 @@ export function OrgChartTab({
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={position}
               onChange={e => setPosition(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -339,8 +340,8 @@ export function OrgChartTab({
               {positionOptions.map(p => (
                 <option key={p} value={p}>{p}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={activeOnly ? 'active' : 'all'}
               onChange={e => setActiveOnly(e.target.value === 'active')}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -349,7 +350,7 @@ export function OrgChartTab({
             >
               <option value="active">Status : Active</option>
               <option value="all">Status : All</option>
-            </select>
+            </DropdownSelect>
             {(query.trim() || position || !activeOnly) && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={() => {
                 setQuery('');

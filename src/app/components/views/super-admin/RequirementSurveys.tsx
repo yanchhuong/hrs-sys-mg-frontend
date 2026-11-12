@@ -34,6 +34,7 @@ import {
   platformSurveys, RequirementSurvey, SurveyStatus, SurveyPriority,
   SurveyStatusHistoryEntry, SURVEY_STATUSES, SURVEY_PRIORITIES,
 } from '../../../api/platformSurveys';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 const STATUS_BY_KEY: Record<SurveyStatus, typeof SURVEY_STATUSES[number]> =
   Object.fromEntries(SURVEY_STATUSES.map(s => [s.key, s])) as any;
@@ -188,7 +189,7 @@ export function RequirementSurveys() {
                 className="pl-7 h-9 w-64"
               />
             </div>
-            <select
+            <DropdownSelect
               value={status}
               onChange={e => setStatus(e.target.value as SurveyStatus | '')}
               className={FILTER_SELECT_CLS}
@@ -197,8 +198,8 @@ export function RequirementSurveys() {
               {SURVEY_STATUSES.map(s => (
                 <option key={s.key} value={s.key}>Status : {s.label}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={priority}
               onChange={e => setPriority(e.target.value as SurveyPriority | '')}
               className={FILTER_SELECT_CLS}
@@ -207,7 +208,7 @@ export function RequirementSurveys() {
               {SURVEY_PRIORITIES.map(p => (
                 <option key={p.key} value={p.key}>Priority : {p.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {hasFilters && (
               <Button
                 variant="ghost" size="sm" className="h-9 shrink-0"

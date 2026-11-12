@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { toast } from 'sonner';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /** Source dropdown values. `invoice` / `bill` capture the "plain"
  *  documents; `credit_note` / `debit_note` capture the adjustment
@@ -282,24 +283,24 @@ export function Transactions() {
               currency tenants get the dropdown hidden. Clear button
               appears only when at least one filter is active. */}
           <div className="filter-strip">
-            <select
+            <DropdownSelect
               value={refTypeFilter}
               onChange={e => setRefTypeFilter(e.target.value as typeof refTypeFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
               aria-label="Filter by source"
             >
               {REF_TYPE_OPTIONS.map(o => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={dirFilter}
               onChange={e => setDirFilter(e.target.value as typeof dirFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
               aria-label="Filter by direction"
             >
               {DIRECTION_OPTIONS.map(o => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
-            </select>
+            </DropdownSelect>
             {enabledCurrencies.length > 1 && (
-              <select
+              <DropdownSelect
                 value={currencyFilter}
                 onChange={e => setCurrencyFilter(e.target.value)}
                 className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -309,7 +310,7 @@ export function Transactions() {
                 {enabledCurrencies.map(c => (
                   <option key={c} value={c}>Currency : {c}</option>
                 ))}
-              </select>
+              </DropdownSelect>
             )}
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={from || null} onChange={v => setFrom(v ?? '')} max={to || undefined} /></div>

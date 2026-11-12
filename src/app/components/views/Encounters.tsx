@@ -33,6 +33,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { statusBadgeClass } from '../../utils/statusTones';
 import { formatMoneyForCurrency } from '../../utils/format';
 import { useOpenIntent } from '../../utils/openIntent';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 const FILTER_SELECT_CLS =
   'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
@@ -229,14 +230,14 @@ export function Encounters() {
         <CardHeader className="pb-3">
           {/* One filter strip, same as Transactions / Invoices. */}
           <div className="filter-strip">
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
               className={FILTER_SELECT_CLS}
               aria-label="Filter by status"
             >
               {STATUS_OPTIONS.map(o => <option key={o.value || 'all'} value={o.value}>{o.label}</option>)}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

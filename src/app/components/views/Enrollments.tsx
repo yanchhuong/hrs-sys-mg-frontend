@@ -34,6 +34,7 @@ import { EnrollmentSettingsDialog } from '../common/EnrollmentSettingsDialog';
 import { InvoicePreviewDialog } from '../common/InvoicePreviewDialog';
 import { SearchablePicker } from '../common/SearchablePicker';
 import { exportListToExcel } from '../../utils/excelExport';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /**
  * Enrollments — School vertical page. One row per (student, course
@@ -427,7 +428,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
               className={FILTER_SELECT_CLS}
@@ -438,8 +439,8 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               <option value="active">Status : Active</option>
               <option value="completed">Status : Completed</option>
               <option value="withdrawn">Status : Withdrawn</option>
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={courseFilter}
               onChange={e => setCourseFilter(e.target.value)}
               className={`${FILTER_SELECT_CLS} max-w-[180px]`}
@@ -449,8 +450,8 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               {courses.map(c => (
                 <option key={c.id} value={c.id}>Course : {c.name}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={classroomFilter}
               onChange={e => setClassroomFilter(e.target.value)}
               className={`${FILTER_SELECT_CLS} max-w-[180px]`}
@@ -460,8 +461,8 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               {classrooms.map(r => (
                 <option key={r.id} value={r.id}>Classroom : {r.name}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={teacherFilter}
               onChange={e => setTeacherFilter(e.target.value)}
               className={`${FILTER_SELECT_CLS} max-w-[180px]`}
@@ -471,7 +472,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
               {teachers.map(t => (
                 <option key={t.apiId ?? t.id} value={t.apiId ?? t.id}>Teacher : {t.name}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={fromDate || null} onChange={v => setFromDate(v ?? '')} max={toDate || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>
@@ -538,7 +539,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                             const isTerminal = options.length <= 1;
                             const disabled = isTerminal || !canEdit;
                             return (
-                              <select
+                              <DropdownSelect
                                 value={r.status}
                                 disabled={disabled}
                                 onChange={ev => {
@@ -555,7 +556,7 @@ export function Enrollments({ onNavigate }: { onNavigate?: (view: string) => voi
                                 {options.map(s => (
                                   <option key={s} value={s}>{STATUS_BADGES[s].label}</option>
                                 ))}
-                              </select>
+                              </DropdownSelect>
                             );
                           })()}
                         </TableCell>

@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import * as officesApi from '../../api/offices';
 import * as employeesApi from '../../api/employees';
 import * as assignmentsApi from '../../api/officeAssignments';
+import { DropdownSelect } from './DropdownSelect';
 
 interface Props {
   /** Loads the snapshot when the parent section becomes visible. */
@@ -170,7 +171,7 @@ export function OfficeAssignmentsPanel({ open }: Props) {
         <div className="flex items-center gap-1.5">
           <MapPin className="h-3.5 w-3.5 text-gray-500" />
           <Label className="text-xs text-gray-600 sr-only">Filter by office</Label>
-          <select
+          <DropdownSelect
             value={officeFilter}
             onChange={e => setOfficeFilter(e.target.value)}
             className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -181,7 +182,7 @@ export function OfficeAssignmentsPanel({ open }: Props) {
             {offices.map(o => (
               <option key={o.id} value={o.id}>{o.name}</option>
             ))}
-          </select>
+          </DropdownSelect>
         </div>
         <div className="relative flex-1">
           <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -228,7 +229,7 @@ export function OfficeAssignmentsPanel({ open }: Props) {
                     </TableCell>
                     <TableCell className="py-1.5">
                       <div className="flex items-center gap-2">
-                        <select
+                        <DropdownSelect
                           value={assigned ?? FLEXIBLE}
                           onChange={ev => handleChange(e.id, ev.target.value)}
                           disabled={isSaving}
@@ -239,7 +240,7 @@ export function OfficeAssignmentsPanel({ open }: Props) {
                           {offices.map(o => (
                             <option key={o.id} value={o.id}>{o.name}</option>
                           ))}
-                        </select>
+                        </DropdownSelect>
                         {isSaving ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400 shrink-0" />
                         ) : assigned == null ? (

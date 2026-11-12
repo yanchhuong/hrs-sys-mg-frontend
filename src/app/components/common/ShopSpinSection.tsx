@@ -8,6 +8,7 @@ import { Button, PlainButton } from '../ui/button';
 import * as shopApi from '../../api/shop';
 import { SpinWinnersDialog } from './SpinWinnersDialog';
 import { PRIZE_KINDS, COUPON_DAY_CHOICES, couponDaysLabel, autoLabel, fmtExpiry } from '../../utils/spinPrize';
+import { DropdownSelect } from './DropdownSelect';
 
 const kindOf = (s: shopApi.SpinSlice): shopApi.PrizeKind => s.kind ?? (s.prize ? 'gift' : 'none');
 
@@ -255,7 +256,7 @@ export function ShopSpinSection() {
           </div>
           <div className="text-[10px] text-gray-500">Counted from the win. Winners see the expiry; the counter refuses it after.</div>
         </div>
-        <select
+        <DropdownSelect
           value={settings.couponDays ?? 0}
           onChange={e => void setCouponDays(Number(e.target.value))}
           disabled={busy}
@@ -265,7 +266,7 @@ export function ShopSpinSection() {
           {[...new Set<number>([...COUPON_DAY_CHOICES, settings.couponDays ?? 0])].sort((a, b) => a - b).map(d => (
             <option key={d} value={d}>{couponDaysLabel(d)}</option>
           ))}
-        </select>
+        </DropdownSelect>
       </div>
 
       {/* Wheel editor */}
@@ -315,14 +316,14 @@ export function ShopSpinSection() {
                 className="h-8 text-sm"
                 aria-label={`Slice ${i + 1} label`}
               />
-              <select
+              <DropdownSelect
                 value={k}
                 onChange={e => setKind(i, e.target.value as shopApi.PrizeKind)}
                 className={`${SELECT_CLS} ${k === 'none' ? 'text-gray-500' : 'text-pink-700'}`}
                 aria-label={`Slice ${i + 1} type`}
               >
                 {PRIZE_KINDS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-              </select>
+              </DropdownSelect>
               {k === 'percent' || k === 'amount' ? (
                 <div className="relative">
                   {k === 'amount' && <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>}

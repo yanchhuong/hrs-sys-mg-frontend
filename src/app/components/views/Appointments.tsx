@@ -33,6 +33,7 @@ import { NumericInput } from '../common/NumericInput';
 import { useConfirm } from '../../context/ConfirmContext';
 import { TONE_CLASS } from '../../utils/statusTones';
 import { format } from 'date-fns';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /** "2026-10-23T09:30" for <input type="datetime-local"> in LOCAL time.
  *  toISOString() is UTC, so seeding the input from it shifted the
@@ -254,7 +255,7 @@ export function Appointments() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -263,7 +264,7 @@ export function Appointments() {
               {statusFilters.map(f => (
                 <option key={f.value} value={f.value}>Status : {f.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
               <div className="w-[220px] shrink-0">
                 <SearchablePicker
                   options={[

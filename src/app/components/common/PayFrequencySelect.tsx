@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import * as settingsApi from '../../api/accountingSettings';
 import { PAY_FREQUENCIES, payFrequencyLabel, type PayFrequency } from '../../utils/payFrequency';
+import { DropdownSelect } from './DropdownSelect';
 
 /** The company default, read once per mount. */
 export function useCompanyPayFrequency(): PayFrequency {
@@ -27,7 +28,7 @@ export function PayFrequencySelect({ value, onChange, company, id }: {
   id?: string;
 }) {
   return (
-    <select
+    <DropdownSelect
       id={id}
       value={value ?? ''}
       onChange={e => onChange(e.target.value as PayFrequency | '')}
@@ -36,7 +37,7 @@ export function PayFrequencySelect({ value, onChange, company, id }: {
     >
       <option value="">Company default ({payFrequencyLabel(company)})</option>
       {PAY_FREQUENCIES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-    </select>
+    </DropdownSelect>
   );
 }
 

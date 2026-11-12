@@ -18,6 +18,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { Input } from '../ui/input';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 const TYPE_FILTERS: { value: '' | movementsApi.StockMovement['type']; label: string }[] = [
   { value: '',           label: 'All' },
@@ -168,7 +169,7 @@ export function StockMovements() {
                 aria-label="Search movements"
               />
             </div>
-            <select
+            <DropdownSelect
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -177,7 +178,7 @@ export function StockMovements() {
               {TYPE_FILTERS.map(f => (
                 <option key={f.value} value={f.value}>Type : {f.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {/* DateInput renders a popover trigger button (not a native
                 <input>), so there's no id to hang a <label htmlFor> off. */}
             <Label className="text-xs text-gray-500 shrink-0">From</Label>

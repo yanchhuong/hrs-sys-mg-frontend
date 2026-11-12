@@ -54,6 +54,7 @@ import { formatMoney } from '../../utils/format';
 import { loadPayrollCategories } from '../../utils/payrollCategories';
 import { PayrollCategory } from '../../types/settings';
 import { categoryDefaults } from '../../utils/payrollAdjust';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 // Adapts a backend Employee to the front-end Employee shape (mirrors Employees.tsx /
 // Exception.tsx). The user-facing `id` carries the human-readable empNo and the
@@ -884,7 +885,7 @@ export function Deduction() {
             <span className="text-sm font-medium text-blue-900">
               {selectedIds.size} selected
             </span>
-            <select
+            <DropdownSelect
               value={bulkStatus}
               onChange={(e) => setBulkStatus(e.target.value as SalaryDeduction['status'])}
               className="h-8 px-2 border rounded-md text-sm bg-white"
@@ -892,7 +893,7 @@ export function Deduction() {
               <option value="active">Active</option>
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
-            </select>
+            </DropdownSelect>
             <Button size="sm" onClick={handleBulkUpdateStatus}>
               Update {selectedIds.size} row{selectedIds.size > 1 ? 's' : ''}
             </Button>
@@ -919,7 +920,7 @@ export function Deduction() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -931,8 +932,8 @@ export function Deduction() {
                   Type : {c.label}
                 </option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -942,7 +943,7 @@ export function Deduction() {
               <option value="active">Status : Active</option>
               <option value="completed">Status : Completed</option>
               <option value="cancelled">Status : Cancelled</option>
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

@@ -36,6 +36,7 @@ import * as paymentPlansApi from '../../api/paymentPlans';
 import * as customersApi from '../../api/customers';
 import * as invoicesApi from '../../api/invoices';
 import { PaymentPlanDetailDialog } from '../common/PaymentPlanDetailDialog';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 type PlanRow = paymentPlansApi.PaymentPlan;
 
@@ -246,7 +247,7 @@ export function PaymentPlans() {
                 className="h-9 pl-7 w-64"
               />
             </div>
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -257,8 +258,8 @@ export function PaymentPlans() {
               <option value="active">Status : Active ({statusCounts.active})</option>
               <option value="completed">Status : Completed ({statusCounts.completed})</option>
               <option value="cancelled">Status : Cancelled ({statusCounts.cancelled})</option>
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -269,7 +270,7 @@ export function PaymentPlans() {
                 .map(([k, label]) => (
                   <option key={k} value={k}>Type : {label}</option>
                 ))}
-            </select>
+            </DropdownSelect>
             {anyFilter && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
                 Clear

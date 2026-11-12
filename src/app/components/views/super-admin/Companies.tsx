@@ -41,6 +41,7 @@ import { NumericInput } from '../../common/NumericInput';
 import { DateInput } from '../../common/DateInput';
 import { useConfirm } from '../../../context/ConfirmContext';
 import { format as fnsFormat, parseISO } from 'date-fns';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 const FILTER_SELECT_CLS =
   'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
@@ -1250,7 +1251,7 @@ export function Companies() {
                 className="pl-7 h-9 w-64"
               />
             </div>
-            <select
+            <DropdownSelect
               value={planFilter}
               onChange={(e) => setPlanFilter(e.target.value as typeof planFilter)}
               className={FILTER_SELECT_CLS}
@@ -1260,11 +1261,11 @@ export function Companies() {
               {planOptions.map(tier => (
                 <option key={tier} value={tier}>Plan : {tier.charAt(0).toUpperCase() + tier.slice(1)}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {/* v-companies-page-size — rows-per-page picker, kept in the
                 strip so pagination is discoverable even when only one
                 page's worth of rows exists. */}
-            <select
+            <DropdownSelect
               value={pageSize}
               onChange={e => { setPageSize(Number(e.target.value)); pager.goToPage(1); }}
               className={FILTER_SELECT_CLS}
@@ -1273,7 +1274,7 @@ export function Companies() {
               {[5, 10, 20, 50, 100].map(n => (
                 <option key={n} value={n}>Rows : {n}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {hasFilters && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
                 Clear

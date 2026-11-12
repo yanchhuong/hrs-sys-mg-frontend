@@ -33,6 +33,7 @@ import { Label } from '../ui/label';
 import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
 import { format } from 'date-fns';
 import { Search } from 'lucide-react';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 type StatusFilter = 'active' | 'all' | 'pending' | 'approved' | 'rejected';
 
@@ -246,7 +247,7 @@ export function Approvals() {
             {/* Status, then Type — dropdowns with counts (was a row of
                 tabs). The choice alone, no "Status :" prefix; the "All"
                 rows say what they cover. */}
-            <select
+            <DropdownSelect
               value={filter}
               onChange={e => setFilter(e.target.value as StatusFilter)}
               className={FILTER_SELECT}
@@ -255,8 +256,8 @@ export function Approvals() {
               {STATUS_TABS.map(f => (
                 <option key={f.value} value={f.value}>{f.value === 'all' ? 'All statuses' : f.label} ({statusCounts[f.value]})</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value)}
               className={FILTER_SELECT}
@@ -266,7 +267,7 @@ export function Approvals() {
               {sourceTypes.map(st => (
                 <option key={st} value={st}>{sourceLabel(st)} ({typeCounts[st] ?? 0})</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

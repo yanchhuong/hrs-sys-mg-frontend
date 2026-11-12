@@ -13,6 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/
 import { SearchablePicker } from './SearchablePicker';
 import * as bookingSchedulesApi from '../../api/bookingSchedules';
 import * as paymentPlanItemsApi from '../../api/paymentPlanItems';
+import { DropdownSelect } from './DropdownSelect';
 
 /**
  * v-booking-schedule-popup — standalone "New / Edit schedule"
@@ -222,7 +223,7 @@ export function AddBookingScheduleDialog({ open, onOpenChange, editing, items, o
               <div className="space-y-2">
                 {form.slots.map((r, i) => (
                   <div key={r.id ?? `new-${i}`} className="grid grid-cols-[120px_1fr_auto] gap-2 items-center">
-                    <select
+                    <DropdownSelect
                       className="h-9 px-2 border rounded-md text-sm bg-white"
                       value={r.dayOfWeek}
                       onChange={e => setRow(i, { dayOfWeek: Number(e.target.value) })}
@@ -230,7 +231,7 @@ export function AddBookingScheduleDialog({ open, onOpenChange, editing, items, o
                       {DAY_LABELS.map((d, idx) => (
                         <option key={idx} value={idx + 1}>{d}</option>
                       ))}
-                    </select>
+                    </DropdownSelect>
                     <Input
                       type="time"
                       value={r.fromTime}

@@ -29,6 +29,7 @@ import * as warehousesApi from '../../api/warehouses';
 import * as itemsApi from '../../api/items';
 import { KNOWN_ITEM_CATEGORIES } from '../../api/items';
 import { useOpenIntent } from '../../utils/openIntent';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /**
  * Stock Count (v-stock-count-phase1) — the manager's side.
@@ -162,7 +163,7 @@ export function StockCounts() {
                 className="h-9 pl-7 w-64 text-sm" aria-label="Search stock counts"
               />
             </div>
-            <select
+            <DropdownSelect
               value={status} onChange={e => setStatus(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs
                          focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -172,7 +173,7 @@ export function StockCounts() {
               {(Object.keys(STATUS_LABEL) as api.StockCountStatus[]).map(s => (
                 <option key={s} value={s}>Status : {STATUS_LABEL[s]}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {(search || status !== 'all') && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0"
                       onClick={() => { setSearch(''); setStatus('all'); }}>
@@ -527,7 +528,7 @@ function CountDetail(
                      onChange={e => setSearch(e.target.value)}
                      className="h-9 pl-7 w-64 text-sm" aria-label="Search items" />
             </div>
-            <select
+            <DropdownSelect
               value={filter} onChange={e => setFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs
                          focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -538,7 +539,7 @@ function CountDetail(
               <option value="surplus">Show : Surplus</option>
               <option value="matched">Show : Matched</option>
               <option value="uncounted">Show : Not counted</option>
-            </select>
+            </DropdownSelect>
             {(search || filter !== 'all') && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0"
                       onClick={() => { setSearch(''); setFilter('all'); }}>

@@ -98,6 +98,7 @@ import { EmployeeCell } from '../common/EmployeeCell';
 import { PaymentMethodToggle, paymentMethodHint } from '../common/PaymentMethodToggle';
 import { PayFrequencySelect, useCompanyPayFrequency, payFrequencyText } from '../common/PayFrequencySelect';
 import { EDUCATION_OPTIONS, educationLabel } from '../../utils/education';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -361,7 +362,7 @@ function EmployeeDocuments({
         <div className="flex items-center gap-3 flex-wrap">
           <div className="flex-1 min-w-[200px] space-y-1.5">
             <Label className="text-xs text-gray-600">Document type</Label>
-            <select
+            <DropdownSelect
               value={uploadType}
               onChange={(e) => setUploadType(e.target.value as typeof uploadType)}
               className="w-full h-9 px-3 border rounded-md text-sm"
@@ -369,7 +370,7 @@ function EmployeeDocuments({
               {DOC_TYPES.map(t => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
           </div>
           <div className="space-y-1.5 shrink-0">
             <Label className="text-xs text-gray-600">&nbsp;</Label>
@@ -1501,7 +1502,7 @@ export function Employees() {
           className="h-9 pl-7 w-64 text-sm"
         />
       </div>
-      <select
+      <DropdownSelect
         value={statusFilter}
         onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
         className={filterSelectCls}
@@ -1510,8 +1511,8 @@ export function Employees() {
         <option value="all">Status : All ({statusCounts.all})</option>
         <option value="active">Status : Active ({statusCounts.active})</option>
         <option value="inactive">Status : Inactive ({statusCounts.inactive})</option>
-      </select>
-      <select
+      </DropdownSelect>
+      <DropdownSelect
         value={departmentFilter}
         onChange={(e) => setDepartmentFilter(e.target.value)}
         className={`${filterSelectCls} max-w-[240px]`}
@@ -1526,7 +1527,7 @@ export function Employees() {
             <option key={d.id} value={d.id}>Department : {d.name} ({n})</option>
           );
         })}
-      </select>
+      </DropdownSelect>
       {/* Join-date range (was a DateRangeFilter in the page header). */}
       <Label className="text-xs text-gray-500 shrink-0">From</Label>
       <div className="shrink-0">
@@ -2282,7 +2283,7 @@ export function Employees() {
                     <div className="grid grid-cols-2 gap-4">
                       <FieldRow label="Gender" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <select
+                          <DropdownSelect
                             value={editedEmployee.gender || ''}
                             onChange={(e) => setEditedEmployee({ ...editedEmployee, gender: e.target.value as 'male' | 'female' })}
                             className="w-full px-3 py-2 border rounded-md text-sm h-9"
@@ -2290,7 +2291,7 @@ export function Employees() {
                             <option value="">Select</option>
                             <option value="male">Male</option>
                             <option value="female">Female</option>
-                          </select>
+                          </DropdownSelect>
                         ) : (
                           <p className="capitalize">{selectedEmployee.gender || '—'}</p>
                         )}
@@ -2302,7 +2303,7 @@ export function Employees() {
                           accidentally inflates. */}
                       <FieldRow label="Marital Status" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <select
+                          <DropdownSelect
                             value={editedEmployee.maritalStatus || ''}
                             onChange={(e) => {
                               const v = e.target.value as '' | 'single' | 'married' | 'divorced' | 'widowed';
@@ -2323,7 +2324,7 @@ export function Employees() {
                             <option value="married">Married</option>
                             <option value="divorced">Divorced</option>
                             <option value="widowed">Widowed</option>
-                          </select>
+                          </DropdownSelect>
                         ) : (
                           <p className="capitalize">{selectedEmployee.maritalStatus || '—'}</p>
                         )}
@@ -2364,7 +2365,7 @@ export function Employees() {
                           double-counted across two payslips. */}
                       <FieldRow label="Claim Dependents (TOS)" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <select
+                          <DropdownSelect
                             value={editedEmployee.decouple ? 'yes' : 'no'}
                             onChange={(e) => {
                               const yes = e.target.value === 'yes';
@@ -2381,7 +2382,7 @@ export function Employees() {
                           >
                             <option value="no">No</option>
                             <option value="yes">Yes</option>
-                          </select>
+                          </DropdownSelect>
                         ) : (
                           <p>{selectedEmployee.decouple ? 'Yes' : 'No'}</p>
                         )}
@@ -2397,7 +2398,7 @@ export function Employees() {
                         : selectedEmployee.decouple) && (
                         <FieldRow label="↳ Claim Spouse" isEditing={isEditing}>
                           {isEditing && editedEmployee ? (
-                            <select
+                            <DropdownSelect
                               value={editedEmployee.claimSpouse ? 'yes' : 'no'}
                               onChange={(e) => setEditedEmployee({
                                 ...editedEmployee,
@@ -2408,7 +2409,7 @@ export function Employees() {
                             >
                               <option value="no">No</option>
                               <option value="yes">Yes</option>
-                            </select>
+                            </DropdownSelect>
                           ) : (
                             <p>{selectedEmployee.claimSpouse ? 'Yes' : 'No'}</p>
                           )}
@@ -2468,7 +2469,7 @@ export function Employees() {
                                 no state: no unsaved-changes pill, Save stayed
                                 disabled, and the one gesture that resolves a
                                 V301-era row was impossible to perform. */}
-                            <select
+                            <DropdownSelect
                               value={editedEmployee.nationalityType ?? ''}
                               onChange={(e) => {
                                 const next = e.target.value as NationalityType;
@@ -2495,7 +2496,7 @@ export function Employees() {
                               {ID_TYPE_OPTIONS.map(o => (
                                 <option key={o.value} value={o.value}>{o.label}</option>
                               ))}
-                            </select>
+                            </DropdownSelect>
                             <Input
                               value={editedEmployee.tid || ''}
                               onChange={(e) => setEditedEmployee({ ...editedEmployee, tid: e.target.value })}
@@ -2745,7 +2746,7 @@ export function Employees() {
                         isEditing={isEditing}
                       >
                         {isEditing && editedEmployee ? (
-                          <select
+                          <DropdownSelect
                             className="h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                             value={editedEmployee.level ?? ''}
                             onChange={e => setEditedEmployee({
@@ -2758,7 +2759,7 @@ export function Employees() {
                             <option value="specialized">Specialized</option>
                             <option value="ns_cook">Non-Specialized · Cook</option>
                             <option value="ns_labour">Non-Specialized · Labour</option>
-                          </select>
+                          </DropdownSelect>
                         ) : (
                           <p>
                             {selectedEmployee.level === 'office'      ? 'Office Personnel' :
@@ -2833,14 +2834,14 @@ export function Employees() {
                       </FieldRow>
                       <FieldRow label="Status" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <select
+                          <DropdownSelect
                             value={editedEmployee.status}
                             onChange={(e) => setEditedEmployee({ ...editedEmployee, status: e.target.value as 'active' | 'inactive' })}
                             className="w-full px-3 py-2 border rounded-md text-sm h-9"
                           >
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
-                          </select>
+                          </DropdownSelect>
                         ) : (
                           <Badge
                             className={
@@ -2884,7 +2885,7 @@ export function Employees() {
                       </FieldRow>
                       <FieldRow label="Count in Attendance" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <select
+                          <DropdownSelect
                             value={editedEmployee.attendanceYn === false ? 'no' : 'yes'}
                             onChange={(e) =>
                               setEditedEmployee({ ...editedEmployee, attendanceYn: e.target.value === 'yes' })
@@ -2893,7 +2894,7 @@ export function Employees() {
                           >
                             <option value="yes">Yes — counted normally</option>
                             <option value="no">No — Exception (field / remote, not counted)</option>
-                          </select>
+                          </DropdownSelect>
                         ) : selectedEmployee.attendanceYn === false ? (
                           <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-0">
                             Exception · not counted
@@ -2906,7 +2907,7 @@ export function Employees() {
                       </FieldRow>
                       <FieldRow label="Education" isEditing={isEditing}>
                         {isEditing && editedEmployee ? (
-                          <select
+                          <DropdownSelect
                             value={editedEmployee.education ?? ''}
                             onChange={(e) =>
                               setEditedEmployee({
@@ -2922,7 +2923,7 @@ export function Employees() {
                             {EDUCATION_OPTIONS.map(o => (
                               <option key={o.value} value={o.value}>{o.label}</option>
                             ))}
-                          </select>
+                          </DropdownSelect>
                         ) : (
                           <p>{educationLabel(selectedEmployee.education)}</p>
                         )}
@@ -3287,7 +3288,7 @@ export function Employees() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="contractType">{t('contract.contract_type')} <span className="text-red-500">*</span></Label>
-                <select
+                <DropdownSelect
                   id="contractType"
                   value={contractForm.contractType}
                   onChange={(e) => {
@@ -3315,7 +3316,7 @@ export function Employees() {
                   <option value="Probation">{t('contract.type.probation')}</option>
                   <option value="Internship">{t('contract.type.internship')}</option>
                   <option value="Part-time">{t('contract.type.parttime')}</option>
-                </select>
+                </DropdownSelect>
                 <p className="text-[11px] text-gray-500">
                   {t('contract.type.helper')}
                   {contractForm.contractType === 'Probation' && selectedEmployee?.level && (
@@ -3344,7 +3345,7 @@ export function Employees() {
                 forfeits the FDC 5% severance per Cambodian Labour Law. */}
             <div className="space-y-2">
               <Label htmlFor="terminationReason">{t('contract.termination_reason')}</Label>
-              <select
+              <DropdownSelect
                 id="terminationReason"
                 value={contractForm.terminationReason}
                 onChange={(e) => setContractForm({ ...contractForm, terminationReason: e.target.value })}
@@ -3356,7 +3357,7 @@ export function Employees() {
                 <option value="mutual">{t('contract.term.mutual')}</option>
                 <option value="resignation">{t('contract.term.resignation')}</option>
                 <option value="other">{t('contract.term.other')}</option>
-              </select>
+              </DropdownSelect>
               {contractForm.terminationReason === 'misconduct' && contractForm.contractType === 'FDC' && (
                 <p className="text-[11px] text-amber-700">
                   {t('contract.term.misconduct.warn')}

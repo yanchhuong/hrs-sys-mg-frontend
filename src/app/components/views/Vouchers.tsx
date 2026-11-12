@@ -61,6 +61,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useOpenIntent } from '../../utils/openIntent';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 
 const fmtMoney = (n: number, currency: string): string => {
@@ -319,7 +320,7 @@ export function Vouchers() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -328,8 +329,8 @@ export function Vouchers() {
               {STATUS_FILTERS.map(f => (
                 <option key={f.value} value={f.value}>Status : {f.label}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={purposeFilter}
               onChange={e => setPurposeFilter(e.target.value as typeof purposeFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -339,7 +340,7 @@ export function Vouchers() {
               {PURPOSE_OPTIONS.map(p => (
                 <option key={p.value} value={p.value}>Purpose : {p.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

@@ -39,6 +39,7 @@ import { useAuth } from '../../context/AuthContext';
 import { StatCard } from '../common/StatCard';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../common/ListStates';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 interface Position {
   id: string;
@@ -377,7 +378,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={filterDept}
               onChange={e => setFilterDept(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -388,7 +389,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
               {departments.map(d => (
                 <option key={d.id} value={d.id}>Department : {d.name}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {(search || filterDept !== 'all') && (
               <Button
                 size="sm" variant="ghost" className="h-9 shrink-0"

@@ -6,6 +6,7 @@ import {
 import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import * as api from '../../api/publicBooking';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /**
  * Anonymous /booking/{code} page (v-booking-public-link, V406).
@@ -267,14 +268,14 @@ export function PublicBookingPage() {
                 </div>
                 <label className="flex items-center gap-2 text-sm text-gray-600">
                   <span className="hidden sm:inline">Sort by:</span>
-                  <select
+                  <DropdownSelect
                     value={sort} onChange={e => setSort(e.target.value as SortKey)}
                     className="h-9 shrink-0 rounded-md border border-gray-300 bg-white px-2 text-sm"
                   >
                     <option value="price-asc">Price: Low to High</option>
                     <option value="price-desc">Price: High to Low</option>
                     <option value="name">Name</option>
-                  </select>
+                  </DropdownSelect>
                 </label>
               </div>
 
@@ -401,14 +402,14 @@ function SearchCard(p: SearchProps) {
         <DateField label="Check-out" value={p.checkOut} min={addDaysIso(p.checkIn || p.today, 1)}
                    onChange={p.onCheckOut} />
         <Field label="Guests" icon={<Users className="h-4 w-4 text-blue-600" />}>
-          <select
+          <DropdownSelect
             value={p.guests} onChange={e => p.onGuests(Number(e.target.value))}
             className="w-full bg-transparent text-sm font-medium text-gray-900 outline-none"
           >
             {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
               <option key={n} value={n}>{n} {n === 1 ? 'Guest' : 'Guests'}</option>
             ))}
-          </select>
+          </DropdownSelect>
         </Field>
         <Button
           onClick={p.onSearch} disabled={p.busy || invalid}

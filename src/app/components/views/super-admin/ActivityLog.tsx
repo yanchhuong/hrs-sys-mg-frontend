@@ -30,6 +30,7 @@ import {
 } from './activityLogData';
 import { USE_MOCKS } from '../../../api/client';
 import * as platformApi from '../../../api/platform';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 // Adapter: map a live PlatformAuditEntry to the page's ActivityEvent shape so
 // the existing JSX, filters and severity tabs keep working without churn.
@@ -314,7 +315,7 @@ export function ActivityLog() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={category}
               onChange={(e) => setCategory(e.target.value as typeof category)}
               className={FILTER_SELECT_CLS}
@@ -323,8 +324,8 @@ export function ActivityLog() {
               {CATEGORIES.map(c => (
                 <option key={c.key} value={c.key}>{c.label}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={tenant}
               onChange={(e) => setTenant(e.target.value)}
               className={FILTER_SELECT_CLS}
@@ -334,8 +335,8 @@ export function ActivityLog() {
               {tenantOptions.map(c => (
                 <option key={c.id} value={c.id}>Tenant : {c.name}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={onlyUnack ? 'unack' : 'all'}
               onChange={(e) => setOnlyUnack(e.target.value === 'unack')}
               className={FILTER_SELECT_CLS}
@@ -343,7 +344,7 @@ export function ActivityLog() {
             >
               <option value="all">Acknowledged : All</option>
               <option value="unack">Acknowledged : No</option>
-            </select>
+            </DropdownSelect>
             {hasFilters && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
                 Clear

@@ -10,6 +10,7 @@ import * as sessionsApi from '../../api/sessions';
 import * as schedulesApi from '../../api/courseSchedules';
 import * as coursesApi from '../../api/courses';
 import * as classroomsApi from '../../api/classrooms';
+import { DropdownSelect } from './DropdownSelect';
 
 /**
  * v-attendance-add-session — ad-hoc session creator on the
@@ -127,7 +128,7 @@ export function AddSessionDialog({ open, onOpenChange, onSaved }: Props) {
             <Label className="text-xs">
               Course Schedule<span className="text-red-500"> *</span>
             </Label>
-            <select
+            <DropdownSelect
               className="w-full h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={form.courseScheduleId}
               onChange={e => setForm(f => ({ ...f, courseScheduleId: e.target.value }))}
@@ -136,7 +137,7 @@ export function AddSessionDialog({ open, onOpenChange, onSaved }: Props) {
               {schedules.map(s => (
                 <option key={s.id} value={s.id}>{scheduleLabel(s)}</option>
               ))}
-            </select>
+            </DropdownSelect>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

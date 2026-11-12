@@ -42,6 +42,7 @@ import {
 import { toast } from 'sonner';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /** Live shape — mirrors api/settings.Holiday but adds a non-null id for table keys. */
 interface Holiday {
@@ -689,7 +690,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={yearFilter}
               onChange={e => setYearFilter(e.target.value)}
               className={FILTER_SELECT_CLS}
@@ -699,8 +700,8 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
               {years.map(y => (
                 <option key={y} value={String(y)}>Year : {y}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={viewMode}
               onChange={e => setViewMode(e.target.value as 'table' | 'calendar')}
               className={FILTER_SELECT_CLS}
@@ -708,7 +709,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
             >
               <option value="table">View : Table</option>
               <option value="calendar">View : Calendar</option>
-            </select>
+            </DropdownSelect>
             {(search || yearFilter !== String(new Date().getFullYear())) && (
               <Button
                 size="sm" variant="ghost"

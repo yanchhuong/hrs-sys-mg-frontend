@@ -72,6 +72,7 @@ import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { usePagination } from '../../hooks/usePagination';
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 const TODAY = new Date();
 
@@ -763,7 +764,7 @@ function AttendanceReport({
       <Card>
         <CardContent className="p-3">
           <div className="filter-strip">
-            <select
+            <DropdownSelect
               value={departmentFilter}
               onChange={e => setDepartmentFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -774,8 +775,8 @@ function AttendanceReport({
                 // value matches Employee.department (id in live, name in mock)
                 <option key={d.id} value={USE_MOCKS ? d.name : d.id}>Department : {d.name}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -789,8 +790,8 @@ function AttendanceReport({
               <option value="absent">Status : Absent</option>
               <option value="no_checkin">Status : No Check-in</option>
               <option value="no_checkout">Status : No Check-out</option>
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={activePreset}
               onChange={e => { if (e.target.value) setPreset(e.target.value as 'thisMonth' | 'lastMonth' | 'last7' | 'last30'); }}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -801,7 +802,7 @@ function AttendanceReport({
               <option value="lastMonth">Range : Last Month</option>
               <option value="last7">Range : Last 7 days</option>
               <option value="last30">Range : Last 30 days</option>
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={startDate} onChange={v => setStartDate(v ?? DEFAULT_FROM)} max={endDate || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>
@@ -998,7 +999,7 @@ function PayrollReport({
       <Card>
         <CardContent className="p-3">
           <div className="filter-strip">
-            <select
+            <DropdownSelect
               value={monthFilter}
               onChange={e => setMonthFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -1008,8 +1009,8 @@ function PayrollReport({
               {availableMonths.map(m => (
                 <option key={m} value={m}>Month : {format(parseISO(m + '-01'), 'MMMM yyyy')}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={departmentFilter}
               onChange={e => setDepartmentFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -1019,7 +1020,7 @@ function PayrollReport({
               {departments.map(d => (
                 <option key={d.id} value={USE_MOCKS ? d.name : d.id}>Department : {d.name}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {(monthFilter !== 'all' || departmentFilter !== 'all') && (
               <Button
                 size="sm" variant="ghost"
@@ -1898,7 +1899,7 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={departmentFilter}
               onChange={e => setDepartmentFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -1908,7 +1909,7 @@ function ComplianceReport({ departments }: { departments: DeptLite[] }) {
               {departments.map(d => (
                 <option key={d.id} value={d.id}>Department : {d.name}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={startDate} onChange={v => setStartDate(v ?? DEFAULT_FROM)} max={endDate || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

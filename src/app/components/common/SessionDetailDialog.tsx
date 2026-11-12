@@ -14,6 +14,7 @@ import { Loader2, Save, CheckCircle2 } from 'lucide-react';
 import * as sessionsApi from '../../api/sessions';
 import { useAuth } from '../../context/AuthContext';
 import { format } from 'date-fns';
+import { DropdownSelect } from './DropdownSelect';
 
 /**
  * V215 / v-attendance-module — session details + attendance grid.
@@ -221,7 +222,7 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
                     <TableRow key={r.studentId}>
                       <TableCell className="font-medium">{r.studentName || '—'}</TableCell>
                       <TableCell>
-                        <select
+                        <DropdownSelect
                           className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                           value={r.status}
                           onChange={e => setRow(r.studentId, { status: e.target.value as sessionsApi.AttendanceStatus })}
@@ -230,7 +231,7 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
                           {ATT_STATUSES.map(s => (
                             <option key={s} value={s}>{ATT_LABEL[s]}</option>
                           ))}
-                        </select>
+                        </DropdownSelect>
                       </TableCell>
                       <TableCell>
                         <Input

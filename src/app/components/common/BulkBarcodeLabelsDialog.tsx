@@ -41,6 +41,7 @@ import {
   labelGrid, truncate, usableCols,
   type LabelSpec, type PaperSize,
 } from '../../utils/barcodeLabels';
+import { DropdownSelect } from './DropdownSelect';
 
 const SELECT_CLS =
   'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs '
@@ -185,23 +186,23 @@ export function BulkBarcodeLabelsDialog({
         </DialogHeader>
 
         <div className="flex items-center gap-2 overflow-x-auto hover-scroll-x">
-          <select value={paper} onChange={(e) => setPaper(e.target.value as PaperSize)}
+          <DropdownSelect value={paper} onChange={(e) => setPaper(e.target.value as PaperSize)}
                   className={SELECT_CLS} aria-label="Paper size">
             {(Object.keys(PAPER) as PaperSize[]).map(p => (
               <option key={p} value={p}>Paper : {p}</option>
             ))}
-          </select>
-          <select value={perRow} onChange={(e) => setPerRow(Number(e.target.value))}
+          </DropdownSelect>
+          <DropdownSelect value={perRow} onChange={(e) => setPerRow(Number(e.target.value))}
                   className={SELECT_CLS} aria-label="Labels per row">
             {choices.map(n => <option key={n} value={n}>Per row : {n}</option>)}
-          </select>
-          <select value={preset} onChange={(e) => setPreset(e.target.value as Preset)}
+          </DropdownSelect>
+          <DropdownSelect value={preset} onChange={(e) => setPreset(e.target.value as Preset)}
                   className={SELECT_CLS} aria-label="Copies per item"
                   title="Fills the Copies column — each row can still be edited">
             <option value="one">Copies : 1 each</option>
             <option value="row">Copies : Full row each</option>
             <option value="stock">Copies : Match stock qty</option>
-          </select>
+          </DropdownSelect>
           <span className="text-sm text-gray-500 ml-auto whitespace-nowrap shrink-0">
             {grid.labelW.toFixed(0)}×{grid.labelH.toFixed(0)} mm
             <span className={barMm < MIN_BAR_MM ? 'text-amber-600' : undefined}>

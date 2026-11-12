@@ -83,6 +83,7 @@ import {
 import { useI18n } from '../../i18n/I18nContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { statusBadgeClass } from '../../utils/statusTones';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 // ---------------------------------------------------------------------------
 // API → UI adapters
@@ -2049,7 +2050,7 @@ export function Payroll() {
         </div>
         <div className="flex gap-2">
           <div className="flex items-center gap-2">
-            <select
+            <DropdownSelect
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -2059,8 +2060,8 @@ export function Payroll() {
               {availableYears.map(year => (
                 <option key={year} value={year}>Year : {year}</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -2069,7 +2070,7 @@ export function Payroll() {
               {months.map(month => (
                 <option key={month.value} value={month.value}>Month : {month.value === 'all' ? 'All' : month.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {(selectedYear !== 'all' || selectedMonth !== 'all') && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={() => { setSelectedYear('all'); setSelectedMonth('all'); }}>
                 Clear

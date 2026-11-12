@@ -29,6 +29,7 @@ import { SeatCapDialog } from './SeatCapDialog';
 import { PaymentMethodToggle, paymentMethodHint } from './PaymentMethodToggle';
 import { PayFrequencySelect, useCompanyPayFrequency } from './PayFrequencySelect';
 import { EDUCATION_OPTIONS } from '../../utils/education';
+import { DropdownSelect } from './DropdownSelect';
 
 interface Props {
   open: boolean;
@@ -353,14 +354,14 @@ export function AddEmployeeDialog({
                 />
               </Field>
               <Field label="Status">
-                <select
+                <DropdownSelect
                   value={form.status ?? 'active'}
                   onChange={(e) => patch({ status: e.target.value as Employee['status'] })}
                   className="w-full h-9 px-3 border rounded-md text-sm"
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </DropdownSelect>
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -383,7 +384,7 @@ export function AddEmployeeDialog({
             </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Gender">
-                <select
+                <DropdownSelect
                   value={form.gender ?? ''}
                   onChange={(e) => patch({ gender: e.target.value as 'male' | 'female' })}
                   className="w-full h-9 px-3 border rounded-md text-sm"
@@ -391,7 +392,7 @@ export function AddEmployeeDialog({
                   <option value="">Not specified</option>
                   <option value="male">Male</option>
                   <option value="female">Female</option>
-                </select>
+                </DropdownSelect>
               </Field>
               <Field label="Date of Birth">
                 <Input
@@ -574,7 +575,7 @@ export function AddEmployeeDialog({
                   </TooltipProvider>
                 }
               >
-                <select
+                <DropdownSelect
                   className="h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                   value={form.level ?? ''}
                   onChange={(e) => patch({ level: (e.target.value || undefined) as typeof form.level })}
@@ -584,10 +585,10 @@ export function AddEmployeeDialog({
                   <option value="specialized">Specialized</option>
                   <option value="ns_cook">Non-Specialized · Cook</option>
                   <option value="ns_labour">Non-Specialized · Labour</option>
-                </select>
+                </DropdownSelect>
               </Field>
               <Field label="Education">
-                <select
+                <DropdownSelect
                   className="h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
                   value={form.education ?? ''}
                   onChange={(e) => patch({ education: (e.target.value || undefined) as typeof form.education })}
@@ -598,7 +599,7 @@ export function AddEmployeeDialog({
                   {EDUCATION_OPTIONS.map(o => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
-                </select>
+                </DropdownSelect>
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -621,7 +622,7 @@ export function AddEmployeeDialog({
                   clipping. */}
               <Field label="TID">
                 <div className="flex items-center gap-1.5">
-                  <select
+                  <DropdownSelect
                     value={idType}
                     onChange={(e) => {
                       const next = e.target.value as NationalityType;
@@ -640,7 +641,7 @@ export function AddEmployeeDialog({
                     {ID_TYPE_OPTIONS.map(o => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
-                  </select>
+                  </DropdownSelect>
                   <Input
                     value={form.tid ?? ''}
                     onChange={(e) => patch({ tid: e.target.value })}
@@ -695,7 +696,7 @@ export function AddEmployeeDialog({
               <>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Bank / wallet">
-                    <select
+                    <DropdownSelect
                       value={payBank}
                       onChange={(e) => setPayBank(e.target.value)}
                       className="w-full h-9 px-3 border rounded-md text-sm"
@@ -703,7 +704,7 @@ export function AddEmployeeDialog({
                       {beneficiaryApi.BANK_OPTIONS.map(b => (
                         <option key={b} value={b}>{b.replace(/_/g, ' ')}</option>
                       ))}
-                    </select>
+                    </DropdownSelect>
                   </Field>
                   <Field label="Account Number">
                     <Input

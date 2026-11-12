@@ -22,6 +22,7 @@ import { usePagination } from '../../../hooks/usePagination';
 import { formatMoneyForCurrency } from '../../../utils/format';
 import { statusBadgeClass } from '../../../utils/statusTones';
 import { useDateFormat } from '../../../context/DateFormatContext';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 type FreqTab = 'monthly' | 'annual';
 type CategoryFilter = 'all' | TaxDeclCategory;
@@ -210,7 +211,7 @@ export function AgencyTaxDeclarationsPage() {
             </div>
             {/* Category counts stay inline so the operator sees which
                 category has rows for the frequency tab. */}
-            <select
+            <DropdownSelect
               value={category}
               onChange={e => setCategory(e.target.value as CategoryFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -221,8 +222,8 @@ export function AgencyTaxDeclarationsPage() {
                   Category : {f.key === 'all' ? 'All' : f.label} ({categoryCounts[f.key]})
                 </option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={status}
               onChange={e => setStatus(e.target.value as StatusFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -231,7 +232,7 @@ export function AgencyTaxDeclarationsPage() {
               {STATUS_FILTERS.map(f => (
                 <option key={f.key} value={f.key}>Status : {f.key === 'all' ? 'All' : f.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={dateFrom} onChange={setDateFrom} max={dateTo || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

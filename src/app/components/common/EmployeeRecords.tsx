@@ -33,6 +33,7 @@ import {
   RECORD_TYPES, RECORD_TYPE_ORDER, STATUS_LABEL, WELFARE_APPROVAL_THRESHOLD, APPROVABLE_TYPES,
   RECORD_GROUPS, GROUP_CHIP, groupOf, isMedicalType, nextStatuses, subtypeLabel, summarize,
 } from './employeeRecordTypes';
+import { DropdownSelect } from './DropdownSelect';
 
 /** The ✨ / calendar mark before a record's details: made automatically
  *  from an employee change, or from an approved leave. */
@@ -336,9 +337,9 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Subtype</Label>
-              <select className={selectCls} value={subtype} onChange={e => setSubtype(e.target.value)}>
+              <DropdownSelect className={selectCls} value={subtype} onChange={e => setSubtype(e.target.value)}>
                 {meta.subtypes.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-              </select>
+              </DropdownSelect>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-600">Date <span className="text-red-500">*</span></Label>
@@ -359,11 +360,11 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
               <div key={f.key} className={`space-y-1.5 ${f.kind === 'textarea' ? 'sm:col-span-2' : ''}`}>
                 <Label className="text-xs text-gray-600">{f.label}</Label>
                 {f.kind === 'select' ? (
-                  <select className={selectCls} value={String(details[f.key] ?? '')}
+                  <DropdownSelect className={selectCls} value={String(details[f.key] ?? '')}
                     onChange={e => setField(f.key, e.target.value)}>
                     <option value="">—</option>
                     {f.options!.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+                  </DropdownSelect>
                 ) : f.kind === 'date' ? (
                   <DateInput value={(details[f.key] as string) || null} onChange={v => setField(f.key, v ?? '')} />
                 ) : f.kind === 'bool' ? (

@@ -35,6 +35,7 @@ import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from '../views/documentE
 import { useConfirm } from '../../context/ConfirmContext';
 import { MyClubsPanel } from './ClubPrograms';
 import { MyTelegramCard } from './MyTelegramCard';
+import { DropdownSelect } from './DropdownSelect';
 
 interface Props {
   open: boolean;
@@ -529,7 +530,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <FieldBox label="Gender">
-                <select
+                <DropdownSelect
                   value={profile.gender ?? ''}
                   onChange={(e) => setProfile({ ...profile, gender: e.target.value as 'male' | 'female' })}
                   className="w-full h-9 px-3 border rounded-md text-sm"
@@ -537,7 +538,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                   <option value="">Not specified</option>
                   <option value="male">Male</option>
                   <option value="female">Female</option>
-                </select>
+                </DropdownSelect>
               </FieldBox>
               <FieldBox label="Date of Birth" icon={Calendar}>
                 <Input
@@ -785,7 +786,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex-1 min-w-[180px] space-y-1.5">
                     <Label className="text-xs text-gray-600">Document type</Label>
-                    <select
+                    <DropdownSelect
                       value={attachUploadType}
                       onChange={e => setAttachUploadType(e.target.value as documentsApi.EmployeeDocumentType)}
                       className="w-full h-9 px-3 border rounded-md text-sm bg-white"
@@ -793,7 +794,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                       {DOC_TYPES.map(t => (
                         <option key={t.value} value={t.value}>{t.label}</option>
                       ))}
-                    </select>
+                    </DropdownSelect>
                   </div>
                   <div className="flex-1 min-w-[200px] space-y-1.5">
                     <Label htmlFor="profile-attach-file" className="text-xs text-gray-600">

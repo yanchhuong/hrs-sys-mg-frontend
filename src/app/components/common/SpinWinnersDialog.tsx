@@ -7,6 +7,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import * as shopApi from '../../api/shop';
 import { useConfirm } from '../../context/ConfirmContext';
+import { DropdownSelect } from './DropdownSelect';
 
 /**
  * V359 — "Manage winners" for the public shop's Spin & Win.
@@ -159,7 +160,7 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
 
           {/* Filter row — one line, scrolls sideways when narrow */}
           <div className="flex items-center gap-2 overflow-x-auto hover-scroll-x [&>*]:shrink-0">
-            <select
+            <DropdownSelect
               value={status}
               onChange={e => { setStatus(e.target.value as shopApi.WinnerStatus); setPage(0); }}
               className={SELECT_CLS}
@@ -169,7 +170,7 @@ export function SpinWinnersDialog({ open, onOpenChange, onChanged }: {
               <option value="open">Open</option>
               <option value="redeemed">Used</option>
               <option value="expired">Expired</option>
-            </select>
+            </DropdownSelect>
             <div className="relative w-56">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <Input

@@ -31,6 +31,7 @@ import { usePagination } from '../../../hooks/usePagination';
 import { Pagination } from '../../common/Pagination';
 import { InvoiceViewDialog } from './InvoiceViewDialog';
 import { DocAuditLine } from '../../common/DocAuditLine';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 // v-doc-audit-line — server adds creator / last-editor names to each
 // payment row. Widened locally because api/library.ts is owned elsewhere.
@@ -156,7 +157,7 @@ export function PaymentHistory() {
         <CardHeader className="pb-3">
           {/* v-library-filter-strip — Transactions-shape strip. */}
           <div className="filter-strip">
-            <select
+            <DropdownSelect
               value={remarkFilter}
               onChange={e => setRemarkFilter(e.target.value as RemarkFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -165,7 +166,7 @@ export function PaymentHistory() {
               {REMARK_FILTERS.map(f => (
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

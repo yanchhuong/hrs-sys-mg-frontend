@@ -66,6 +66,7 @@ import { printWithKhmerFonts } from '../../utils/printFonts';
 import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useOpenIntent } from '../../utils/openIntent';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /** Floating popover that lists every contact reachable for a
  *  quotation — the primary recipient (name/email/phone stamped on the
@@ -348,7 +349,7 @@ export function Quotations() {
             {/* Status filter — dropdown to match Invoice's Kind filter
                 shape. Cheaper on horizontal space than tabs and reads
                 the same across both pages. */}
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -357,7 +358,7 @@ export function Quotations() {
               {STATUS_FILTERS.map(f => (
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0">
               <DateInput

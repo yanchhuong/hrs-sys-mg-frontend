@@ -29,6 +29,7 @@ import { ListEmpty, ListError } from '../../common/ListStates';
 import { useConfirm } from '../../../context/ConfirmContext';
 import { statusBadgeClass } from '../../../utils/statusTones';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 const FILTER_SELECT_CLS =
   'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
@@ -495,7 +496,7 @@ export function CrossTenantUsers() {
                 className="pl-7 h-9 w-64"
               />
             </div>
-            <select
+            <DropdownSelect
               value={companyFilter}
               onChange={(e) => setCompanyFilter(e.target.value)}
               className={FILTER_SELECT_CLS}
@@ -505,11 +506,11 @@ export function CrossTenantUsers() {
               {tenantOptions.map(c => (
                 <option key={c.id} value={c.id}>Company : {c.name}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {/* V266 — presence filter. Server treats the value as a
                 strict membership predicate (5-min window); "all"
                 passes the flag through as-is. */}
-            <select
+            <DropdownSelect
               value={presence}
               onChange={(e) => setPresence(e.target.value as typeof presence)}
               className={FILTER_SELECT_CLS}
@@ -518,7 +519,7 @@ export function CrossTenantUsers() {
               <option value="all">Presence : All</option>
               <option value="online">Presence : Online</option>
               <option value="offline">Presence : Offline</option>
-            </select>
+            </DropdownSelect>
             {hasFilters && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
                 Clear

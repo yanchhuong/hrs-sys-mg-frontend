@@ -24,6 +24,7 @@ import * as paywayApi from '../../api/payway';
 import { PayWaySettingsDialog } from './PayWaySettingsDialog';
 import { Loyalty } from '../views/Loyalty';
 import { CommissionSettings } from '../views/CommissionSettings';
+import { DropdownSelect } from './DropdownSelect';
 
 /** v-qr-crop-size-after — what is worth DECODING, versus what is
  *  worth STORING. The first is generous: a phone screenshot is a
@@ -807,7 +808,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                       desktop printer's @page rule so margins fit the chosen sheet.
                     </HelpHint>
                   </Label>
-                  <select
+                  <DropdownSelect
                     value={draft.posPaperSize}
                     onChange={e => setDraft({ ...draft, posPaperSize: e.target.value as settingsApi.AccountingSettings['posPaperSize'] })}
                     className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -817,7 +818,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                     <option value="a6">A6 (105 × 148mm)</option>
                     <option value="a5">A5 (148 × 210mm)</option>
                     <option value="a4">A4 (210 × 297mm)</option>
-                  </select>
+                  </DropdownSelect>
                 </div>
 
                 {/* V141 — exchange rate. New POS orders snapshot
@@ -954,7 +955,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           (resets monthly). YYYY = just the year (resets annually).
                         </HelpHint>
                       </Label>
-                      <select
+                      <DropdownSelect
                         value={draft.numberDateFormat}
                         onChange={e => setDraft({ ...draft, numberDateFormat: e.target.value as 'DDMMYYYY' | 'MMYYYY' | 'YYYY' })}
                         disabled={loading || saving}
@@ -963,7 +964,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                         <option value="DDMMYYYY">DDMMYYYY</option>
                         <option value="MMYYYY">MMYYYY</option>
                         <option value="YYYY">YYYY</option>
-                      </select>
+                      </DropdownSelect>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
@@ -973,7 +974,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           aligned in lists but doesn't change the actual count.
                         </HelpHint>
                       </Label>
-                      <select
+                      <DropdownSelect
                         value={draft.numberSeqWidth}
                         onChange={e => setDraft({ ...draft, numberSeqWidth: parseInt(e.target.value, 10) || 3 })}
                         disabled={loading || saving}
@@ -982,7 +983,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                         <option value={2}>## (2 digits)</option>
                         <option value={3}>### (3 digits)</option>
                         <option value={4}>#### (4 digits)</option>
-                      </select>
+                      </DropdownSelect>
                     </div>
                     <div className="col-span-2 -mt-1 text-[11px] text-gray-500">
                       Next number example: <code className="tabular-nums text-gray-700">{previewNo}</code>
@@ -1325,7 +1326,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="text-xs text-gray-600">Primary currency</Label>
-                        <select
+                        <DropdownSelect
                           value={currencyPrimary}
                           onChange={e => setCurrencyPrimary(e.target.value as currencyApi.AllowedCurrency)}
                           className="w-full h-9 rounded-md border border-gray-300 bg-white px-3 text-sm"
@@ -1334,11 +1335,11 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           {currencyApi.ALLOWED_CURRENCIES.map(c => (
                             <option key={c} value={c}>{currencyApi.currencyLabel(c)}</option>
                           ))}
-                        </select>
+                        </DropdownSelect>
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-xs text-gray-600">Secondary (optional)</Label>
-                        <select
+                        <DropdownSelect
                           value={currencySecondary === '' ? '__none' : currencySecondary}
                           onChange={e => {
                             const v = e.target.value === '__none'
@@ -1358,7 +1359,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           {currencyApi.ALLOWED_CURRENCIES.filter(c => c !== currencyPrimary).map(c => (
                             <option key={c} value={c}>{currencyApi.currencyLabel(c)}</option>
                           ))}
-                        </select>
+                        </DropdownSelect>
                       </div>
                     </div>
 

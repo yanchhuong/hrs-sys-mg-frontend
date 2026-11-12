@@ -58,6 +58,7 @@ import { USE_MOCKS } from '../../api/client';
 import { makeDeptName } from '../../utils/deptName';
 import { leaderOf } from '../../utils/managerLadder';
 import { useOpenIntent } from '../../utils/openIntent';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 // Adapts a backend Employee to the front-end Employee shape. Mirrors
 // Exception.tsx — see that file for the wider rationale on apiId/empNo.
@@ -637,19 +638,19 @@ export function AllLeave() {
                     <div className="grid grid-cols-2 gap-3 rounded-md border bg-gray-50 px-3 py-2">
                       <div className="space-y-1">
                         <Label htmlFor="lv-ceremony" className="text-xs">Ceremony</Label>
-                        <select id="lv-ceremony" value={newCeremonyType} onChange={e => setNewCeremonyType(e.target.value)}
+                        <DropdownSelect id="lv-ceremony" value={newCeremonyType} onChange={e => setNewCeremonyType(e.target.value)}
                           className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm">
                           <option value="">Not a ceremony</option>
                           {leaveApi.CEREMONY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
+                        </DropdownSelect>
                       </div>
                       <div className="space-y-1">
                         <Label htmlFor="lv-relation" className="text-xs">Whose</Label>
-                        <select id="lv-relation" value={newCeremonyRelation} disabled={!newCeremonyType}
+                        <DropdownSelect id="lv-relation" value={newCeremonyRelation} disabled={!newCeremonyType}
                           onChange={e => setNewCeremonyRelation(e.target.value)}
                           className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm disabled:opacity-50">
                           {leaveApi.RELATION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
+                        </DropdownSelect>
                       </div>
                       <p className="col-span-2 text-[11px] text-gray-500">A ceremony is added to Employee Records when the leave is approved.</p>
                     </div>
@@ -802,7 +803,7 @@ export function AllLeave() {
               />
             </div>
             {/* Leave Type filter — values match the LeaveCategory enum. */}
-            <select
+            <DropdownSelect
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as typeof categoryFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -814,7 +815,7 @@ export function AllLeave() {
               <option value="special">Leave Type : Special</option>
               <option value="maternity">Leave Type : Maternity</option>
               <option value="exception">Leave Type : Exception</option>
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0">
               <DateInput

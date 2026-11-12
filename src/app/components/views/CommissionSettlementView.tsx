@@ -34,6 +34,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { statusBadgeClass } from '../../utils/statusTones';
 import { format as formatLocalDate } from 'date-fns';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 const STATUS_META: Record<SettlementStatus, { label: string; cls: string }> = {
   // App-wide palette (utils/statusTones) — outline Badges.
@@ -175,7 +176,7 @@ export function CommissionSettlementView() {
                 className="h-9 w-64 pl-7 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as SettlementStatus | '')}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -184,7 +185,7 @@ export function CommissionSettlementView() {
               {(Object.keys(STATUS_META) as SettlementStatus[]).map(k => (
                 <option key={k} value={k}>Status : {STATUS_META[k].label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500">From</Label>
             <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} />
             <Label className="text-xs text-gray-500">To</Label>

@@ -60,6 +60,7 @@ import { makeDeptName } from '../../utils/deptName';
 import { downloadAttendanceTemplate } from '../../utils/attendanceTemplate';
 import { parseAttendanceExcel } from '../../utils/attendanceParser';
 import { fetchScanRule } from '../../utils/scanRule';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 type ViewMode = 'daily' | 'monthly';
 type FilterTab = 'all' | 'no_checkin' | 'no_checkout' | 'late' | 'early_leave' | 'absent' | 'present' | 'leave' | 'exception';
@@ -2349,7 +2350,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                       className="h-9 pl-7"
                     />
                   </div>
-                  <select
+                  <DropdownSelect
                     value={departmentFilter}
                     onChange={e => setDepartmentFilter(e.target.value)}
                     aria-label="Filter by department"
@@ -2359,10 +2360,10 @@ export function Attendance({ onNavigate }: Props = {}) {
                     {departments.map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
-                  </select>
+                  </DropdownSelect>
                   {/* v-attendance-filter-single-row — Hours fulfilment
                       filter sits on the same row as the other filters. */}
-                  <select
+                  <DropdownSelect
                     value={hoursFilter}
                     onChange={e => setHoursFilter(e.target.value as typeof hoursFilter)}
                     aria-label="Filter by hours"
@@ -2371,7 +2372,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                     <option value="all">Hours : All</option>
                     <option value="fulfilled">Fulfilled (≥ 8h)</option>
                     <option value="short">Short (&lt; 8h)</option>
-                  </select>
+                  </DropdownSelect>
                   <Label className="text-xs text-gray-500 shrink-0">From</Label>
                   <div className="shrink-0">
                     <DateInput
@@ -2817,7 +2818,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                       className="h-9 pl-7"
                     />
                   </div>
-                  <select
+                  <DropdownSelect
                     value={departmentFilter}
                     onChange={e => setDepartmentFilter(e.target.value)}
                     aria-label="Filter by department"
@@ -2827,8 +2828,8 @@ export function Attendance({ onNavigate }: Props = {}) {
                     {departments.map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
-                  </select>
-                  <select
+                  </DropdownSelect>
+                  <DropdownSelect
                     value={monthlyStatusFilter}
                     onChange={e => setMonthlyStatusFilter(e.target.value as typeof monthlyStatusFilter)}
                     aria-label="Filter by status"
@@ -2838,7 +2839,7 @@ export function Attendance({ onNavigate }: Props = {}) {
                     <option value="late">Late / Early Out</option>
                     <option value="absent">Absent</option>
                     <option value="late_or_absent">Late or Absent</option>
-                  </select>
+                  </DropdownSelect>
                   {(monthlySearch || departmentFilter !== 'all' || monthlyStatusFilter !== 'all') && (
                     <Button
                       size="sm"

@@ -34,6 +34,7 @@ import { toast } from 'sonner';
 import { LEN, NUM, maskNumber, maskPhone, isEmail, isPhone } from '../../utils/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 const TYPE_FILTERS: ReadonlyArray<{ value: 'all' | customersApi.CustomerType; label: string }> = [
   { value: 'all',         label: 'All' },
@@ -661,7 +662,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
               />
             </form>
             {!isPatient && !isStudent && (
-              <select
+              <DropdownSelect
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
                 className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -670,7 +671,7 @@ export function Customers({ presentAs = 'customer' }: { presentAs?: 'customer' |
                 {TYPE_FILTERS.map(f => (
                   <option key={f.value} value={f.value}>Type : {f.label}</option>
                 ))}
-              </select>
+              </DropdownSelect>
             )}
             {/* Student lens: From/To range on createdAt, matching
                 [[feedback-filter-strip-consistency]]. */}

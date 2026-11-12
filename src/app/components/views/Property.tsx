@@ -36,6 +36,7 @@ import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../common/ListStates';
 import * as currencyApi from '../../api/currencySettings';
 import { formatMoneyForCurrency } from '../../utils/format';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /** Property prices carry no currency of their own — they're entered in
  *  the tenant's primary currency, so render them with that code instead
@@ -485,7 +486,7 @@ export function Property() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={categoryFilter}
               onChange={e => setCategoryFilter(e.target.value as typeof categoryFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -495,7 +496,7 @@ export function Property() {
               {itemsApi.PAYMENT_PLAN_ITEM_CATEGORIES.map(c => (
                 <option key={c.value} value={c.value}>Category : {c.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {(search || categoryFilter !== 'all') && (
               <Button
                 size="sm" variant="ghost"

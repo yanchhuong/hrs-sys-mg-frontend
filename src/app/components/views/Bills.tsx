@@ -66,6 +66,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { useOpenIntent } from '../../utils/openIntent';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /* -------------------------------------------------------------------------- */
 /* Kind / status helpers — labels, badge colours, icons                       */
@@ -673,7 +674,7 @@ export function Bills() {
               horizontally; on sm: falls back to the original
               justify-between + flex-wrap. */}
           <div className="filter-strip">
-            <select
+            <DropdownSelect
               value={kindFilter}
               onChange={e => setKindFilter(e.target.value as typeof kindFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -682,7 +683,7 @@ export function Bills() {
               {KIND_FILTERS.map(f => (
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <div className="flex items-center gap-2">
               {/* Date range — inclusive, either end may be open. Backend
                   returns the most recent rows; the range narrows the

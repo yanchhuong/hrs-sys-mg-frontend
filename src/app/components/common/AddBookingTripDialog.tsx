@@ -14,6 +14,7 @@ import { SearchablePicker } from './SearchablePicker';
 import * as bookingTripsApi from '../../api/bookingTrips';
 import * as bookingSchedulesApi from '../../api/bookingSchedules';
 import * as paymentPlanItemsApi from '../../api/paymentPlanItems';
+import { DropdownSelect } from './DropdownSelect';
 
 /**
  * v-booking-trip-popup — standalone "New / Edit trip" popup. Same
@@ -314,7 +315,7 @@ export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, i
               <Label className="text-xs">
                 Type<span className="text-red-500"> *</span>
               </Label>
-              <select
+              <DropdownSelect
                 className="h-9 w-full px-2 border rounded-md text-sm bg-white"
                 value={form.sessionType}
                 onChange={e => setForm(f => ({ ...f, sessionType: e.target.value as bookingTripsApi.SessionType }))}
@@ -322,7 +323,7 @@ export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, i
                 {bookingTripsApi.SESSION_TYPE_LABELS.map(o => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
-              </select>
+              </DropdownSelect>
             </div>
             {/* v-session-frequency — Repeats toggle. OFF (default) =
                 single one-off session on a specific date; ON = fan
@@ -417,7 +418,7 @@ export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, i
                     Departure time<span className="text-red-500"> *</span>
                   </Label>
                   {slotOptions.length > 0 && !customDeparture ? (
-                    <select
+                    <DropdownSelect
                       className="h-9 w-full px-2 border rounded-md text-sm bg-white tabular-nums"
                       value={form.departureTime}
                       onChange={e => {
@@ -434,7 +435,7 @@ export function AddBookingTripDialog({ open, onOpenChange, editing, schedules, i
                         </option>
                       ))}
                       <option value="__custom__">— Custom time…</option>
-                    </select>
+                    </DropdownSelect>
                   ) : (
                     <div className="flex items-center gap-2">
                       <Input

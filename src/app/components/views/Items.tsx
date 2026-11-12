@@ -65,7 +65,9 @@ const BulkBarcodeLabelsDialog = lazyWithReload(() =>
 import { SearchablePicker } from '../common/SearchablePicker';
 import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import { FilterStrip } from '../common/FilterStrip';
+import { FilterSelect } from '../common/FilterSelect';
 import { makeThumbnailFromUrl } from '../../utils/imageCompress';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 interface FormState {
   sku: string;
@@ -1600,55 +1602,55 @@ export function Items() {
           <FilterStrip>
             {rows.length > 0 && (
               <>
-                <select
+                {/* v-filter-select-popover — FilterSelect opens in the
+                    same rounded grey frame as the Price/Stock popovers
+                    instead of the browser's square native list. */}
+                <FilterSelect
                   value={categoryFilter}
-                  onChange={e => setCategoryFilter(e.target.value)}
-                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onChange={setCategoryFilter}
                   aria-label="Filter by category"
-                >
-                  <option value="">All categories</option>
-                  {categoryOptions.map(c => (
-                    <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>
-                  ))}
-                </select>
-                <select
+                  options={[
+                    { value: '', label: 'All categories' },
+                    ...categoryOptions.map(c => ({ value: c, label: c[0].toUpperCase() + c.slice(1) })),
+                  ]}
+                />
+                {/* Labels match the column header "Stock +/-" so the
+                    operator sees this filter narrows by the Stock+/-
+                    toggle — not by whether the item is out of stock.
+                    "On" = tracking; "Off" = not tracking (service). */}
+                <FilterSelect
                   value={stockIoFilter}
-                  onChange={e => setStockIoFilter(e.target.value as '' | 'on' | 'off')}
-                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onChange={v => setStockIoFilter(v as '' | 'on' | 'off')}
                   aria-label="Filter by Stock +/-"
-                >
-                  {/* Labels match the column header "Stock +/-" so
-                      the operator sees this filter narrows by the
-                      Stock+/- toggle — not by whether the item is
-                      out of stock. "On" = tracking; "Off" = not
-                      tracking (service). */}
-                  <option value="">Stock +/- : All</option>
-                  <option value="on">Stock +/- : On</option>
-                  <option value="off">Stock +/- : Off</option>
-                </select>
+                  options={[
+                    { value: '', label: 'Stock +/- : All' },
+                    { value: 'on', label: 'Stock +/- : On' },
+                    { value: 'off', label: 'Stock +/- : Off' },
+                  ]}
+                />
                 {/* v-items-active-filter — Active Yes/No matches the
                     Stock I/O select shape so both flags read as a
                     pair in the strip. */}
-                <select
+                <FilterSelect
                   value={activeFilter}
-                  onChange={e => setActiveFilter(e.target.value as '' | 'yes' | 'no')}
-                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onChange={v => setActiveFilter(v as '' | 'yes' | 'no')}
                   aria-label="Filter by Active"
-                >
-                  <option value="">Active : All</option>
-                  <option value="yes">Active : Yes</option>
-                  <option value="no">Active : No</option>
-                </select>
-                <select
+                  options={[
+                    { value: '', label: 'Active : All' },
+                    { value: 'yes', label: 'Active : Yes' },
+                    { value: 'no', label: 'Active : No' },
+                  ]}
+                />
+                <FilterSelect
                   value={imageFilter}
-                  onChange={e => setImageFilter(e.target.value as '' | 'yes' | 'no')}
-                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onChange={v => setImageFilter(v as '' | 'yes' | 'no')}
                   aria-label="Filter by Image presence"
-                >
-                  <option value="">Image : All</option>
-                  <option value="yes">Image : Yes</option>
-                  <option value="no">Image : No</option>
-                </select>
+                  options={[
+                    { value: '', label: 'Image : All' },
+                    { value: 'yes', label: 'Image : Yes' },
+                    { value: 'no', label: 'Image : No' },
+                  ]}
+                />
                 {/* Range filters — pill in the strip, slider floats
                     above it in a Popover on click (iOS-style overlay).
                     Hidden entirely during the initial load so the
@@ -1770,19 +1772,18 @@ export function Items() {
               {warehouseFeatureOn && (
                 <div className="flex items-center gap-1.5">
                   <WarehouseIcon className="h-3.5 w-3.5 text-gray-500" />
-                  <select
+                  <FilterSelect
                     value={warehouseFilter}
-                    onChange={e => setWarehouseFilter(e.target.value)}
-                    className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    onChange={setWarehouseFilter}
                     aria-label="Filter by warehouse"
-                  >
-                    <option value="">All warehouses</option>
-                    {warehouses.filter(w => w.enabled).map(w => (
-                      <option key={w.id} value={w.id}>
-                        {w.code ? `${w.code} — ${w.name}` : w.name}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: '', label: 'All warehouses' },
+                      ...warehouses.filter(w => w.enabled).map(w => ({
+                        value: w.id,
+                        label: w.code ? `${w.code} — ${w.name}` : w.name,
+                      })),
+                    ]}
+                  />
                 </div>
               )}
               {/* v-items-search-suggestions — typeahead over the loaded
@@ -2856,7 +2857,7 @@ function GoldPriceFields({ form, setForm, goldPrices }: {
           <Coins className="h-3.5 w-3.5 text-amber-600" />
           Gold Market Price
         </Label>
-        <select
+        <DropdownSelect
           value={form.goldTitle}
           onChange={e => setForm({ ...form, goldTitle: e.target.value })}
           className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm"
@@ -2865,7 +2866,7 @@ function GoldPriceFields({ form, setForm, goldPrices }: {
           <option value="">None — a fixed price</option>
           {options.map(o => <option key={o.title} value={o.title}>{o.title}</option>)}
           {form.goldTitle && !g && <option value={form.goldTitle}>{form.goldTitle}</option>}
-        </select>
+        </DropdownSelect>
         <p className="text-[11px] text-gray-500">
           {form.goldTitle
             ? 'Priced by weight from this gold, and updated every time its price changes.'
@@ -2886,7 +2887,7 @@ function GoldPriceFields({ form, setForm, goldPrices }: {
                 aria-label="Weight"
                 className="flex-1 min-w-0 bg-white text-right tabular-nums"
               />
-              <select
+              <DropdownSelect
                 value={form.weightUnit}
                 onChange={e => {
                   const weightUnit = e.target.value as marketApi.GoldCalcUnit;
@@ -2897,7 +2898,7 @@ function GoldPriceFields({ form, setForm, goldPrices }: {
                 aria-label="Weight unit"
               >
                 {marketApi.GOLD_CALC_UNITS.map(u => <option key={u.key} value={u.key}>{u.label}</option>)}
-              </select>
+              </DropdownSelect>
             </div>
           </div>
           <div className="space-y-1.5">

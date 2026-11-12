@@ -35,6 +35,7 @@ import { usePagination } from '../../../hooks/usePagination';
 import { formatMoneyForCurrency } from '../../../utils/format';
 import { statusBadgeClass, TONE_CLASS } from '../../../utils/statusTones';
 import { useDateFormat } from '../../../context/DateFormatContext';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 type TopTab = 'case' | 'documents';
 type DocKindFilter = 'all' | PortfolioDocType;
@@ -343,7 +344,7 @@ export function AgencySaleExpensePage() {
                   className="h-9 pl-7 w-64 text-sm"
                 />
               </div>
-              <select
+              <DropdownSelect
                 value={kind}
                 onChange={e => setKind(e.target.value as DocKindFilter)}
                 className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -352,7 +353,7 @@ export function AgencySaleExpensePage() {
                 {DOC_KIND_FILTERS.map(f => (
                   <option key={f.key} value={f.key}>Type : {f.label}</option>
                 ))}
-              </select>
+              </DropdownSelect>
               <Label className="text-xs text-gray-500 shrink-0">From</Label>
               <div className="shrink-0"><DateInput value={docDateFrom} onChange={setDocDateFrom} max={docDateTo || undefined} /></div>
               <Label className="text-xs text-gray-500 shrink-0">To</Label>
@@ -485,7 +486,7 @@ export function AgencySaleExpensePage() {
                   className="h-9 pl-7 w-64 text-sm"
                 />
               </div>
-              <select
+              <DropdownSelect
                 value={reqTab}
                 onChange={e => setReqTab(e.target.value as DocReqTab)}
                 className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -494,7 +495,7 @@ export function AgencySaleExpensePage() {
                 {DOC_REQ_TABS.map(t => (
                   <option key={t.key} value={t.key}>Status : {t.label} ({reqCounts[t.key]})</option>
                 ))}
-              </select>
+              </DropdownSelect>
               <Label className="text-xs text-gray-500 shrink-0">From</Label>
               <div className="shrink-0"><DateInput value={reqDateFrom} onChange={setReqDateFrom} max={reqDateTo || undefined} /></div>
               <Label className="text-xs text-gray-500 shrink-0">To</Label>

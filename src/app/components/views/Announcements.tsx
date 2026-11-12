@@ -50,6 +50,7 @@ import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
 import { DocAuditLine } from '../common/DocAuditLine';
 import { EventFields, emptyEventDraft, eventRequestFields, type EventDraft } from '../common/announcement/EventFields';
 import { EventPanel } from '../common/announcement/EventPanel';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /**
  * Announcements (V122). Admin / manager publishes a broadcast to
@@ -608,7 +609,7 @@ export function Announcements() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -619,8 +620,8 @@ export function Announcements() {
               <option value="SCHEDULED">Status : Scheduled</option>
               <option value="PUBLISHED">Status : Published</option>
               <option value="EXPIRED">Status : Expired</option>
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -631,7 +632,7 @@ export function Announcements() {
               <option value="NEWS">Type : News</option>
               <option value="EVENTS">Type : Events</option>
               <option value="OTHERS">Type : Others</option>
-            </select>
+            </DropdownSelect>
             {hasFilters && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
                 Clear

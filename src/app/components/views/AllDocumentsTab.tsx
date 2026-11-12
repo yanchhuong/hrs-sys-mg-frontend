@@ -23,6 +23,7 @@ import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../common/ListStates';
 import { DateInput } from '../common/DateInput';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /**
  * "All Documents" tab on the Employees page. Tenant-wide listing of
@@ -204,7 +205,7 @@ export function AllDocumentsTab() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -213,7 +214,7 @@ export function AllDocumentsTab() {
               {TYPE_OPTIONS.map(o => (
                 <option key={o.value} value={o.value}>Type : {o.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

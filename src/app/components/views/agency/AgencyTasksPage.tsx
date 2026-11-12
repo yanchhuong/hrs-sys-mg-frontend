@@ -21,6 +21,7 @@ import { Pagination } from '../../common/Pagination';
 import { usePagination } from '../../../hooks/usePagination';
 import { statusBadgeClass } from '../../../utils/statusTones';
 import { useDateFormat } from '../../../context/DateFormatContext';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 type Tab = 'all' | 'todo' | 'in_progress' | 'blocked' | 'done';
 
@@ -172,7 +173,7 @@ export function AgencyTasksPage() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={tab}
               onChange={e => setTab(e.target.value as Tab)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -181,8 +182,8 @@ export function AgencyTasksPage() {
               {TABS.map(t => (
                 <option key={t.key} value={t.key}>Status : {t.label} ({counts[t.key]})</option>
               ))}
-            </select>
-            <select
+            </DropdownSelect>
+            <DropdownSelect
               value={scope}
               onChange={e => setScope(e.target.value as typeof scope)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -193,7 +194,7 @@ export function AgencyTasksPage() {
                 Scope : Just this client{activeClient ? '' : ' (pick first)'}
               </option>
               <option value="mine">Scope : My tasks</option>
-            </select>
+            </DropdownSelect>
             {/* Due-date range. Tasks without a due date drop out when a
                 range is set (nothing to compare against). */}
             <Label className="text-xs text-gray-500 shrink-0">From</Label>

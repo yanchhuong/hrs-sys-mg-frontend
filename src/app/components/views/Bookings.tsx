@@ -54,6 +54,7 @@ import { Pagination } from '../common/Pagination';
 import { usePagination } from '../../hooks/usePagination';
 import * as customersApi from '../../api/customers';
 import * as paymentPlanItemsApi from '../../api/paymentPlanItems';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /**
  * Booking module (v-booking-mvp, V288). Under Receivables → Booking.
@@ -262,7 +263,7 @@ export function Bookings() {
                 className="h-9 w-64 pl-7 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as bookingsApi.BookingStatus | 'all')}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -270,7 +271,7 @@ export function Bookings() {
               <option value="all">Status : All</option>
               {(Object.entries(bookingsApi.BOOKING_STATUS_META) as [bookingsApi.BookingStatus, { label: string }][])
                 .map(([k, m]) => <option key={k} value={k}>Status : {m.label}</option>)}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500">From</Label>
             <DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} />
             <Label className="text-xs text-gray-500">To</Label>

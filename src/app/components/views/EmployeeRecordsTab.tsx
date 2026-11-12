@@ -22,6 +22,7 @@ import {
   RecordFormDialog, RecordRowActions, RecordSourceMark, RecordStatusBadge, RecordTypeChip, type RecordEmployeeOption,
 } from '../common/EmployeeRecords';
 import { RECORD_GROUPS, RECORD_TYPES, STATUS_LABEL, summarize } from '../common/employeeRecordTypes';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 const filterSelectCls =
   'h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0';
@@ -95,7 +96,7 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
             <Input placeholder="Search employee, ID or details…" value={search}
               onChange={e => setSearch(e.target.value)} className="h-9 pl-7 w-64 text-sm" />
           </div>
-          <select value={type} onChange={e => { setType(e.target.value as RecordType | ''); setStatus(''); }}
+          <DropdownSelect value={type} onChange={e => { setType(e.target.value as RecordType | ''); setStatus(''); }}
             className={filterSelectCls} aria-label="Filter by record type">
             <option value="">Type : All</option>
             {RECORD_GROUPS.map(g => (
@@ -103,12 +104,12 @@ export function EmployeeRecordsTab({ employees, onOpenEmployee }: {
                 {g.types.map(t => <option key={t} value={t}>Type : {RECORD_TYPES[t].label}</option>)}
               </optgroup>
             ))}
-          </select>
-          <select value={status} onChange={e => setStatus(e.target.value)} className={filterSelectCls}
+          </DropdownSelect>
+          <DropdownSelect value={status} onChange={e => setStatus(e.target.value)} className={filterSelectCls}
             aria-label="Filter by status">
             <option value="">Status : All</option>
             {statusOptions.map(s => <option key={s} value={s}>Status : {STATUS_LABEL[s]}</option>)}
-          </select>
+          </DropdownSelect>
           <Label className="text-xs text-gray-500 shrink-0">From</Label>
           <div className="shrink-0"><DateInput value={from || null} onChange={v => setFrom(v ?? '')} max={to || undefined} /></div>
           <Label className="text-xs text-gray-500 shrink-0">To</Label>

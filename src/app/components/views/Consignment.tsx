@@ -39,6 +39,7 @@ import * as customersApi from '../../api/customers';
 import * as warehousesApi from '../../api/warehouses';
 import * as itemsApi from '../../api/items';
 import { useI18n } from '../../i18n/I18nContext';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /**
  * V309 Consignment page — same UI/UX shell as {@link ./Commission}:
@@ -1372,14 +1373,14 @@ function ConsignmentDialog({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Warehouse</Label>
-            <select
+            <DropdownSelect
               value={warehouseId}
               onChange={e => setWarehouseId(e.target.value)}
               className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm"
             >
               <option value="">— None —</option>
               {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
+            </DropdownSelect>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Start date <span className="text-red-500">*</span></Label>
@@ -1395,14 +1396,14 @@ function ConsignmentDialog({
           {editing && (
             <div className="space-y-1">
               <Label className="text-xs">Status</Label>
-              <select
+              <DropdownSelect
                 value={status}
                 onChange={e => setStatus(e.target.value as consignmentsApi.ConsignmentStatus)}
                 className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm"
               >
                 {(Object.keys(consignmentsApi.CONSIGNMENT_STATUS_LABELS) as consignmentsApi.ConsignmentStatus[]).map(k =>
                   <option key={k} value={k}>{consignmentsApi.CONSIGNMENT_STATUS_LABELS[k]}</option>)}
-              </select>
+              </DropdownSelect>
             </div>
           )}
           <div className="space-y-1">
@@ -1460,7 +1461,7 @@ function ConsignmentDialog({
                           the table between $ and % without changing
                           storage. Percent mode derives dollars from
                           gross on save. */}
-                      <select
+                      <DropdownSelect
                         value={commissionMode}
                         onChange={e => setCommissionMode(e.target.value as '$' | '%')}
                         className="h-6 text-[11px] rounded border border-input bg-white px-1 font-normal"
@@ -1468,7 +1469,7 @@ function ConsignmentDialog({
                       >
                         <option value="$">$</option>
                         <option value="%">%</option>
-                      </select>
+                      </DropdownSelect>
                     </div>
                   </TableHead>
                   <TableHead className="text-right w-28">Total</TableHead>
@@ -2558,7 +2559,7 @@ function SettlementDialog({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1 col-span-2">
             <Label className="text-xs">Consignment <span className="text-red-500">*</span></Label>
-            <select
+            <DropdownSelect
               value={consignmentId}
               onChange={e => setConsignmentId(e.target.value)}
               disabled={!!editing}
@@ -2579,7 +2580,7 @@ function SettlementDialog({
                 <option key={c.id} value={c.id}>
                   {c.consignmentNo} — {c.consigneeName ?? 'Unknown consignee'}
                 </option>)}
-            </select>
+            </DropdownSelect>
             {consigneeName && (
               <div className="text-[10px] text-gray-500">Consignee: <span className="font-medium text-gray-700">{consigneeName}</span></div>
             )}
@@ -2596,14 +2597,14 @@ function SettlementDialog({
           {editing && (
             <div className="space-y-1">
               <Label className="text-xs">Status</Label>
-              <select
+              <DropdownSelect
                 value={status}
                 onChange={e => setStatus(e.target.value as settlementsApi.SettlementStatus)}
                 className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm"
               >
                 {(Object.keys(settlementsApi.SETTLEMENT_STATUS_LABELS) as settlementsApi.SettlementStatus[]).map(k =>
                   <option key={k} value={k}>{settlementsApi.SETTLEMENT_STATUS_LABELS[k]}</option>)}
-              </select>
+              </DropdownSelect>
             </div>
           )}
           <div className="space-y-1">

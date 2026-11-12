@@ -18,6 +18,7 @@ import * as shopApi from '../../api/shop';
 import { PublicShopSpin } from './PublicShopSpin';
 import { parseModifiers, type ItemModifiers } from '../../api/items';
 import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryChips';
+import { DropdownSelect } from '../common/DropdownSelect';
 // v-perf-lazy-map — customer-facing storefront page; most customers
 // never open the delivery-location picker. Deferring leaflet keeps
 // the shop menu's cold-load fast on mobile.
@@ -1199,7 +1200,7 @@ export function PublicShopPage() {
             />
           </div>
           {showWarehouseFilter && (
-            <select
+            <DropdownSelect
               value={warehouse}
               onChange={e => setWarehouse(e.target.value)}
               className="h-9 rounded-md border border-input bg-white px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 shrink-0 max-w-[160px] truncate"
@@ -1209,7 +1210,7 @@ export function PublicShopPage() {
               {warehouseOptions.map(w => (
                 <option key={w} value={w}>{w}</option>
               ))}
-            </select>
+            </DropdownSelect>
           )}
         </div>
         </div>

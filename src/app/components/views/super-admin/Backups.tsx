@@ -33,6 +33,7 @@ import { useConfirm } from '../../../context/ConfirmContext';
 import { TONE_CLASS } from '../../../utils/statusTones';
 import { USE_MOCKS, API_BASE } from '../../../api/client';
 import * as platformApi from '../../../api/platform';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 // Adapter: map a live Backup (api/platform.ts) to the page's mock Backup shape
 // so the existing JSX, status icons and badges keep working without churn.
@@ -503,7 +504,7 @@ export function Backups() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={tenantFilter}
               onChange={e => setTenantFilter(e.target.value)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -513,7 +514,7 @@ export function Backups() {
               {companies.map(c => (
                 <option key={c.id} value={c.id}>Tenant : {c.name}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {hasFilters && (
               <Button
                 size="sm" variant="ghost"

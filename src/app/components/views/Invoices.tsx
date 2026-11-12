@@ -80,6 +80,7 @@ import { useI18n } from '../../i18n/I18nContext';
 import { consumeProfitLossNavIntent } from './ProfitLossReport';
 import { EncounterFormDialog } from './EncounterFormDialog';
 import { useOpenIntent } from '../../utils/openIntent';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /* -------------------------------------------------------------------------- */
 /* Kind / status helpers — labels, badge colours, icons                       */
@@ -733,7 +734,7 @@ export function Invoices({
                   lens narrows the list to a single kind, so the switcher
                   would be dead controls). */}
               {!fixedKind && (
-                <select
+                <DropdownSelect
                   value={kindFilter}
                   onChange={e => setKindFilter(e.target.value as typeof kindFilter)}
                   className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -742,7 +743,7 @@ export function Invoices({
                   {KIND_FILTERS.map(f => (
                     <option key={f.value} value={f.value}>{f.label}</option>
                   ))}
-                </select>
+                </DropdownSelect>
               )}
               <div className="flex items-center gap-2 shrink-0">
                 {/* Date range — inclusive, either end may be open. Backend

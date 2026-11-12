@@ -58,6 +58,7 @@ import { TableRowsSkeleton } from '../../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../../common/ListStates';
 import { NumericInput } from '../../common/NumericInput';
 import { statusBadgeClass } from '../../../utils/statusTones';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 type Status = 'active' | 'expired' | 'suspended';
 type StatusFilter = 'all' | Status;
@@ -473,7 +474,7 @@ export function Members() {
               Clear ghost, Search right. One horizontal line;
               overflow scrolls (see .filter-strip in index.css). */}
           <div className="filter-strip">
-            <select
+            <DropdownSelect
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value as StatusFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -482,7 +483,7 @@ export function Members() {
               {STATUS_FILTERS.map(f => (
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={dateFrom || null} onChange={v => setDateFrom(v ?? '')} max={dateTo || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

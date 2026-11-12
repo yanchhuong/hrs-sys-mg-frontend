@@ -63,6 +63,7 @@ import { format, isWithinInterval, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { useI18n } from '../../i18n/I18nContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 // Adapts a backend OtRequest to the front-end OTRequest shape used by the table.
 // `isWeekend`/`isHoliday` are not currently provided by the backend DTO — we
@@ -1137,7 +1138,7 @@ export function Overtime() {
               </TabsList>
             </Tabs>
             {viewMode === 'by-request' && (
-              <select
+              <DropdownSelect
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
                 className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -1148,7 +1149,7 @@ export function Overtime() {
                     Status : {o.label} ({statusCounts[o.value] ?? 0})
                   </option>
                 ))}
-              </select>
+              </DropdownSelect>
             )}
             {viewMode === 'by-request' && (
               <div className="relative w-40 sm:w-56 ml-auto">

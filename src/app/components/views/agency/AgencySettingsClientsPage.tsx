@@ -23,6 +23,7 @@ import { Checkbox } from '../../ui/checkbox';
 import { useConfirm } from '../../../context/ConfirmContext';
 import { useDateFormat } from '../../../context/DateFormatContext';
 import { statusBadgeClass } from '../../../utils/statusTones';
+import { DropdownSelect } from '../../common/DropdownSelect';
 
 type StatusTab = 'all' | AssignmentStatus;
 
@@ -171,7 +172,7 @@ export function AgencySettingsClientsPage() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </div>
-            <select
+            <DropdownSelect
               value={tab}
               onChange={e => setTab(e.target.value as StatusTab)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -180,7 +181,7 @@ export function AgencySettingsClientsPage() {
               {STATUS_TABS.map(t => (
                 <option key={t.key} value={t.key}>Status : {t.label} ({counts[t.key]})</option>
               ))}
-            </select>
+            </DropdownSelect>
             {(search || tab !== 'all') && (
               <Button
                 size="sm" variant="ghost" className="h-9 shrink-0"

@@ -21,6 +21,7 @@ import { useDateFormat } from '../../context/DateFormatContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { formatMoney } from '../../utils/format';
 import * as collectionsApi from '../../api/collections';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 /**
  * Collections — unified income report combining Payment Plan
@@ -155,7 +156,7 @@ export function PaymentCollections() {
                 Plan variants + Booking. Replaces the Plans / Bookings
                 tabs so Installment / Rental / Loan / Tuition /
                 Custom are pickable directly. */}
-            <select
+            <DropdownSelect
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -166,7 +167,7 @@ export function PaymentCollections() {
                 .map(([k, m]) => (
                   <option key={k} value={k}>Type : {m.label} ({typeCounts[k] ?? 0})</option>
                 ))}
-            </select>
+            </DropdownSelect>
             <Label className="text-xs text-gray-500 shrink-0">From</Label>
             <div className="shrink-0"><DateInput value={from || null} onChange={v => setFrom(v ?? '')} max={to || undefined} /></div>
             <Label className="text-xs text-gray-500 shrink-0">To</Label>

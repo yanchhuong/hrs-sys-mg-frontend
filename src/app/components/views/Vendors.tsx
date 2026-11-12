@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { LEN, maskPhone, isPhone } from '../../utils/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../i18n/I18nContext';
+import { DropdownSelect } from '../common/DropdownSelect';
 
 const TYPE_FILTERS: ReadonlyArray<{ value: 'all' | vendorsApi.VendorType; label: string }> = [
   { value: 'all',         label: 'All' },
@@ -232,7 +233,7 @@ export function Vendors() {
                 className="h-9 pl-7 w-64 text-sm"
               />
             </form>
-            <select
+            <DropdownSelect
               value={typeFilter}
               onChange={e => setTypeFilter(e.target.value as typeof typeFilter)}
               className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
@@ -241,7 +242,7 @@ export function Vendors() {
               {TYPE_FILTERS.map(f => (
                 <option key={f.value} value={f.value}>Type : {f.label}</option>
               ))}
-            </select>
+            </DropdownSelect>
             {hasFilter && (
               <Button size="sm" variant="ghost" className="h-9 shrink-0" onClick={clearFilters}>
                 Clear
