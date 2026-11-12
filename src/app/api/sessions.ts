@@ -5,7 +5,9 @@ import { apiJson } from './client';
  * Course Schedule. Materialised lazily by the backend on list;
  * teachers just fetch by date range.
  */
-export type SessionStatus = 'upcoming' | 'in_progress' | 'completed' | 'cancelled';
+/** 'missed' (V415): the session's day passed with no attendance
+ *  submitted. Time alone never makes a session 'completed'. */
+export type SessionStatus = 'upcoming' | 'in_progress' | 'completed' | 'missed' | 'cancelled';
 
 export type AttendanceStatus = 'present' | 'late' | 'absent' | 'sick' | 'left_early';
 

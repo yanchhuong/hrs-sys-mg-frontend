@@ -6,13 +6,14 @@ import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import {
   ListTable,
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '../ui/table';
 import { Eye, RefreshCw, Plus, Download, Search } from 'lucide-react';
 import { Input } from '../ui/input';
 import { exportListToExcel } from '../../utils/excelExport';
 import * as sessionsApi from '../../api/sessions';
 import { SessionDetailDialog } from '../common/SessionDetailDialog';
+import { useAuth } from '../../context/AuthContext';
 import { AddSessionDialog } from '../common/AddSessionDialog';
 import { usePagination } from '../../hooks/usePagination';
 import { Pagination } from '../common/Pagination';
@@ -46,12 +47,13 @@ const STATUS_CLS: Record<sessionsApi.SessionStatus, string> = {
   upcoming:    statusBadgeClass('scheduled'),
   in_progress: statusBadgeClass('in_progress'),
   completed:   statusBadgeClass('completed'),
+  missed:      statusBadgeClass('missed'),
   cancelled:   statusBadgeClass('cancelled'),
 };
 
 const STATUS_LABEL: Record<sessionsApi.SessionStatus, string> = {
   upcoming: 'Upcoming', in_progress: 'In Progress',
-  completed: 'Completed', cancelled: 'Cancelled',
+  completed: 'Completed', missed: 'Missed', cancelled: 'Cancelled',
 };
 
 // Local calendar date — toISOString() is UTC and returned yesterday for
@@ -78,6 +80,11 @@ function defaultRangeFor(tab: Tab): { from: string; to: string } {
 
 export function Attendances() {
   const { formatDate } = useDateFormat();
+  // Buttons follow the role's grants (the API enforces the same keys):
+  // Add Session = create, taking attendance = update.
+  const { canCreate, canUpdate } = useAuth();
+  const canAdd = canCreate('class-attendance');
+  const canTake = canUpdate('class-attendance');
   const [tab, setTab] = useState<Tab>('today');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -115,49 +122,43 @@ export function Attendances() {
 
   useEffect(() => { if (from && to) void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [from, to]);
 
-  // Paginate the flat session list first, then re-group by date so
-  // date headers only appear for the slice on the current page.
-  // 25/page matches the Students + Enrollments cadence for
-  // cross-page consistency.
+  // Filter + sort the flat session list, then paginate. 25/page
+  // matches the Students + Enrollments cadence for cross-page
+  // consistency.
   const visibleRows = useMemo(() => {
     const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (tokens.length === 0) return rows;
-    return rows.filter(s => {
+    // History is the record of attendance that was actually taken —
+    // only submitted (completed) sessions. Missed days are not history.
+    const inTab = tab === 'history' ? rows.filter(s => s.status === 'completed') : rows;
+    const hit = tokens.length === 0 ? inTab : inTab.filter(s => {
       const hay = [s.courseName, s.classroomName, s.teacherName, s.topic, s.createdByName]
         .filter(Boolean).join(' ').toLowerCase();
       return tokens.every(tok => hay.includes(tok));
     });
-  }, [rows, search]);
+    // Chronological (date, then start time) BEFORE paging, so rows read
+    // in order across pages now that each row carries its own date.
+    return [...hit].sort((a, b) =>
+      a.sessionDate.localeCompare(b.sessionDate) || a.fromTime.localeCompare(b.fromTime));
+  }, [rows, search, tab]);
   const pagination = usePagination(visibleRows, 25);
   // Clear resets the search and puts the dates back to the tab's default
   // window (an empty range would load nothing).
   const tabDefault = tab === 'reports' ? null : defaultRangeFor(tab);
   const filtersSet = !!search || (!!tabDefault && (from !== tabDefault.from || to !== tabDefault.to));
 
-  const grouped = useMemo(() => {
-    const byDate = new Map<string, sessionsApi.Session[]>();
-    for (const s of pagination.paginatedItems) {
-      if (!byDate.has(s.sessionDate)) byDate.set(s.sessionDate, []);
-      byDate.get(s.sessionDate)!.push(s);
-    }
-    return Array.from(byDate.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [pagination.paginatedItems]);
-
-  // The session list renders one <Table> per day-group, so the header
-  // row is repeated. Kept in a single constant here so the empty-state
-  // table (which must still show the columns) and the per-day tables
-  // can never drift apart. 8 columns — colSpan on the empty row below
-  // must match.
+  // Shared by the list, empty-state and error tables so their columns
+  // can never drift apart. One header, one row per session with its
+  // date and time together. 8 columns — every colSpan below must match.
   const sessionTableHeader = (
     <TableHeader>
       <TableRow>
-        <TableHead className="w-[130px]">Time</TableHead>
+        <TableHead className="w-[190px]">Date &amp; Time</TableHead>
         <TableHead>Course</TableHead>
         <TableHead className="w-[140px]">Classroom</TableHead>
         <TableHead className="w-[140px]">Teacher</TableHead>
         <TableHead className="w-[110px] text-right">Attendance</TableHead>
         <TableHead className="w-[130px]">Status</TableHead>
-        <TableHead className="w-[130px]">Registror</TableHead>
+        <TableHead className="w-[130px]">Registrar</TableHead>
         <TableHead className="w-[70px] text-right">Action</TableHead>
       </TableRow>
     </TableHeader>
@@ -199,10 +200,12 @@ export function Attendances() {
               <Download className="h-4 w-4 mr-1.5" />
               Export
             </Button>
-            <Button size="sm" onClick={() => setAddOpen(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Add Session
-            </Button>
+            {canAdd && (
+              <Button size="sm" onClick={() => setAddOpen(true)}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                Add Session
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -292,38 +295,29 @@ export function Attendances() {
                   <ListEmpty noun="sessions" filtered={filtersSet} colSpan={8}>
                     {!filtersSet && (
                       <p className="mt-1 text-xs text-gray-400">
-                        Add a Course Schedule with learn times overlapping this window.
+                        {tab === 'history'
+                          ? 'Only sessions whose attendance was submitted on the day appear here.'
+                          : 'Add a Course Schedule with learn times overlapping this window.'}
                       </p>
                     )}
                   </ListEmpty>
                 </TableBody>
               </ListTable>
             ) : (
-              /* One box around every day-group rather than one per
-                 group, which would give N bordered boxes each with
-                 their own pinned header.
-
-                 What that actually does, since an earlier version of
-                 this note oversold it: a sticky thead is bounded by
-                 its own table, so each day's header holds the top
-                 while that day's rows are passing and leaves with
-                 them — it is a handover, not one header shoving the
-                 next. The date label sits above each table rather
-                 than inside it, so it scrolls through the gap with
-                 no header pinned. */
-              <div className="list-table space-y-4">
-                {grouped.map(([date, dayRows]) => (
-                  <div key={date}>
-                    <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                      {formatDate(date)}
-                    </div>
-                    <Table>
-                      {sessionTableHeader}
-                      <TableBody>
-                        {dayRows.map(s => (
+              /* ONE table, ONE header, one row per session — the date
+                 and time sit together in the first cell. (Was a table
+                 per day, which repeated the header above every date.) */
+              <div className="space-y-4">
+                <ListTable>
+                  {sessionTableHeader}
+                  <TableBody>
+                    {pagination.paginatedItems.map(s => (
                           <TableRow key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setOpenId(s.id)}>
-                            <TableCell className="tabular-nums text-sm">
-                              {s.fromTime.slice(0, 5)}–{s.toTime.slice(0, 5)}
+                            <TableCell className="tabular-nums text-sm whitespace-nowrap">
+                              {formatDate(s.sessionDate)}
+                              <span className="ml-2 text-gray-500">
+                                {s.fromTime.slice(0, 5)}–{s.toTime.slice(0, 5)}
+                              </span>
                             </TableCell>
                             <TableCell className="font-medium">
                               {s.courseName ?? '—'}
@@ -348,16 +342,14 @@ export function Attendances() {
                             </TableCell>
                             <TableCell className="text-right">
                               <Button variant="ghost" size="icon" className="h-7 w-7"
-                                onClick={e => { e.stopPropagation(); setOpenId(s.id); }} title="View / take attendance">
+                                onClick={e => { e.stopPropagation(); setOpenId(s.id); }} title={canTake ? 'View / take attendance' : 'View'}>
                                 <Eye className="h-3.5 w-3.5" />
                               </Button>
                             </TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ))}
+                    ))}
+                  </TableBody>
+                </ListTable>
                 <Pagination
                   currentPage={pagination.currentPage}
                   totalPages={pagination.totalPages}
@@ -379,11 +371,13 @@ export function Attendances() {
         onSaved={() => void load()}
       />
 
-      <AddSessionDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        onSaved={() => void load()}
-      />
+      {canAdd && (
+        <AddSessionDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          onSaved={() => void load()}
+        />
+      )}
     </div>
   );
 }

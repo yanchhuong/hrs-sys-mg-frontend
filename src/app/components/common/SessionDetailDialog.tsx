@@ -12,11 +12,13 @@ import {
 } from '../ui/table';
 import { Loader2, Save, CheckCircle2 } from 'lucide-react';
 import * as sessionsApi from '../../api/sessions';
+import { useAuth } from '../../context/AuthContext';
+import { format } from 'date-fns';
 
 /**
  * V215 / v-attendance-module — session details + attendance grid.
- * Read-write until the session is Completed / Cancelled, then
- * read-only for non-admins (admin reopen is a future phase).
+ * Editable only on the session's own day, by roles with
+ * class-attendance update; view-only otherwise (the API enforces both).
  *
  * <p>Roster comes from the schedule's active enrollments (see
  * {@link CourseScheduleSessionService.hydrateDetail}). Historic
@@ -34,6 +36,7 @@ const STATUS_CLS: Record<sessionsApi.SessionStatus, string> = {
   upcoming:    'bg-blue-100 text-blue-700 border-blue-200',
   in_progress: 'bg-amber-100 text-amber-700 border-amber-200',
   completed:   'bg-emerald-100 text-emerald-700 border-emerald-200',
+  missed:      'bg-red-100 text-red-700 border-red-200',
   cancelled:   'bg-rose-100 text-rose-700 border-rose-200',
 };
 
@@ -47,6 +50,12 @@ const ATT_LABEL: Record<sessionsApi.AttendanceStatus, string> = {
 };
 
 export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: Props) {
+  // Topic, attendance and Complete all need class-attendance UPDATE on
+  // the API (CourseScheduleSessionController). Without it the dialog is
+  // view-only: fields locked, write buttons hidden — a button that
+  // shows is a button that works.
+  const { canUpdate } = useAuth();
+  const canEdit = canUpdate('class-attendance');
   const [session, setSession] = useState<sessionsApi.Session | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -77,11 +86,20 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
     return () => { cancelled = true; };
   }, [open, sessionId, onOpenChange]);
 
-  // v-attendance-editable-terminal — admin / teacher can amend
-  // attendance on completed / cancelled sessions too (late fixes,
-  // retroactive corrections). The dialog only goes read-only while
-  // the session hasn't loaded yet.
-  const readOnly = !session;
+  // Attendance is taken on the session's own day only — not ahead for
+  // an upcoming session, not afterwards for a past one (the API refuses
+  // both). Local calendar date, matching the Today tab.
+  const todayIso = format(new Date(), 'yyyy-MM-dd');
+  const day: 'today' | 'future' | 'past' | null = !session ? null
+    : session.sessionDate === todayIso ? 'today'
+    : session.sessionDate > todayIso ? 'future' : 'past';
+  const canSubmit = canEdit && day === 'today';
+  // Read-only until loaded, and whenever this user can't submit now.
+  const readOnly = !session || !canSubmit;
+  const viewOnlyNote = !session || canSubmit ? null
+    : !canEdit ? 'View only'
+    : day === 'future' ? `Attendance opens on the session day (${session.sessionDate})`
+    : 'Past session — attendance can only be submitted on the session day';
 
   const setRow = (studentId: string, patch: Partial<sessionsApi.AttendanceRow>) =>
     setRows(list => list.map(r => r.studentId === studentId ? { ...r, ...patch } : r));
@@ -169,7 +187,7 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
                   id="sess-topic"
                   value={topic}
                   onChange={e => setTopic(e.target.value)}
-                  placeholder="e.g. Introduction to Grammar"
+                  placeholder={canEdit ? 'e.g. Introduction to Grammar' : 'No topic'}
                   maxLength={255}
                   disabled={readOnly}
                 />
@@ -236,7 +254,7 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
                         <Input
                           value={r.remark ?? ''}
                           onChange={e => setRow(r.studentId, { remark: e.target.value })}
-                          placeholder="Optional"
+                          placeholder={canEdit ? 'Optional' : ''}
                           className="h-8 text-xs"
                           disabled={readOnly}
                           maxLength={500}
@@ -252,9 +270,12 @@ export function SessionDetailDialog({ open, onOpenChange, sessionId, onSaved }: 
           <p className="text-sm text-gray-500 py-6 text-center">No session loaded.</p>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="sm:items-center">
+          {viewOnlyNote && (
+            <span className="text-xs text-gray-500 sm:mr-auto">{viewOnlyNote}</span>
+          )}
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Close</Button>
-          {session && (
+          {session && canSubmit && (
             <>
               <Button onClick={() => save()} disabled={saving}>
                 <Save className="h-4 w-4 mr-1.5" /> {saving ? 'Saving…' : 'Save Attendance'}

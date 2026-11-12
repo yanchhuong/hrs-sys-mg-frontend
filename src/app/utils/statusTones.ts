@@ -47,6 +47,7 @@ const STATUS_TONE: Record<string, Tone> = {
   close: 'neutral', closed: 'neutral', inactive: 'neutral', expired: 'neutral',
   withdrawn: 'neutral', suspended: 'neutral',
   overdue: 'danger', rejected: 'danger', failed: 'danger', late: 'danger', absent: 'danger',
+  missed: 'danger',
 };
 
 /** Tone for a status key; unknown statuses are neutral, never a guessed colour. */
