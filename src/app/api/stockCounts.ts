@@ -11,7 +11,9 @@
  */
 import { apiJson } from './client';
 
-export type StockCountStatus = 'draft' | 'counting' | 'review' | 'approved' | 'cancelled';
+/** requested = waiting for someone to take it; it starts counting
+ *  the moment it has an assignee. */
+export type StockCountStatus = 'requested' | 'counting' | 'review' | 'approved' | 'cancelled';
 export type StockCountType   = 'full' | 'cycle' | 'spot';
 
 export const COUNT_TYPES: { value: StockCountType; label: string; hint: string }[] = [
@@ -45,6 +47,28 @@ export interface StockCount {
   cancelledAt: string | null;
   cancelReason: string | null;
   notes: string | null;
+  /** Who counts. Empty = any counter. */
+  assignees: Assignee[];
+  /** The signed-in user is one of the assignees. */
+  assignedToMe: boolean;
+  createdById?: string | null;
+  createdByName?: string | null;
+  /** Caller created it (or is admin): assign, review, approve, cancel. */
+  canManage: boolean;
+  /** Caller may enter quantities and submit now. */
+  canCount: boolean;
+  /** Nobody has it yet and the caller may take it. */
+  canClaim: boolean;
+  /** One reviewer: sees the numbers, sets reasons, asks for recounts, never counts. */
+  reviewerId?: string | null;
+  reviewerName?: string | null;
+  reviewedByMe: boolean;
+  /** Caller may set reasons and ask for recounts (creator or reviewer). */
+  canReview: boolean;
+  /** Caller may approve: creator, or a reviewer whose role holds create. */
+  canApprove: boolean;
+  /** The reviewer slot is empty and the caller may take it. */
+  canClaimReview: boolean;
   totalLines: number;
   countedLines: number;
   createdAt: string;
@@ -89,6 +113,8 @@ export interface StockCountLine {
   adjustmentNo: string | null;
 }
 
+export interface Assignee { id: string; name: string; }
+
 export interface Page<T> { content: T[]; totalElements: number; }
 
 export const list = (params: { status?: string; warehouseId?: string; page?: number; size?: number } = {}) =>
@@ -109,7 +135,37 @@ export interface UpsertStockCount {
   blind?: boolean;
   countDate?: string;
   notes?: string | null;
+  /** On create, omitted = the warehouse's users; [] = nobody yet. */
+  assigneeIds?: string[];
+  /** Spot counts: the items to count. */
+  itemIds?: string[];
+  /** Create only: who reviews. */
+  reviewerId?: string | null;
 }
+
+/** Active users whose role can count. Needs stock_count:create. */
+export const assignableUsers = () =>
+  apiJson<Assignee[]>('/api/v1/stock-counts/assignable-users');
+
+/** Active users whose role can view counts. Needs stock_count:create. */
+export const assignableReviewers = () =>
+  apiJson<Assignee[]>('/api/v1/stock-counts/assignable-reviewers');
+
+/** Take the empty reviewer slot. */
+export const claimReview = (id: string) =>
+  apiJson<StockCount>(`/api/v1/stock-counts/${id}/claim-review`, { method: 'POST' });
+
+/** Set or clear the reviewer. Creator only. */
+export const setReviewer = (id: string, userId: string | null) =>
+  apiJson<StockCount>(`/api/v1/stock-counts/${id}/reviewer`, { method: 'PUT', json: { userId } });
+
+/** Take a count nobody has yet. It starts counting at once. */
+export const claim = (id: string) =>
+  apiJson<StockCount>(`/api/v1/stock-counts/${id}/claim`, { method: 'POST' });
+
+/** Change who counts. Any time before approve / cancel. */
+export const assign = (id: string, userIds: string[]) =>
+  apiJson<StockCount>(`/api/v1/stock-counts/${id}/assignees`, { method: 'PUT', json: { userIds } });
 
 export const create = (body: UpsertStockCount) =>
   apiJson<StockCount>('/api/v1/stock-counts', { method: 'POST', json: body });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, CheckCircle2, ClipboardCheck, EyeOff, History, Info,
-  Loader2, Plus, RefreshCw, RotateCcw, Search, Trash2, XCircle,
+  Eye, Loader2, Plus, RefreshCw, RotateCcw, Search, Trash2, Users, XCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -43,7 +43,7 @@ import { KNOWN_ITEM_CATEGORIES } from '../../api/items';
  */
 
 const STATUS_TONE: Record<api.StockCountStatus, string> = {
-  draft:     'bg-slate-100 text-slate-700',
+  requested: 'bg-slate-100 text-slate-700',
   counting:  'bg-blue-100 text-blue-700',
   review:    'bg-amber-100 text-amber-700',
   approved:  'bg-emerald-100 text-emerald-700',
@@ -51,7 +51,7 @@ const STATUS_TONE: Record<api.StockCountStatus, string> = {
 };
 
 const STATUS_LABEL: Record<api.StockCountStatus, string> = {
-  draft: 'Draft', counting: 'Counting', review: 'Review',
+  requested: 'Requested', counting: 'Counting', review: 'Review',
   approved: 'Approved', cancelled: 'Cancelled',
 };
 
@@ -101,7 +101,7 @@ export function StockCounts() {
 
   if (openId) {
     return <CountDetail
-      id={openId} canManage={canManage}
+      id={openId}
       onBack={() => { setOpenId(null); void load(); }}
     />;
   }
@@ -122,7 +122,7 @@ export function StockCounts() {
                 </TooltipTrigger>
                 <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
                   Check what is physically on the shelf against what the system
-                  says. Staff count on the phone; you review the differences here
+                  says. Whoever takes a count counts it, on the phone or here; you review the differences here
                   and approve. A count changes nothing — approving posts the
                   difference as a Stock Adjustment, and that is the only step
                   that moves stock.
@@ -185,20 +185,21 @@ export function StockCounts() {
               <TableRow>
                 <TableHead className="w-[130px]">No</TableHead>
                 <TableHead>Name</TableHead>
+                <TableHead className="w-[180px]">Assigned to</TableHead>
                 <TableHead className="w-[110px]">Type</TableHead>
                 <TableHead className="w-[120px]">Date</TableHead>
                 <TableHead className="w-[180px]">Progress</TableHead>
                 <TableHead className="text-center w-[110px]">Status</TableHead>
-                {canRemove && <TableHead className="text-right w-[70px]">Actions</TableHead>}
+                <TableHead className="text-right w-[90px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={7} className="py-10 text-center text-gray-400">
+                <TableRow><TableCell colSpan={8} className="py-10 text-center text-gray-400">
                   <Loader2 className="h-5 w-5 animate-spin inline" />
                 </TableCell></TableRow>
               ) : shown.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="py-10 text-center text-gray-500">
+                <TableRow><TableCell colSpan={8} className="py-10 text-center text-gray-500">
                   {rows.length === 0 ? 'No stock counts yet.' : 'No counts match your filter.'}
                 </TableCell></TableRow>
               ) : shown.map(r => (
@@ -213,31 +214,58 @@ export function StockCounts() {
                       )}
                     </span>
                   </TableCell>
+                  <TableCell className="text-xs text-gray-600">
+                    <span className="block max-w-[170px] truncate" title={names(r.assignees)}>
+                      {r.assignees?.length ? names(r.assignees) : <span className="text-gray-400">Not taken yet</span>}
+                    </span>
+                    {(r.reviewerName || r.createdByName) && (
+                      <span className="block max-w-[170px] truncate text-[11px] text-gray-400"
+                            title={r.reviewerName ? `Reviewer: ${r.reviewerName}` : 'No reviewer set — the creator reviews'}>
+                        {r.reviewerName ? `${r.reviewerName} · Reviewer` : `${r.createdByName} · Reviewer (creator)`}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-xs capitalize">{r.countType}</TableCell>
                   <TableCell className="text-xs">{fmtDate(r.countDate)}</TableCell>
                   <TableCell><ProgressCell row={r} /></TableCell>
                   <TableCell className="text-center">
                     <Badge className={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
                   </TableCell>
-                  {canRemove && (
-                    <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                      {r.status === 'draft' && (
-                        <Button size="icon" variant="ghost" title="Delete draft"
+                  <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                      {r.canClaim && (
+                        <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
+                                onClick={async () => {
+                                  try { await api.claim(r.id); toast.success(`${r.countNo} is yours`); setOpenId(r.id); }
+                                  catch (e) { toast.error(e instanceof Error ? e.message : 'Could not take it'); void load(); }
+                                }}>
+                          Take
+                        </Button>
+                      )}
+                      {r.canClaimReview && !r.canClaim && (
+                        <Button size="sm" variant="outline" className="ml-1 h-7 px-2 text-xs"
+                                onClick={async () => {
+                                  try { await api.claimReview(r.id); toast.success(`You review ${r.countNo}`); setOpenId(r.id); }
+                                  catch (e) { toast.error(e instanceof Error ? e.message : 'Could not take the review'); void load(); }
+                                }}>
+                          Review
+                        </Button>
+                      )}
+                      {canRemove && r.canManage && r.status === 'requested' && (
+                        <Button size="icon" variant="ghost" title="Delete"
                                 className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                                 onClick={async () => {
                                   if (!(await confirm({
                                     title: `Delete ${r.countNo}?`,
-                                    message: 'This draft has not been started, so nothing is lost.',
+                                    message: 'Nobody has started counting it, so nothing is lost.',
                                     variant: 'destructive', confirmLabel: 'Delete',
                                   }))) return;
-                                  try { await api.remove(r.id); toast.success('Draft deleted'); void load(); }
+                                  try { await api.remove(r.id); toast.success('Count deleted'); void load(); }
                                   catch (e) { toast.error(e instanceof Error ? e.message : 'Delete failed'); }
                                 }}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       )}
                     </TableCell>
-                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -273,7 +301,7 @@ function ProgressCell({ row }: { row: api.StockCount }) {
 /* ============================= detail ============================= */
 
 function CountDetail(
-  { id, canManage, onBack }: { id: string; canManage: boolean; onBack: () => void },
+  { id, onBack }: { id: string; onBack: () => void },
 ) {
   const confirm = useConfirm();
   const [count, setCount] = useState<api.StockCount | null>(null);
@@ -282,7 +310,6 @@ function CountDetail(
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [picking, setPicking] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -318,6 +345,11 @@ function CountDetail(
   const shortages = variances.filter(l => (l.variance ?? 0) < 0).length;
   const surpluses = variances.filter(l => (l.variance ?? 0) > 0).length;
 
+  // An older API sends no reviewer flags. Fall back to the creator's
+  // rights rather than read a missing flag as 'no' and lock the page.
+  const canReview  = count?.canReview  ?? !!count?.canManage;
+  const canApprove = count?.canApprove ?? (!!count?.canManage && count?.status === 'review');
+
   if (loading || !count) {
     return <div className="py-20 text-center text-gray-400"><Loader2 className="h-6 w-6 animate-spin inline" /></div>;
   }
@@ -343,23 +375,69 @@ function CountDetail(
             {count.countType} · {fmtDate(count.countDate)}
             {count.snapshotAt && <> · started {new Date(count.snapshotAt).toLocaleString('en-GB')}</>}
           </p>
+          <div className="mt-1.5 flex items-center gap-1.5 text-sm text-gray-600">
+            <Users className="h-3.5 w-3.5 text-gray-400" />
+            {count.canManage && count.status !== 'approved' && count.status !== 'cancelled' ? (
+              <AssigneePicker
+                value={(count.assignees ?? []).map(a => a.id)}
+                known={count.assignees ?? []}
+                onChange={ids => void run(() => api.assign(id, ids), 'Assignees updated')}
+                trigger="link"
+              />
+            ) : (
+              <span>{count.assignees?.length ? names(count.assignees) : 'Not taken yet'}</span>
+            )}
+            {!!count.assignees?.length && (
+              <span className="text-gray-400">· {count.assignees.length === 1 ? 'Counter' : 'Counters'}</span>
+            )}
+          </div>
+          <div className="mt-1 flex items-center gap-1.5 text-sm text-gray-600">
+            <Eye className="h-3.5 w-3.5 text-gray-400" />
+            {count.canManage && count.status !== 'approved' && count.status !== 'cancelled' ? (
+              <ReviewerPicker
+                value={count.reviewerId ?? null}
+                known={count.reviewerId && count.reviewerName ? { id: count.reviewerId, name: count.reviewerName } : null}
+                exclude={[...(count.assignees ?? []).map(a => a.id), ...(count.createdById ? [count.createdById] : [])]}
+                creatorName={count.createdByName ?? null}
+                onChange={uid => void run(() => api.setReviewer(id, uid), uid ? 'Reviewer set' : 'Reviewer removed')}
+              />
+            ) : (
+              <span>{count.reviewerName
+                ? `${count.reviewerName} · Reviewer`
+                : `${count.createdByName ?? 'The creator'} · Reviewer (creator)`}</span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {canManage && count.status === 'draft' && (
-            <Button
-              disabled={busy}
-              onClick={() => {
-                // A spot count IS its item list, so there is nothing to
-                // start until someone picks one. Full and cycle counts
-                // resolve their own scope and start straight away.
-                if (count.countType === 'spot') { setPicking(true); return; }
-                void run(() => api.start(id), 'Count started');
-              }}>
-              {count.countType === 'spot' ? 'Pick items & start' : 'Start count'}
+          {count.canClaim && (
+            <Button disabled={busy} onClick={() => void run(() => api.claim(id), 'This count is yours')}>
+              Take this count
             </Button>
           )}
-          {canManage && count.status === 'review' && (
+          {count.canClaimReview && (
+            <Button variant="outline" disabled={busy}
+                    onClick={() => void run(() => api.claimReview(id), 'You are reviewing this count')}>
+              <Eye className="h-4 w-4 mr-1.5" /> Review this count
+            </Button>
+          )}
+          {count.canCount && (
+            <Button disabled={busy}
+              onClick={async () => {
+                const left = count.totalLines - count.countedLines;
+                if (!(await confirm({
+                  title: 'Submit this count?',
+                  message: left > 0
+                    ? `${left} item${left === 1 ? ' has' : 's have'} not been counted and will be left out.`
+                    : 'Everything is counted. It goes to review next.',
+                  confirmLabel: 'Submit',
+                }))) return;
+                void run(() => api.submit(id), 'Submitted for review');
+              }}>
+              <CheckCircle2 className="h-4 w-4 mr-1.5" /> Submit
+            </Button>
+          )}
+          {canApprove && (
             <Button
               disabled={busy}
               onClick={async () => {
@@ -376,7 +454,7 @@ function CountDetail(
               <CheckCircle2 className="h-4 w-4 mr-1.5" /> Approve
             </Button>
           )}
-          {canManage && count.status !== 'approved' && count.status !== 'cancelled' && (
+          {count.canManage && count.status !== 'approved' && count.status !== 'cancelled' && (
             <Button variant="outline" disabled={busy}
               onClick={async () => {
                 if (!(await confirm({
@@ -392,11 +470,30 @@ function CountDetail(
         </div>
       </div>
 
-      {count.status === 'counting' && (
+      {count.status === 'requested' && (
+        <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          {count.canManage
+            ? 'Waiting for someone to take it. Assigning someone starts the count.'
+            : 'Nobody has this count yet. Take it to start counting.'}
+        </div>
+      )}
+
+      {count.status === 'counting' && canReview
+        && lines.some(l => l.round > 1 && l.countedQty == null) && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <RotateCcw className="mt-0.5 h-4 w-4 shrink-0" />
+          {(() => {
+            const n = lines.filter(l => l.round > 1 && l.countedQty == null).length;
+            return `Waiting for ${n} recount${n === 1 ? '' : 's'}. The other rows keep their counts — you can set their reasons now.`;
+          })()}
+        </div>
+      )}
+
+      {count.status === 'counting' && !count.canCount && (
         <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          Counting is under way in the mobile app. Differences appear here once
-          staff submit.
+          Counting is under way. Differences appear here once it is submitted.
         </div>
       )}
 
@@ -410,16 +507,6 @@ function CountDetail(
         </div>
       )}
 
-      {picking && (
-        <SpotItemPicker
-          warehouseId={count.warehouseId}
-          onClose={() => setPicking(false)}
-          onStart={async ids => {
-            setPicking(false);
-            await run(() => api.start(id, ids), 'Count started');
-          }}
-        />
-      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -511,9 +598,18 @@ function CountDetail(
                         : <span className="text-gray-400">—</span>}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {l.countedQty == null
-                      ? <span className="text-gray-400">—</span>
-                      : fmtQty(l.countedQty)}
+                    {count.canCount
+                      ? <CountInput line={l} onSave={async qty => {
+                          try {
+                            const saved = await api.countLine(id, l.id, { qty });
+                            setLines(prev => prev.map(x => (x.id === saved.id ? saved : x)));
+                            setCount(c => c && ({ ...c, countedLines: c.countedLines
+                              + (l.countedQty == null && saved.countedQty != null ? 1 : 0) }));
+                          } catch (e) { toast.error(e instanceof Error ? e.message : 'Not saved'); }
+                        }} />
+                      : l.countedQty == null
+                        ? <span className="text-gray-400">—</span>
+                        : fmtQty(l.countedQty)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     <VarianceCell v={l.variance} />
@@ -522,7 +618,7 @@ function CountDetail(
                     {l.variance != null && l.variance !== 0 ? (
                       <Select
                         value={l.reason ?? ''}
-                        disabled={!canManage || count.status !== 'review' || busy}
+                        disabled={!canReview || (count.status !== 'review' && count.status !== 'counting') || busy}
                         onValueChange={v => void run(() => api.setReason(id, l.id, v), 'Reason saved')}
                       >
                         <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pick a reason" /></SelectTrigger>
@@ -546,11 +642,12 @@ function CountDetail(
                   )}
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1">
-                      <EntryHistory countId={id} line={l} />
+                      <EntryHistory countId={id} line={l} roleOf={uid => roleOf(count, uid)} />
                       {/* Recount is the honest third option next to
                           approve-it and cancel-everything: question one
                           line without throwing away the other ninety. */}
-                      {canManage && count.status === 'review' && l.countedQty != null && (
+                      {canReview && l.countedQty != null
+                        && (count.status === 'review' || (count.status === 'counting' && l.variance != null)) && (
                         <Button
                           size="icon" variant="ghost" title="Count this again"
                           className="h-7 w-7 text-amber-600 hover:bg-amber-50"
@@ -596,7 +693,19 @@ function VarianceCell({ v }: { v: number | null | undefined }) {
  * never questioned, and loading every line's log to show none of them
  * is a request per row for nothing.</p>
  */
-function EntryHistory({ countId, line }: { countId: string; line: api.StockCountLine }) {
+/** What a person is on this count, for labels like "Chum rady · Counter". */
+function roleOf(c: api.StockCount, userId: string | null | undefined): string | null {
+  if (!userId) return null;
+  if ((c.assignees ?? []).some(a => a.id === userId)) return 'Counter';
+  if (c.reviewerId === userId) return 'Reviewer';
+  if (c.createdById === userId) return c.reviewerId ? 'Creator' : 'Reviewer (creator)';
+  return null;
+}
+
+function EntryHistory(
+  { countId, line, roleOf: role }:
+  { countId: string; line: api.StockCountLine; roleOf: (id: string | null | undefined) => string | null },
+) {
   const [rows, setRows] = useState<api.StockCountEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -615,7 +724,7 @@ function EntryHistory({ countId, line }: { countId: string; line: api.StockCount
           <History className="h-3.5 w-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80">
+      <PopoverContent align="end" className="w-96">
         <div className="mb-2 text-xs font-semibold text-gray-500">
           {line.itemName} — history
         </div>
@@ -627,13 +736,15 @@ function EntryHistory({ countId, line }: { countId: string; line: api.StockCount
           <ol className="space-y-1.5">
             {rows.map(e => (
               <li key={e.id} className="flex items-baseline gap-2 text-xs">
-                <span className="w-10 shrink-0 text-gray-400">R{e.round}</span>
+                {/* Round 1 is the first count; 2+ are recounts. */}
+                <span className="w-14 shrink-0 text-gray-400">Round {e.round}</span>
                 <span className="font-mono tabular-nums">{Number(e.resultingQty)}</span>
                 <span className="rounded bg-slate-100 px-1 text-[10px] uppercase text-slate-600">
                   {e.method}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-gray-500">
                   {e.countedByName ?? 'unknown'}
+                  {role(e.countedById) && <span className="text-gray-400"> · {role(e.countedById)}</span>}
                 </span>
                 <span className="shrink-0 text-gray-400">
                   {new Date(e.createdAt).toLocaleTimeString('en-GB',
@@ -665,22 +776,45 @@ function NewCountDialog(
   const [blind, setBlind] = useState(true);
   const [saving, setSaving] = useState(false);
   const [warehouses, setWarehouses] = useState<warehousesApi.Warehouse[]>([]);
+  const [assignees, setAssignees] = useState<string[]>([]);
+  const [counters, setCounters] = useState<api.Assignee[] | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [reviewer, setReviewer] = useState<string | null>(null);
+  // The creator reviews already, so they are never offered as the reviewer.
+  const { currentUser } = useAuth();
 
   useEffect(() => { void warehousesApi.list().then(setWarehouses).catch(() => {}); }, []);
+  useEffect(() => { void api.assignableUsers().then(setCounters).catch(() => setCounters([])); }, []);
 
-  const save = async () => {
+  // Picking a warehouse hands the count to the people who look after
+  // it — the ones of them who can count.
+  const pickWarehouse = (v: string) => {
+    setWarehouseId(v);
+    const wh = warehouses.find(w => w.id === v);
+    const can = new Set((counters ?? []).map(u => u.id));
+    setAssignees((wh?.userIds ?? []).filter(id => can.has(id)));
+  };
+
+  const save = async (itemIds?: string[]) => {
     if (countType === 'cycle' && categories.length === 0) {
       toast.error('Pick at least one category for a cycle count');
       return;
     }
+    // A spot count IS its item list — pick it before creating.
+    if (countType === 'spot' && !itemIds) { setPicking(true); return; }
     setSaving(true);
     try {
       const c = await api.create({
         name: name.trim() || undefined,
         warehouseId: warehouseId === 'none' ? null : warehouseId,
         countType, categories, blind,
+        assigneeIds: assignees,
+        itemIds,
+        reviewerId: reviewer,
       });
-      toast.success(`${c.countNo} created`);
+      toast.success(c.status === 'counting'
+        ? `${c.countNo} created — counting has started`
+        : `${c.countNo} requested — waiting for someone to take it`);
       onCreated(c.id);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not create the count');
@@ -701,13 +835,23 @@ function NewCountDialog(
           </Field>
 
           <Field label="Warehouse">
-            <Select value={warehouseId} onValueChange={setWarehouseId}>
+            <Select value={warehouseId} onValueChange={pickWarehouse}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No warehouse</SelectItem>
                 {warehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
               </SelectContent>
             </Select>
+          </Field>
+
+          <Field label="Assign to">
+            <AssigneePicker value={assignees} users={counters ?? undefined}
+              onChange={ids => { setAssignees(ids); if (reviewer && ids.includes(reviewer)) setReviewer(null); }} />
+          </Field>
+
+          <Field label="Reviewer">
+            <ReviewerPicker value={reviewer} onChange={setReviewer} field
+              exclude={[...assignees, ...(currentUser?.id ? [currentUser.id] : [])]} />
           </Field>
 
           <Field label="Type">
@@ -754,21 +898,181 @@ function NewCountDialog(
             <Switch checked={blind} onCheckedChange={setBlind} aria-label="Blind count" />
           </div>
 
-          {countType === 'spot' && (
-            <p className="text-xs text-gray-500">
-              You will pick the items when you start this count.
-            </p>
+          {picking && (
+            <SpotItemPicker
+              warehouseId={warehouseId === 'none' ? null : warehouseId}
+              actionLabel="Create with"
+              onClose={() => setPicking(false)}
+              onStart={ids => { setPicking(false); void save(ids); }}
+            />
           )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button onClick={() => void save()} disabled={saving}>
-            {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />} Create
+            {saving && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            {countType === 'spot' ? 'Pick items' : 'Create'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * One reviewer. Lists users whose role can view counts, minus the
+ * people counting this one — a reviewer never counts.
+ */
+function ReviewerPicker(
+  { value, onChange, exclude = [], known, field = false, creatorName = null }:
+  {
+    value: string | null; onChange: (id: string | null) => void;
+    exclude?: string[]; known?: api.Assignee | null; field?: boolean;
+    /** No reviewer set means the creator reviews. */
+    creatorName?: string | null;
+  },
+) {
+  const [users, setUsers] = useState<api.Assignee[] | null>(null);
+  useEffect(() => { void api.assignableReviewers().then(setUsers).catch(() => setUsers([])); }, []);
+  const options = [...(users ?? []), ...(known && !(users ?? []).some(u => u.id === known.id) ? [known] : [])]
+    .filter(u => !exclude.includes(u.id) || u.id === value);
+  return (
+    <Select value={value ?? 'none'} onValueChange={v => onChange(v === 'none' ? null : v)}>
+      <SelectTrigger className={field ? 'h-9' : 'h-7 w-auto min-w-[160px] border-0 bg-transparent px-1 text-sm shadow-none hover:text-blue-700'}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="none">
+          {field ? 'Me (creator) — by default' : `${creatorName ?? 'The creator'} · Reviewer (creator)`}
+        </SelectItem>
+        {options.map(u => <SelectItem key={u.id} value={u.id}>{field ? u.name : `${u.name} · Reviewer`}</SelectItem>)}
+        {users == null ? (
+          <div className="px-2 py-1.5 text-xs text-gray-400">Loading…</div>
+        ) : options.length === 0 && (
+          // The creator and the counters are left out, so a small team
+          // can run out of people. Say why rather than show nothing.
+          <div className="max-w-[260px] px-2 py-1.5 text-xs leading-snug text-gray-400">
+            Nobody else can review, so the creator does. A reviewer needs Stock Count view and can't be counting this one.
+          </div>
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** The counted figure, typed on the web. Saves on Enter or on leaving
+ *  the box; 0 is a real answer ("none found"). */
+function CountInput({ line, onSave }: { line: api.StockCountLine; onSave: (qty: number) => Promise<void> }) {
+  const [v, setV] = useState<string>(line.countedQty == null ? '' : String(Number(line.countedQty)));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setV(line.countedQty == null ? '' : String(Number(line.countedQty))); }, [line.countedQty]);
+  const commit = async () => {
+    if (v.trim() === '') return;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) { toast.error('Enter 0 or more'); return; }
+    if (line.countedQty != null && Number(line.countedQty) === n) return;
+    setSaving(true);
+    try { await onSave(n); } finally { setSaving(false); }
+  };
+  return (
+    <Input
+      type="number" min={0} step="any" inputMode="decimal" value={v} disabled={saving}
+      onChange={e => setV(e.target.value)}
+      onBlur={() => void commit()}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      placeholder="—" aria-label={`Counted ${line.itemName}`}
+      className="ml-auto h-8 w-24 text-right tabular-nums"
+    />
+  );
+}
+
+const names = (a: api.Assignee[] | undefined) => (a ?? []).map(x => x.name).join(', ');
+
+/**
+ * Who counts. A searchable checklist of the users whose role can count;
+ * none picked = anyone can.
+ *
+ * `users` may be passed in (the New dialog already loads them); else
+ * they load when the picker opens. `known` names the current picks
+ * before that load lands.
+ */
+function AssigneePicker(
+  { value, onChange, users, known, trigger = 'field' }:
+  {
+    value: string[]; onChange: (ids: string[]) => void;
+    users?: api.Assignee[]; known?: api.Assignee[]; trigger?: 'field' | 'link';
+  },
+) {
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState<api.Assignee[] | null>(null);
+  const [q, setQ] = useState('');
+  const [draft, setDraft] = useState<string[]>(value);
+  const all = users ?? loaded;
+  const byId = new Map([...(known ?? []), ...(all ?? [])].map(u => [u.id, u.name]));
+  const label = value.length === 0 ? 'Nobody yet — anyone can take it'
+    : value.map(id => byId.get(id) ?? '…').join(', ');
+
+  const onOpen = (o: boolean) => {
+    setOpen(o);
+    if (o) {
+      setDraft(value); setQ('');
+      if (!users && !loaded) void api.assignableUsers().then(setLoaded).catch(() => setLoaded([]));
+    } else if (trigger === 'link' && draft.join() !== value.join()) {
+      onChange(draft);   // the detail page saves on close
+    }
+  };
+  const picked = trigger === 'link' ? draft : value;
+  const toggle = (id: string) => {
+    const next = picked.includes(id) ? picked.filter(x => x !== id) : [...picked, id];
+    if (trigger === 'link') setDraft(next); else onChange(next);
+  };
+  const term = q.trim().toLowerCase();
+  const shown = (all ?? []).filter(u => !term || u.name.toLowerCase().includes(term));
+
+  return (
+    <Popover open={open} onOpenChange={onOpen}>
+      <PopoverTrigger asChild>
+        {trigger === 'link' ? (
+          <button type="button" className="max-w-[420px] truncate text-left hover:text-blue-700 hover:underline">
+            {label}
+          </button>
+        ) : (
+          <button type="button"
+            className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-input bg-input-background px-3 text-left text-sm">
+            <span className={`truncate ${value.length ? 'text-gray-900' : 'text-gray-500'}`}>{label}</span>
+            <Users className="h-4 w-4 shrink-0 text-gray-400" />
+          </button>
+        )}
+      </PopoverTrigger>
+      <PopoverContent align="start" className={`p-2 ${trigger === 'field' ? 'w-[var(--radix-popover-trigger-width)]' : 'w-72'}`}>
+        <div className="relative mb-1.5">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <Input value={q} onChange={e => setQ(e.target.value)} placeholder="Search users…" className="h-8 pl-8 text-sm" />
+        </div>
+        <div className="max-h-56 overflow-y-auto">
+          {all == null ? (
+            <div className="py-4 text-center text-xs text-gray-400"><Loader2 className="inline h-4 w-4 animate-spin" /></div>
+          ) : shown.length === 0 ? (
+            <div className="py-4 text-center text-xs text-gray-400">
+              {all.length === 0 ? 'No user can count yet.' : 'No match.'}
+            </div>
+          ) : shown.map(u => (
+            <label key={u.id} className="flex cursor-pointer items-center gap-2.5 rounded px-2 py-1.5 text-sm hover:bg-gray-50">
+              <input type="checkbox" className="h-4 w-4 accent-blue-600"
+                     checked={picked.includes(u.id)} onChange={() => toggle(u.id)} />
+              <span className="min-w-0 flex-1 truncate">{u.name}</span>
+            </label>
+          ))}
+        </div>
+        {picked.length > 0 && (
+          <button type="button" className="mt-1 w-full rounded px-2 py-1 text-left text-xs text-gray-500 hover:bg-gray-50"
+                  onClick={() => trigger === 'link' ? setDraft([]) : onChange([])}>
+            Clear
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -780,8 +1084,8 @@ function NewCountDialog(
  * a catalogue to find them is the slow way round.</p>
  */
 function SpotItemPicker(
-  { warehouseId, onClose, onStart }:
-  { warehouseId: string | null; onClose: () => void; onStart: (ids: string[]) => void },
+  { warehouseId, onClose, onStart, actionLabel = 'Start with' }:
+  { warehouseId: string | null; onClose: () => void; onStart: (ids: string[]) => void; actionLabel?: string },
 ) {
   const [q, setQ] = useState('');
   const [found, setFound] = useState<itemsApi.Item[]>([]);
@@ -867,7 +1171,7 @@ function SpotItemPicker(
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button disabled={picked.length === 0} onClick={() => onStart(picked.map(i => i.id))}>
-            Start with {picked.length} item{picked.length === 1 ? '' : 's'}
+            {actionLabel} {picked.length} item{picked.length === 1 ? '' : 's'}
           </Button>
         </DialogFooter>
       </DialogContent>
