@@ -71,6 +71,8 @@ export interface StockCount {
   canClaimReview: boolean;
   totalLines: number;
   countedLines: number;
+  /** Lines with a variance and no reason yet. Approve refuses until 0. */
+  needReason?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -111,6 +113,8 @@ export interface StockCountLine {
   /** e.g. ADJ-0007. Null until approved — the number to search for
    *  on the Movements page, which is what closes the audit loop. */
   adjustmentNo: string | null;
+  /** Counter notes on this item — read them in its history. */
+  notes?: number;
 }
 
 export interface Assignee { id: string; name: string; }
@@ -181,6 +185,10 @@ export const start = (id: string, itemIds?: string[]) =>
 export const countLine = (id: string, lineId: string, body: { qty?: number; add?: number }) =>
   apiJson<StockCountLine>(`/api/v1/stock-counts/${id}/lines/${lineId}/count`, { method: 'POST', json: body });
 
+/** A counter's note on one item. Shows in the item's history. */
+export const addNote = (id: string, lineId: string, note: string) =>
+  apiJson<StockCountLine>(`/api/v1/stock-counts/${id}/lines/${lineId}/note`, { method: 'POST', json: { note } });
+
 export const scan = (id: string, barcode: string) =>
   apiJson<StockCountLine>(`/api/v1/stock-counts/${id}/scan`, { method: 'POST', json: { barcode } });
 
@@ -198,11 +206,13 @@ export interface StockCountEntry {
   id: string;
   qty: number;
   resultingQty: number;
-  method: 'scan' | 'manual' | 'import';
+  /** 'note' = a counter's note on its own, no quantity change. */
+  method: 'scan' | 'manual' | 'import' | 'note';
   round: number;
   countedById: string | null;
   countedByName: string | null;
   createdAt: string;
+  note?: string | null;
 }
 
 /** Who entered what, how, and in which round. Oldest first. */

@@ -76,7 +76,7 @@ export function NotificationsBell({ onNavigate }: {
    *  which case an approval ping just marks itself read. */
   onNavigate?: (view: string) => void;
 } = {}) {
-  const { currentUser } = useAuth();
+  const { currentUser, refreshPermissions } = useAuth();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<api.Notification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -209,6 +209,10 @@ export function NotificationsBell({ onNavigate }: {
       return;
     }
     if (!onNavigate) return;
+    // Being named reviewer of a stock count grants Stock Count view for
+    // that review (server ExtraGrants). The grid loaded at sign-in does
+    // not know yet, and the page would bounce — refresh it first.
+    if (n.entityType === 'stock_count') { try { await refreshPermissions(); } catch { /* best effort */ } }
     if (target.id) setOpenIntent(target.view, target.id);
     onNavigate(target.view);
     setOpen(false);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeft, CheckCircle2, ClipboardCheck, EyeOff, History, Info,
+  AlertTriangle, ArrowLeft, CheckCircle2, ClipboardCheck, EyeOff, History, Info, StickyNote,
   Eye, Loader2, Plus, RefreshCw, RotateCcw, Search, Trash2, Users, XCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -353,6 +353,10 @@ function CountDetail(
   // rights rather than read a missing flag as 'no' and lock the page.
   const canReview  = count?.canReview  ?? !!count?.canManage;
   const canApprove = count?.canApprove ?? (!!count?.canManage && count?.status === 'review');
+  // Approve refuses while any difference has no reason. The server
+  // counts them across every line; the loaded rows are the fallback.
+  const needReason = count?.needReason
+    ?? variances.filter(l => !l.reason).length;
 
   if (loading || !count) {
     return <div className="py-20 text-center text-gray-400"><Loader2 className="h-6 w-6 animate-spin inline" /></div>;
@@ -441,9 +445,15 @@ function CountDetail(
               <CheckCircle2 className="h-4 w-4 mr-1.5" /> Submit
             </Button>
           )}
+          {canApprove && needReason > 0 && (
+            <span className="text-xs font-medium text-red-600">
+              Choose a reason for {needReason} item{needReason === 1 ? '' : 's'} first
+            </span>
+          )}
           {canApprove && (
             <Button
-              disabled={busy}
+              disabled={busy || needReason > 0}
+              title={needReason > 0 ? 'Every difference needs a reason before you can approve' : undefined}
               onClick={async () => {
                 if (!(await confirm({
                   title: `Approve ${count.countNo}?`,
@@ -625,7 +635,11 @@ function CountDetail(
                         disabled={!canReview || (count.status !== 'review' && count.status !== 'counting') || busy}
                         onValueChange={v => void run(() => api.setReason(id, l.id, v), 'Reason saved')}
                       >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pick a reason" /></SelectTrigger>
+                        <SelectTrigger
+                          className={'h-8 text-xs' + (!l.reason && canReview ? ' border-red-400 text-red-600 ring-1 ring-red-200' : '')}
+                          aria-invalid={!l.reason && canReview}>
+                          <SelectValue placeholder={canReview ? 'Required — pick a reason' : 'No reason yet'} />
+                        </SelectTrigger>
                         <SelectContent>
                           {api.VARIANCE_REASONS.map(r => (
                             <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
@@ -646,7 +660,9 @@ function CountDetail(
                   )}
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1">
-                      <EntryHistory countId={id} line={l} roleOf={uid => roleOf(count, uid)} />
+                      <EntryHistory countId={id} line={l} roleOf={uid => roleOf(count, uid)}
+                        canNote={count.canCount}
+                        onNoted={saved => setLines(prev => prev.map(x => (x.id === saved.id ? saved : x)))} />
                       {/* Recount is the honest third option next to
                           approve-it and cancel-everything: question one
                           line without throwing away the other ninety. */}
@@ -707,25 +723,56 @@ function roleOf(c: api.StockCount, userId: string | null | undefined): string | 
 }
 
 function EntryHistory(
-  { countId, line, roleOf: role }:
-  { countId: string; line: api.StockCountLine; roleOf: (id: string | null | undefined) => string | null },
+  { countId, line, roleOf: role, canNote = false, onNoted }:
+  {
+    countId: string; line: api.StockCountLine; roleOf: (id: string | null | undefined) => string | null;
+    /** The caller counts this one and may leave a note on the item. */
+    canNote?: boolean;
+    onNoted?: (line: api.StockCountLine) => void;
+  },
 ) {
   const [rows, setRows] = useState<api.StockCountEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
 
+  // Always fetched on open: a note or a count may have landed since.
   const open = async () => {
-    if (rows) return;
-    setLoading(true);
+    setLoading(rows == null);
     try { setRows(await api.entries(countId, line.id)); }
-    catch { setRows([]); }
+    catch { setRows(r => r ?? []); }
     finally { setLoading(false); }
   };
 
+  const addNote = async () => {
+    const text = note.trim();
+    if (!text) return;
+    setSaving(true);
+    try {
+      const saved = await api.addNote(countId, line.id, text);
+      setNote('');
+      onNoted?.(saved);
+      setRows(await api.entries(countId, line.id));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Note not saved');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const notes = line.notes ?? 0;
   return (
     <Popover onOpenChange={o => { if (o) void open(); }}>
       <PopoverTrigger asChild>
-        <Button size="icon" variant="ghost" className="h-7 w-7 text-gray-500" title="Count history">
+        <Button size="icon" variant="ghost"
+                className={'relative h-7 w-7 ' + (notes > 0 ? 'text-blue-600' : 'text-gray-500')}
+                title={notes > 0 ? `History · ${notes} note${notes === 1 ? '' : 's'}` : 'Count history'}>
           <History className="h-3.5 w-3.5" />
+          {notes > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-blue-600 px-0.5 text-[9px] font-semibold leading-none text-white">
+              {notes}
+            </span>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-96">
@@ -739,24 +786,49 @@ function EntryHistory(
         ) : (
           <ol className="space-y-1.5">
             {rows.map(e => (
-              <li key={e.id} className="flex items-baseline gap-2 text-xs">
-                {/* Round 1 is the first count; 2+ are recounts. */}
-                <span className="w-14 shrink-0 text-gray-400">Round {e.round}</span>
-                <span className="font-mono tabular-nums">{Number(e.resultingQty)}</span>
-                <span className="rounded bg-slate-100 px-1 text-[10px] uppercase text-slate-600">
-                  {e.method}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-gray-500">
-                  {e.countedByName ?? 'unknown'}
-                  {role(e.countedById) && <span className="text-gray-400"> · {role(e.countedById)}</span>}
-                </span>
-                <span className="shrink-0 text-gray-400">
-                  {new Date(e.createdAt).toLocaleTimeString('en-GB',
-                    { hour: '2-digit', minute: '2-digit' })}
-                </span>
+              <li key={e.id} className="text-xs">
+                <div className="flex items-baseline gap-2">
+                  {/* Round 1 is the first count; 2+ are recounts. */}
+                  <span className="w-14 shrink-0 text-gray-400">Round {e.round}</span>
+                  {e.method === 'note' ? (
+                    <span className="inline-flex items-center gap-1 rounded bg-blue-50 px-1 text-[10px] uppercase text-blue-700">
+                      <StickyNote className="h-3 w-3" /> note
+                    </span>
+                  ) : (
+                    <>
+                      <span className="font-mono tabular-nums">{Number(e.resultingQty)}</span>
+                      <span className="rounded bg-slate-100 px-1 text-[10px] uppercase text-slate-600">
+                        {e.method}
+                      </span>
+                    </>
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-gray-500">
+                    {e.countedByName ?? 'unknown'}
+                    {role(e.countedById) && <span className="text-gray-400"> · {role(e.countedById)}</span>}
+                  </span>
+                  <span className="shrink-0 text-gray-400">
+                    {new Date(e.createdAt).toLocaleTimeString('en-GB',
+                      { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                {e.note && (
+                  <div className="ml-16 mt-0.5 whitespace-pre-wrap break-words text-gray-700">{e.note}</div>
+                )}
               </li>
             ))}
           </ol>
+        )}
+        {canNote && (
+          <div className="mt-3 flex items-center gap-2 border-t pt-3">
+            <Input value={note} maxLength={255} placeholder="Add a note (optional)"
+                   onChange={e => setNote(e.target.value)}
+                   onKeyDown={e => { if (e.key === 'Enter') void addNote(); }}
+                   className="h-8 text-xs" aria-label={`Note on ${line.itemName}`} />
+            <Button size="sm" className="h-8 shrink-0" disabled={saving || !note.trim()}
+                    onClick={() => void addNote()}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Add'}
+            </Button>
+          </div>
         )}
       </PopoverContent>
     </Popover>
@@ -925,8 +997,9 @@ function NewCountDialog(
 }
 
 /**
- * One reviewer. Lists users whose role can view counts, minus the
- * people counting this one — a reviewer never counts.
+ * One reviewer. Lists every active user, minus the people counting this
+ * one — a reviewer never counts. Being named is what lets them open the
+ * count, whatever their role.
  */
 function ReviewerPicker(
   { value, onChange, exclude = [], known, field = false, creatorName = null }:
@@ -957,7 +1030,7 @@ function ReviewerPicker(
           // The creator and the counters are left out, so a small team
           // can run out of people. Say why rather than show nothing.
           <div className="max-w-[260px] px-2 py-1.5 text-xs leading-snug text-gray-400">
-            Nobody else can review, so the creator does. A reviewer needs Stock Count view and can't be counting this one.
+            Nobody else can review, so the creator does. A reviewer can't be counting this one.
           </div>
         )}
       </SelectContent>
