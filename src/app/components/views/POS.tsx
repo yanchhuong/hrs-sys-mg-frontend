@@ -37,6 +37,7 @@ const CameraBarcodeScanner = lazyWithReload(() =>
     .then(m => ({ default: m.CameraBarcodeScanner })),
 );
 import * as posApi from '../../api/pos';
+import { useAuth } from '../../context/AuthContext';
 import * as shopApi from '../../api/shop';
 import { couponDiscount as spinCouponDiscount, fmtExpiry } from '../../utils/spinPrize';
 import * as itemsApi from '../../api/items';
@@ -123,6 +124,7 @@ async function fetchAllActiveItems(): Promise<itemsApi.Item[]> {
  * </ol></p>
  */
 export function POS() {
+  const { canCreate, canUpdate, canDelete } = useAuth();
   const [usageOk, setUsageOk] = useState<boolean | null>(null);
   /** V302 phase 2 — barcode feature gate. Off = camera button + all
    *  barcode/SKU search behaviour hide. */
@@ -917,6 +919,11 @@ export function POS() {
     })),
   });
 
+  // Save = POST /pos/orders (pos:create) or PUT (pos:update); Checkout
+  // saves first, then POST …/checkout (pos:update); void = pos:delete.
+  const canSaveOrder = currentOrder ? canUpdate('pos') : canCreate('pos');
+  const canCheckout = canSaveOrder && canUpdate('pos');
+
   const saveDraft = async (): Promise<PosOrder | null> => {
     if (cart.length === 0) {
       toast.error('Add at least one item before saving.');
@@ -1372,18 +1379,22 @@ export function POS() {
         </div>
 
         <div className="flex gap-2 pt-2">
-          <Button variant="outline" className="flex-1" onClick={saveDraft} disabled={saving || cart.length === 0}>
-            {saving && !checkoutOpen ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <FileText className="h-4 w-4 mr-1.5" />}
-            Save Draft
-          </Button>
-          <Button
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700"
-            onClick={() => { setMobileCartOpen(false); setCheckoutOpen(true); }}
-            disabled={cart.length === 0}
-          >
-            <CreditCard className="h-4 w-4 mr-1.5" />
-            Checkout
-          </Button>
+          {canSaveOrder && (
+            <Button variant="outline" className="flex-1" onClick={saveDraft} disabled={saving || cart.length === 0}>
+              {saving && !checkoutOpen ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <FileText className="h-4 w-4 mr-1.5" />}
+              Save Draft
+            </Button>
+          )}
+          {canCheckout && (
+            <Button
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => { setMobileCartOpen(false); setCheckoutOpen(true); }}
+              disabled={cart.length === 0}
+            >
+              <CreditCard className="h-4 w-4 mr-1.5" />
+              Checkout
+            </Button>
+          )}
         </div>
       </div>
     </>
@@ -1410,17 +1421,20 @@ export function POS() {
           {/* Gear icon — opens the POS-scope AccountingSettingsDialog
               where the cashier can toggle PAID stamp, auto-print, SKU
               prefix, paper size, and the printed shop name. */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => setSettingsOpen(true)}
-            className="h-7 w-7 text-gray-500 hover:text-gray-700"
-            aria-label="POS settings"
-            title="POS settings"
-          >
-            <SettingsIcon className="h-4 w-4" />
-          </Button>
+          {/* Settings save is PUT /pos/settings → pos:update. */}
+          {canUpdate('pos') && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setSettingsOpen(true)}
+              className="h-7 w-7 text-gray-500 hover:text-gray-700"
+              aria-label="POS settings"
+              title="POS settings"
+            >
+              <SettingsIcon className="h-4 w-4" />
+            </Button>
+          )}
           {currentOrder && (
             <span
               className={`ml-2 text-sm tabular-nums px-2 py-0.5 rounded border transition-all duration-300 ease-out ${
@@ -1991,7 +2005,7 @@ export function POS() {
         onOpenChange={setDrawerOpen}
         orders={openOrders}
         onResume={resumeOrder}
-        onDiscard={discardOrder}
+        onDiscard={canDelete('pos') ? discardOrder : undefined}
       />
       {/* Confirm-remove for a parked ticket. Shared AlertDialog
           pattern (matches Items/Employees/etc.) instead of the
@@ -3316,7 +3330,8 @@ function PosCheckoutDialog({
  * =================================================================== */
 
 interface DrawerProps {
-  onDiscard: (o: PosOrder) => void;
+  /** Omitted when the user lacks pos:delete — hides the trash button. */
+  onDiscard?: (o: PosOrder) => void;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   orders: PosOrder[];
@@ -3402,15 +3417,17 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
                     in the DB for audit but drops off Open Sale. Kept
                     outside the resume button so a click on the trash
                     doesn't also resume the cart. */}
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); onDiscard(o); }}
-                  className="px-3 text-gray-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center shrink-0"
-                  title="Remove open ticket (only unpaid)"
-                  aria-label="Remove open ticket"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                {onDiscard && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onDiscard(o); }}
+                    className="px-3 text-gray-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center shrink-0"
+                    title="Remove open ticket (only unpaid)"
+                    aria-label="Remove open ticket"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </li>
               );
             })}
@@ -3459,6 +3476,8 @@ interface ActiveDrawerProps {
 }
 
 function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance, onShareKitchen }: ActiveDrawerProps) {
+  // Advancing is PATCH /pos/orders/{id}/fulfillment-status → pos:update.
+  const { canUpdate } = useAuth();
   // v-pos-active-queue-kds — 1s ticker so the elapsed-time counter
   // on every card increments live while the drawer is open. Only
   // runs when the drawer IS open — a closed drawer doesn't need to
@@ -3553,7 +3572,7 @@ function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance, onShareK
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map(o => (
-                <KdsOrderCard key={o.id} order={o} nowMs={nowMs} onAdvance={onAdvance} />
+                <KdsOrderCard key={o.id} order={o} nowMs={nowMs} onAdvance={onAdvance} canAdvance={canUpdate('pos')} />
               ))}
             </div>
           )}

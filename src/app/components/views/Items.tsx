@@ -1829,7 +1829,7 @@ export function Items() {
                   getByBarcode; if the item exists we open the
                   Increase Stock dialog straight away (no click into
                   the row's + icon). */}
-              {barcodeFeatureOn && (
+              {barcodeFeatureOn && canReceive && (
                 <Button
                   type="button"
                   variant="outline"
@@ -2103,7 +2103,8 @@ export function Items() {
                                    show selection via a background
                                    highlight instead. */
                                 showCheck={false}
-                                onCreate={async (label) => {
+                                // Inline "+ Create" = POST /warehouses → stock:create.
+                                onCreate={canAdd ? async (label) => {
                                   const created = await warehousesApi.create({ name: label.trim() });
                                   setWarehouses(prev => [...prev, created]);
                                   return {
@@ -2111,7 +2112,7 @@ export function Items() {
                                     label: created.name,
                                     secondary: created.code ?? undefined,
                                   };
-                                }}
+                                } : undefined}
                                 /* v-items-warehouse-borderless — trigger
                                    reads as plain text at rest. Border
                                    + chevron only show on hover / focus
@@ -2470,7 +2471,8 @@ export function Items() {
                   }
                   disabled={saving}
                   allowClear
-                  onCreate={async (label) => {
+                  // Inline "+ Create" = POST /warehouses → stock:create.
+                  onCreate={canAdd ? async (label) => {
                     const created = await warehousesApi.create({ name: label.trim() });
                     // Keep the local warehouses cache in sync so the
                     // picker + preview reverse-lookup pick up the new
@@ -2481,7 +2483,7 @@ export function Items() {
                       label: created.name,
                       secondary: created.code ?? undefined,
                     };
-                  }}
+                  } : undefined}
                 />
               </div>
             )}

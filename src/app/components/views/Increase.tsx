@@ -631,7 +631,8 @@ export function Increase() {
           <h1 className="text-3xl font-bold">{t('page.increase.title')}</h1>
         </div>
         <div className="flex gap-2 items-center shrink-0">
-          {canAdd && (
+          {/* Card visibility is PUT /payroll-category-card-visibility → increase:update or deduction:update. */}
+          {(canEdit || canUpdate('deduction')) && (
             <Button
               variant="outline"
               size="icon"

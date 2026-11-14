@@ -101,7 +101,7 @@ export function AttendanceSettings() {
   // Update permission on the 'settings' module gates the Save All button.
   // Roles that only have View on settings still see the page (helpful as a
   // read-only reference) but can't persist changes.
-  const { canUpdate } = useAuth();
+  const { canUpdate, canCreate } = useAuth();
   const confirm = useConfirm();
   const canEditSettings = canUpdate('settings');
   const [otSettings, setOtSettings] = useState<OTSettings>(USE_MOCKS ? defaultOTSettings : { ...defaultOTSettings });
@@ -422,6 +422,8 @@ export function AttendanceSettings() {
             rule={scanRule}
             loading={scanRuleLoading}
             onSave={handleScanRuleSave}
+            // First save POSTs the rule (settings:create), later saves PATCH it (settings:update).
+            canSave={scanRuleId ? canEditSettings : canCreate('settings')}
           />
 
           {/* Absent / missing-punch rules + weekly work pattern (formerly the
@@ -1425,10 +1427,12 @@ function ScanRuleCard({
   rule,
   loading,
   onSave,
+  canSave = true,
 }: {
   rule: ScanRule;
   loading?: boolean;
   onSave: (next: ScanRule) => Promise<void>;
+  canSave?: boolean;
 }) {
   const confirm = useConfirm();
   const [draft, setDraft] = useState<ScanRule>(rule);
@@ -1505,6 +1509,8 @@ function ScanRuleCard({
             </Badge>
             {/* Actions live in the title row so they stay in reach
                 without scrolling past the preview. */}
+            {canSave && (
+            <>
             <Button variant="ghost" size="sm" onClick={handleReset} disabled={saving || loading}>
               Reset to defaults
             </Button>
@@ -1512,6 +1518,8 @@ function ScanRuleCard({
               <Save className="h-4 w-4 mr-1.5" />
               Save rule
             </Button>
+            </>
+            )}
           </div>
         </div>
       </CardHeader>

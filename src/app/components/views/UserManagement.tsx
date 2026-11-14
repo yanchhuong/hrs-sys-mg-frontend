@@ -606,7 +606,10 @@ export function UserManagement() {
   const { t } = useI18n();
   const { formatDate, formatDateTime } = useDateFormat();
   const confirm = useConfirm();
-  const { isModuleAvailable, isModuleEnabled, modulesLoaded, canView, canCreate, canDelete } = useAuth();
+  const { isModuleAvailable, isModuleEnabled, modulesLoaded, canView, canCreate, canDelete, currentUser } = useAuth();
+  // /users (class-level) and /roles writes are hasRole('ADMIN') on the API,
+  // even when another role is granted user-management:view.
+  const isAdmin = currentUser?.role === 'admin';
   const [users, setUsers] = useState<User[]>(USE_MOCKS ? mockUsers : []);
   /* v-hr-bot-users — the HR Telegram bot is shared with system users:
    * each row can share a /start link and shows whether that user's chat
@@ -1657,10 +1660,12 @@ export function UserManagement() {
     <div className="space-y-6">
       <div className="page-header-strip">
         <h1 className="text-3xl font-bold">{t('page.usermgmt.title')}</h1>
-        <Button onClick={() => handleOpenDialog()}>
-          <UserPlus className="mr-2 h-4 w-4" />
-          Add User
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => handleOpenDialog()}>
+            <UserPlus className="mr-2 h-4 w-4" />
+            Add User
+          </Button>
+        )}
       </div>
 
       {loading && users.length === 0 ? (
@@ -2274,10 +2279,12 @@ export function UserManagement() {
                   Create a role with its own tailored permission set. It starts with full access — narrow it down in the Permissions tab.
                 </p>
               </div>
-              <Button variant="outline" onClick={openCustomRoleDialog}>
-                <UserPlus className="h-4 w-4 mr-2" />
-                Add Custom Role
-              </Button>
+              {isAdmin && (
+                <Button variant="outline" onClick={openCustomRoleDialog}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Add Custom Role
+                </Button>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -2309,6 +2316,7 @@ export function UserManagement() {
                     </TooltipProvider>
                   </CardTitle>
                 </div>
+                {isAdmin && (
                 <div className="flex gap-2">
                   {/* Whole matrix back to defaults (draft only — Save to
                       keep, Discard to undo). Mock mode already labels
@@ -2328,6 +2336,7 @@ export function UserManagement() {
                     {savingPerms ? 'Saving…' : 'Save Changes'}
                   </Button>
                 </div>
+                )}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">

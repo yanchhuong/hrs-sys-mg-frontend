@@ -19,6 +19,7 @@ import {
 } from '../ui/alert-dialog';
 import { Plus, Pencil, Trash2, MapPin, Loader2, QrCode } from 'lucide-react';
 import * as officesApi from '../../api/offices';
+import { useAuth } from '../../context/AuthContext';
 import { QrDisplayDialog } from '../common/QrDisplayDialog';
 // v-perf-lazy-map — leaflet + react-leaflet weigh ~250KB gz. Only
 // paid when the operator opens the office-edit dialog with the
@@ -63,6 +64,10 @@ interface Props {
  * one or many per tenant.
  */
 export function Offices({ embedded = false }: Props = {}) {
+  const { canCreate, canUpdate, canDelete } = useAuth();
+  const canAdd    = canCreate('office');
+  const canEdit   = canUpdate('office');
+  const canRemove = canDelete('office');
   const [rows, setRows] = useState<officesApi.Office[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -191,10 +196,12 @@ export function Offices({ embedded = false }: Props = {}) {
         <div className="page-header-strip">
           <h1 className="text-3xl font-bold">Offices</h1>
           <div className="flex items-center gap-2 shrink-0">
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Add Office
-            </Button>
+            {canAdd && (
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                Add Office
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -207,7 +214,7 @@ export function Offices({ embedded = false }: Props = {}) {
           </CardTitle>
           {/* Standalone page: Add lives in the page header. Embedded
               (inside a dialog) there is no page header, so it stays here. */}
-          {embedded && (
+          {embedded && canAdd && (
             <Button size="sm" onClick={openCreate}>
               <Plus className="h-4 w-4 mr-1.5" />
               Add Office
@@ -234,7 +241,9 @@ export function Offices({ embedded = false }: Props = {}) {
                   <ListError colSpan={6} message={loadError} onRetry={() => { void load(); }} />
                 ) : (
                   <ListEmpty colSpan={6} noun="offices">
-                    <p className="text-sm text-gray-500">Click <strong>Add Office</strong> to create the first one.</p>
+                    {canAdd && (
+                      <p className="text-sm text-gray-500">Click <strong>Add Office</strong> to create the first one.</p>
+                    )}
                   </ListEmpty>
                 ))}
                 {rows.map(o => (
@@ -266,21 +275,25 @@ export function Offices({ embedded = false }: Props = {}) {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="inline-flex gap-1">
-                        <Button
-                          size="icon" variant="ghost" className="h-7 w-7"
-                          onClick={() => openEdit(o)}
-                          title="Edit"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="icon" variant="ghost"
-                          className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => setDeleteTarget(o)}
-                          title="Remove"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {canEdit && (
+                          <Button
+                            size="icon" variant="ghost" className="h-7 w-7"
+                            onClick={() => openEdit(o)}
+                            title="Edit"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {canRemove && (
+                          <Button
+                            size="icon" variant="ghost"
+                            className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => setDeleteTarget(o)}
+                            title="Remove"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

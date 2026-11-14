@@ -133,10 +133,9 @@ export function Deduction() {
   const { formatDate } = useDateFormat();
   // Permission gates per the matrix in Settings → User Management → Permissions.
   // A role with V-only on 'deduction' will hide every mutating control here.
-  const { canCreate, canUpdate, canDelete } = useAuth();
+  const { canCreate, canUpdate } = useAuth();
   const canAdd = canCreate('deduction');
   const canEdit = canUpdate('deduction');
-  const canRemove = canDelete('deduction');
   const [deductions, setDeductions] = useState<SalaryDeduction[]>(USE_MOCKS ? mockDeductions : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const confirm = useConfirm();
@@ -576,7 +575,8 @@ export function Deduction() {
           <h1 className="text-3xl font-bold">{t('page.deduction.title')}</h1>
         </div>
         <div className="flex gap-2 items-center shrink-0">
-          {canAdd && (
+          {/* Card visibility is PUT /payroll-category-card-visibility → increase:update or deduction:update. */}
+          {(canUpdate('increase') || canEdit) && (
             <Button
               variant="outline"
               size="icon"
@@ -885,6 +885,9 @@ export function Deduction() {
             <span className="text-sm font-medium text-blue-900">
               {selectedIds.size} selected
             </span>
+            {/* POST /salary-deductions/bulk-status → deduction:update. */}
+            {canEdit && (
+            <>
             <DropdownSelect
               value={bulkStatus}
               onChange={(e) => setBulkStatus(e.target.value as SalaryDeduction['status'])}
@@ -897,6 +900,8 @@ export function Deduction() {
             <Button size="sm" onClick={handleBulkUpdateStatus}>
               Update {selectedIds.size} row{selectedIds.size > 1 ? 's' : ''}
             </Button>
+            </>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -1157,7 +1162,8 @@ export function Deduction() {
                 <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
               </Button>
             )}
-            {canRemove && detailsTarget && (
+            {/* Stop sets status via bulk-status → deduction:update, not delete. */}
+            {canEdit && detailsTarget && (
               <Button
                 variant="outline"
                 className="text-red-600 hover:text-red-700"

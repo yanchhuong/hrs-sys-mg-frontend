@@ -26,6 +26,7 @@ import { NumericInput } from '../common/NumericInput';
 import { ListEmpty, ListError } from '../common/ListStates';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 import { statusBadgeClass } from '../../utils/statusTones';
 
 const TYPE_META: Record<CommissionType, { label: string; hint: string; cls: string }> = {
@@ -53,6 +54,9 @@ export function CommissionSettings() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<CommissionProgram | null>(null);
   const confirm = useConfirm();
+  // CommissionController is hasAnyRole('ADMIN','MANAGER') on the API.
+  const { currentUser } = useAuth();
+  const canManage = currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -112,9 +116,11 @@ export function CommissionSettings() {
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             </Button>
-            <Button size="sm" onClick={openNew}>
-              <Plus className="h-4 w-4 mr-1.5" /> New plan
-            </Button>
+            {canManage && (
+              <Button size="sm" onClick={openNew}>
+                <Plus className="h-4 w-4 mr-1.5" /> New plan
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -167,14 +173,16 @@ export function CommissionSettings() {
                         <Badge variant="outline" className={s.cls}>{s.label}</Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => openEdit(r)}>
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" title="Delete" onClick={() => doDelete(r)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
+                        {canManage && (
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={() => openEdit(r)}>
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" title="Delete" onClick={() => doDelete(r)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

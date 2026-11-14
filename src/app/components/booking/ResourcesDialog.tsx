@@ -28,9 +28,12 @@ interface Unit extends itemsApi.PaymentPlanItemOption { category: string | null 
 /** 'YYYY-MM-DDTHH:mm' (datetime-local) in the browser's zone → ISO instant. */
 const toIso = (local: string) => new Date(local).toISOString();
 
-export function ResourcesDialog({ item, canWrite, onClose }: {
+export function ResourcesDialog({ item, canWrite, canRemove = canWrite, onClose }: {
   item: itemsApi.PaymentPlanItem;
+  /** Shows the new-block form (POST /booking-resource-blocks → booking:create). */
   canWrite: boolean;
+  /** Shows Remove block (DELETE → booking:delete). Defaults to canWrite. */
+  canRemove?: boolean;
   onClose: () => void;
 }) {
   const confirm = useConfirm();
@@ -178,7 +181,7 @@ export function ResourcesDialog({ item, canWrite, onClose }: {
                   <span className="font-medium w-36 truncate">{unitById.get(b.optionId)?.name ?? 'Removed unit'}</span>
                   <span className="text-gray-600 tabular-nums">{formatDateTime(b.startAt)} → {formatDateTime(b.endAt)}</span>
                   <span className="text-gray-500 truncate flex-1">{b.reason}</span>
-                  {canWrite && (
+                  {canRemove && (
                     <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600" onClick={() => void remove(b)} title="Remove block">
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>

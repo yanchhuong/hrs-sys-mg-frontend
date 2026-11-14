@@ -93,9 +93,13 @@ export interface KdsOrderCardProps {
    *  whether the underlying call is authed (POS) or anonymous
    *  (shared kitchen board). */
   onAdvance: (id: string, next: posApi.PosFulfillmentStatus) => void;
+  /** False hides the action button. POS passes canUpdate('pos') (the
+   *  fulfillment-status PATCH is pos:update); the anonymous kitchen
+   *  board leaves it at the default. */
+  canAdvance?: boolean;
 }
 
-export function KdsOrderCard({ order: o, nowMs, onAdvance }: KdsOrderCardProps): JSX.Element {
+export function KdsOrderCard({ order: o, nowMs, onAdvance, canAdvance = true }: KdsOrderCardProps): JSX.Element {
   const theme = KDS_THEME[o.fulfillmentStatus];
   const idx = posApi.POS_FULFILLMENT_CHAIN.indexOf(o.fulfillmentStatus);
   const nextStatus = posApi.POS_FULFILLMENT_CHAIN[idx + 1] ?? null;
@@ -153,6 +157,7 @@ export function KdsOrderCard({ order: o, nowMs, onAdvance }: KdsOrderCardProps):
         })}
       </ul>
 
+      {canAdvance && (
       <div className="px-4 pb-4">
         <button
           type="button"
@@ -167,6 +172,7 @@ export function KdsOrderCard({ order: o, nowMs, onAdvance }: KdsOrderCardProps):
           {theme.actionLabel}
         </button>
       </div>
+      )}
     </div>
   );
 }

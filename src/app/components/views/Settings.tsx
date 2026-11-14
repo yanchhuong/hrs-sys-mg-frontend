@@ -231,6 +231,8 @@ function CompanyInformationCard() {
     USE_MOCKS ? loadCompanyInfo() : { name: '', currency: 'USD', dateFormat: 'MMM dd, yyyy', payDayOfMonth: 25 },
   );
   const { refresh: refreshDateFormat } = useDateFormat();
+  // Save is PUT /settings/company → settings:update.
+  const { canUpdate } = useAuth();
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -537,16 +539,18 @@ function CompanyInformationCard() {
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-2 border-t">
-          {dirty && <span className="text-xs text-amber-700 mr-auto">Unsaved changes</span>}
-          <Button variant="outline" onClick={handleDiscard} disabled={!dirty || loading}>
-            Discard
-          </Button>
-          <Button onClick={handleSave} disabled={!dirty || loading}>
-            <Save className="h-4 w-4 mr-2" />
-            Save
-          </Button>
-        </div>
+        {canUpdate('settings') && (
+          <div className="flex items-center justify-end gap-2 pt-2 border-t">
+            {dirty && <span className="text-xs text-amber-700 mr-auto">Unsaved changes</span>}
+            <Button variant="outline" onClick={handleDiscard} disabled={!dirty || loading}>
+              Discard
+            </Button>
+            <Button onClick={handleSave} disabled={!dirty || loading}>
+              <Save className="h-4 w-4 mr-2" />
+              Save
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -806,6 +810,9 @@ function PayWayIntegrationCard() {
 
 function AgencyRequestTab() {
   const { formatDate } = useDateFormat();
+  // Request / disconnect are TenantAgencyRequestController → hasRole('ADMIN').
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
   const [directory, setDirectory] = useState<TenantAgencyApi.AgencyDirectoryItem[]>([]);
   const [myRequests, setMyRequests] = useState<TenantAgencyApi.MyRequestDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -933,7 +940,7 @@ function AgencyRequestTab() {
                               {my.declineReason}
                             </span>
                           )}
-                          {my.status === 'active' && (
+                          {isAdmin && my.status === 'active' && (
                             <Button
                               size="sm" variant="outline"
                               className="h-7 text-[11px] px-2 border-rose-200 text-rose-700 hover:bg-rose-50"
@@ -950,11 +957,11 @@ function AgencyRequestTab() {
                         </div>
                       );
                     }
-                    return (
+                    return isAdmin ? (
                       <Button size="sm" className="shrink-0" onClick={() => setPicked(a)}>
                         Read terms &amp; Request
                       </Button>
-                    );
+                    ) : null;
                   })()}
                 </li>
               ))}

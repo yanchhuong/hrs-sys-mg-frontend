@@ -2138,12 +2138,15 @@ export function Attendance({ onNavigate }: Props = {}) {
               )}
 
               <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+                {/* POST /attendance/upload is attendance:create on the API. */}
+                {canCreate('attendance') && (
                 <DialogTrigger asChild>
                   <Button size="sm">
                     <Upload className="mr-1.5 h-4 w-4" />
                     Upload Excel
                   </Button>
                 </DialogTrigger>
+                )}
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Upload Attendance Records</DialogTitle>

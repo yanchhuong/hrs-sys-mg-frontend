@@ -21,6 +21,7 @@ import {
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { ListError } from '../common/ListStates';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 
 /**
  * Appointment / Healthcare Settings (V196 / v-healthcare-staff-roles).
@@ -61,6 +62,9 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
   onChanged?: () => void;
 }) {
   const confirm = useConfirm();
+  // Tagging saves via PUT /employees/{id} → employees:update on the API.
+  const { canUpdate } = useAuth();
+  const canEditStaff = canUpdate('employees');
   const [section, setSection] = useState<Section>('staff');
   const [employees, setEmployees] = useState<employeesApi.Employee[]>([]);
   const [loading, setLoading]     = useState(false);
@@ -190,6 +194,7 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
                         </Tooltip>
                       </TooltipProvider>
                     </div>
+                    {canEditStaff && (
                     <Button
                       size="sm"
                       onClick={() => setAddOpen(true)}
@@ -198,6 +203,7 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
                     >
                       <Plus className="h-3.5 w-3.5 mr-1" /> Add Staff
                     </Button>
+                    )}
                   </div>
 
                   {loading && employees.length === 0 ? (
@@ -232,7 +238,7 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
                                   <Select
                                     value={e.clinicalRole ?? ''}
                                     onValueChange={v => patchRole(e, v as employeesApi.ClinicalRole)}
-                                    disabled={busy}
+                                    disabled={busy || !canEditStaff}
                                   >
                                     <SelectTrigger className="h-8 w-full" aria-label={`Role for ${e.name}`}>
                                       <SelectValue />
@@ -247,6 +253,7 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
                                 </div>
                               </TableCell>
                               <TableCell className="text-right">
+                                {canEditStaff && (
                                 <Button
                                   variant="ghost" size="icon"
                                   className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -257,6 +264,7 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
+                                )}
                               </TableCell>
                             </TableRow>
                           );

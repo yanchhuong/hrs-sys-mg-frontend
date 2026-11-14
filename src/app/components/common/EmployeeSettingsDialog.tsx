@@ -10,6 +10,7 @@ import { Send, KeyRound, Landmark, Loader2, Save } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { HrTelegramBotCard } from './HrTelegramBotCard';
 import * as payoutSettingsApi from '../../api/employeePayoutSettings';
+import { useAuth } from '../../context/AuthContext';
 
 type Section = 'hr-bot' | 'payway' | 'other-bank';
 
@@ -46,6 +47,9 @@ interface Props {
  */
 export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, onPayoutSaved }: Props) {
   const [section, setSection] = useState<Section>(showHrBot ? 'hr-bot' : 'payway');
+  // Payout Save is PUT /employee-payout-settings → settings:update.
+  const { canUpdate } = useAuth();
+  const canSavePayout = canUpdate('settings');
 
   /* ---------- Payout settings state ---------- */
   const [payoutLoading, setPayoutLoading] = useState(false);
@@ -171,21 +175,23 @@ export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, o
                             Show the Beneficiary form + use PayWay's Payout API on payroll runs.
                           </p>
                         </div>
-                        <Switch checked={paywayEnabled} onCheckedChange={setPaywayEnabled} disabled={payoutSaving} />
+                        <Switch checked={paywayEnabled} onCheckedChange={setPaywayEnabled} disabled={payoutSaving || !canSavePayout} />
                       </label>
                       <div className="rounded-md border border-blue-200 bg-blue-50/50 px-3 py-2 text-[11px] text-blue-800 leading-snug">
                         PayWay credentials still need to be saved in <strong>Settings → PayWay</strong> before
                         payroll can dispatch successfully. This toggle only controls whether the workflow
                         surfaces — it doesn't add credentials.
                       </div>
-                      <div className="flex justify-end">
-                        <Button onClick={savePayout} disabled={payoutSaving || payoutLoading} size="sm">
-                          {payoutSaving
-                            ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                            : <Save className="h-4 w-4 mr-1.5" />}
-                          Save
-                        </Button>
-                      </div>
+                      {canSavePayout && (
+                        <div className="flex justify-end">
+                          <Button onClick={savePayout} disabled={payoutSaving || payoutLoading} size="sm">
+                            {payoutSaving
+                              ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                              : <Save className="h-4 w-4 mr-1.5" />}
+                            Save
+                          </Button>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -220,16 +226,18 @@ export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, o
                             Accept manual bank accounts as a payout source alongside PayWay beneficiaries.
                           </p>
                         </div>
-                        <Switch checked={allowOtherBank} onCheckedChange={setAllowOtherBank} disabled={payoutSaving} />
+                        <Switch checked={allowOtherBank} onCheckedChange={setAllowOtherBank} disabled={payoutSaving || !canSavePayout} />
                       </label>
-                      <div className="flex justify-end">
-                        <Button onClick={savePayout} disabled={payoutSaving || payoutLoading} size="sm">
-                          {payoutSaving
-                            ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                            : <Save className="h-4 w-4 mr-1.5" />}
-                          Save
-                        </Button>
-                      </div>
+                      {canSavePayout && (
+                        <div className="flex justify-end">
+                          <Button onClick={savePayout} disabled={payoutSaving || payoutLoading} size="sm">
+                            {payoutSaving
+                              ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                              : <Save className="h-4 w-4 mr-1.5" />}
+                            Save
+                          </Button>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

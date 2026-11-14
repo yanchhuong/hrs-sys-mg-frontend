@@ -34,6 +34,7 @@ import * as flexApi from '../../api/flexibleSchedules';
 import * as employeesApi from '../../api/employees';
 import * as departmentsApi from '../../api/departments';
 import { USE_MOCKS } from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 
 // ---------------------------------------------------------------------------
 // Adapters: backend wire shape ↔ local mock shape
@@ -178,6 +179,9 @@ function empty(rule: ScanRule): FormState {
 }
 
 export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
+  // Upsert + delete on /settings/flexible-schedules are both settings:update.
+  const { canUpdate } = useAuth();
+  const canEdit = canUpdate('settings');
   const [rows, setRows] = useState<FlexibleSchedule[]>(USE_MOCKS ? listFlexibleSchedules() : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const [deptList, setDeptList] = useState<departmentsApi.Department[]>([]);
@@ -421,10 +425,12 @@ export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
               </HelpHint>
             </CardTitle>
           </div>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Add override
-          </Button>
+          {canEdit && (
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Add override
+            </Button>
+          )}
         </div>
         <div className="relative w-full max-w-sm">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -515,6 +521,7 @@ export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
                       {format(new Date(row.updatedAt), 'MMM dd, HH:mm')}
                     </TableCell>
                     <TableCell className="text-right">
+                      {canEdit && (
                       <div className="flex items-center justify-end gap-1">
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEdit(row)} title="Edit">
                           <Pencil className="h-3.5 w-3.5" />
@@ -528,6 +535,7 @@ export function FlexibleWorkCard({ scanRule, companyWeek }: Props) {
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

@@ -42,6 +42,7 @@ import {
 import { toast } from 'sonner';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 import { DropdownSelect } from '../common/DropdownSelect';
 
 /** Live shape — mirrors api/settings.Holiday but adds a non-null id for table keys. */
@@ -78,6 +79,10 @@ interface HolidayProps {
 export function Holiday({ embedded = false }: HolidayProps = {}) {
   const confirm = useConfirm();
   const { formatDate } = useDateFormat();
+  // Every /settings/holidays write (add, edit, delete, clone, copy from
+  // system) is hasRole('ADMIN') on the API.
+  const { currentUser } = useAuth();
+  const isAdmin = currentUser?.role === 'admin';
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(!USE_MOCKS);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -539,6 +544,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
         <div>
           {!embedded && <h1 className="text-3xl font-bold">Holiday Management</h1>}
         </div>
+        {isAdmin && (
         <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" onClick={() => setSystemDialogOpen(true)}>
             <Globe className="mr-1.5 h-4 w-4 text-blue-600" />
@@ -562,6 +568,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
             Add
           </Button>
         </div>
+        )}
       </div>
 
       <div className="stat-strip stat-cols-3">
@@ -808,6 +815,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                     {h.description || '-'}
                   </TableCell>
                   <TableCell className="text-right">
+                    {isAdmin && (
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="icon" className="h-7 w-7" title="Clone" aria-label="Clone" onClick={() => openCloneFor([h.id])}>
                         <Copy className="h-3.5 w-3.5" />
@@ -826,6 +834,7 @@ export function Holiday({ embedded = false }: HolidayProps = {}) {
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+                    )}
                   </TableCell>
                 </TableRow>
               );

@@ -31,6 +31,7 @@ import { ListEmpty, ListError } from '../common/ListStates';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { usePagination } from '../../hooks/usePagination';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { statusBadgeClass } from '../../utils/statusTones';
 import { format as formatLocalDate } from 'date-fns';
@@ -66,6 +67,9 @@ export function CommissionSettlementView() {
   const [editingStatus, setEditingStatus] = useState<SettlementHeader | null>(null);
   const confirm = useConfirm();
   const { formatDate } = useDateFormat();
+  // CommissionSettlementController is hasAnyRole('ADMIN','MANAGER') on the API.
+  const { currentUser } = useAuth();
+  const canManage = currentUser?.role === 'admin' || currentUser?.role === 'manager';
   // Client-side filters (the list endpoint returns every run).
   // From/To match on period overlap, like the Commission tab.
   const [search, setSearch] = useState('');
@@ -160,9 +164,11 @@ export function CommissionSettlementView() {
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             </Button>
-            <Button size="sm" onClick={() => setDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-1.5" /> New settlement
-            </Button>
+            {canManage && (
+              <Button size="sm" onClick={() => setDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-1.5" /> New settlement
+              </Button>
+            )}
           </div>
           </div>
           {/* One filter strip, same as Transactions. */}
@@ -256,12 +262,16 @@ export function CommissionSettlementView() {
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => doView(r)} title="View details">
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingStatus(r)} title="Update status / payment">
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => doDelete(r)} title="Delete">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {canManage && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditingStatus(r)} title="Update status / payment">
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {canManage && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => doDelete(r)} title="Delete">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

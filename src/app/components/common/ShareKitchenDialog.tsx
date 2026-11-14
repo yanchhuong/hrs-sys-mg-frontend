@@ -11,6 +11,7 @@ import { Copy, ExternalLink, RefreshCw, Loader2, ChefHat, Info } from 'lucide-re
 import { Switch } from '../ui/switch';
 import * as kitchenApi from '../../api/kitchen';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 
 /**
  * V306 — sibling of ShareShopDialog. Surfaces the tenant's 8-char
@@ -32,6 +33,9 @@ interface Props {
 
 export function ShareKitchenDialog({ open, onOpenChange }: Props) {
   const confirm = useConfirm();
+  // Rotate + enable toggle are POST /pos/kitchen-link/* → pos:update.
+  const { canUpdate } = useAuth();
+  const canManageLink = canUpdate('pos');
   const [info, setInfo] = useState<kitchenApi.KitchenLinkInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -184,7 +188,7 @@ export function ShareKitchenDialog({ open, onOpenChange }: Props) {
               </div>
               <Switch
                 checked={info.enabled}
-                disabled={enabledBusy || rotating || loading}
+                disabled={enabledBusy || rotating || loading || !canManageLink}
                 onCheckedChange={async (next) => {
                   if (!info) return;
                   const prev = info.enabled;
@@ -206,12 +210,14 @@ export function ShareKitchenDialog({ open, onOpenChange }: Props) {
         ) : null}
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" size="sm" onClick={rotate} disabled={rotating || loading || !info}>
-            {rotating
-              ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-              : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-            Rotate code
-          </Button>
+          {canManageLink && (
+            <Button variant="outline" size="sm" onClick={rotate} disabled={rotating || loading || !info}>
+              {rotating
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+              Rotate code
+            </Button>
+          )}
           <Button onClick={() => onOpenChange(false)}>Done</Button>
         </DialogFooter>
       </DialogContent>

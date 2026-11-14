@@ -217,10 +217,12 @@ export function Receipts() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
-                  title="Expense settings">
-            <Settings className="h-4 w-4" />
-          </Button>
+          {canEdit && (
+            <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
+                    title="Expense settings">
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => exportListToExcel({
@@ -481,6 +483,7 @@ function ReceiptFormDialog({
   onSaved: () => Promise<void> | void;
 }) {
   const isEdit = !!editing;
+  const { canCreate } = useAuth();
   const [savedReceiptId, setSavedReceiptId] = useState<string | null>(null);
   const [receiptNo, setReceiptNo] = useState('');
   const [vendorId, setVendorId] = useState('');
@@ -734,7 +737,8 @@ function ReceiptFormDialog({
               // (business needs TIN + representative which the
               // operator should fill in via the Vendors page later).
               createLabel={(q) => `+ Create vendor "${q}"`}
-              onCreate={async (label) => {
+              // Inline vendor create = POST /vendors → vendor:create.
+              onCreate={canCreate('vendor') ? async (label) => {
                 try {
                   const v = await vendorsApi.create({ type: 'individual', name: label });
                   onVendorCreated?.(v);
@@ -744,7 +748,7 @@ function ReceiptFormDialog({
                   toast.error(e instanceof Error ? e.message : 'Create vendor failed');
                   throw e;
                 }
-              }}
+              } : undefined}
             />
           </div>
 

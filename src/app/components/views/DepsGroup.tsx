@@ -155,6 +155,8 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
   const canCreateDept = canCreate('settings');
   const canUpdateDept = canUpdate('settings');
   const canDeleteDept = canDelete('settings');
+  // Moving members saves via PUT /employees/{id} → employees:update.
+  const canMoveMembers = canUpdate('employees');
   // Mock mode seeds the bundled mock departments + sample groups. Live mode
   // starts empty and loads everything from the API — it used to seed the
   // two fake mock groups, which flashed before the load and stayed on
@@ -792,7 +794,7 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
                                 Edit
                               </DropdownMenuItem>
                             )}
-                            {canUpdateDept && (
+                            {canMoveMembers && (
                               <DropdownMenuItem onClick={() => { setAddMemberFor(item); setAddMemberSearch(''); }}>
                                 <UserPlus className="mr-2 h-3.5 w-3.5" />
                                 Manage Members
@@ -1045,6 +1047,13 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
                     </p>
                   </div>
                 );
+                if (!canMoveMembers) {
+                  return (
+                    <div key={emp.id} className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left">
+                      {info_node}
+                    </div>
+                  );
+                }
                 return (
                   <PlainButton
                     key={emp.id}

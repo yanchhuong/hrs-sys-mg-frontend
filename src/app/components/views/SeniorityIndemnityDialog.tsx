@@ -9,6 +9,7 @@ import { formatMoney } from '../../utils/format';
 import { DateInput } from '../common/DateInput';
 import { NumericInput } from '../common/NumericInput';
 import { useDateFormat } from '../../context/DateFormatContext';
+import { useAuth } from '../../context/AuthContext';
 import {
   Dialog,
   DialogContent,
@@ -62,6 +63,7 @@ function money(n: number): string {
 
 export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Props) {
   const { formatDate } = useDateFormat();
+  const { canCreate } = useAuth();
   const initial = useMemo(defaultPeriod, []);
   const [startDate, setStartDate] = useState<string>(initial.startDate);
   const [endDate, setEndDate] = useState<string>(initial.endDate);
@@ -595,11 +597,13 @@ to $500/mo, not $167.`}
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={creating}>
             Cancel
           </Button>
-          <Button onClick={handleCreate} disabled={!preview || selectedCount === 0 || creating}>
-            {creating
-              ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating batch…</>
-              : <>Create Payroll Batch · {money(selectedTotal)}</>}
-          </Button>
+          {canCreate('payroll') && (
+            <Button onClick={handleCreate} disabled={!preview || selectedCount === 0 || creating}>
+              {creating
+                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Creating batch…</>
+                : <>Create Payroll Batch · {money(selectedTotal)}</>}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

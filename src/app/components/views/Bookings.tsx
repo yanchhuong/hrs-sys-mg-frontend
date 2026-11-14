@@ -74,7 +74,6 @@ export function Bookings() {
   // the Session column in the Bookings table (matches the Date
   // input on the New Booking dialog).
   const { formatDate } = useDateFormat();
-  const canWrite  = canCreate('booking') || canUpdate('booking');
   const canRemove = canDelete('booking');
   // v-page-title-i18n — header follows the sidebar leaf label.
   const { t } = useI18n();
@@ -221,7 +220,7 @@ export function Bookings() {
           >
             <Settings className="h-4 w-4" />
           </Button>
-          {canWrite && (
+          {canCreate('booking') && (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button><Plus className="h-4 w-4 mr-1" /> New booking</Button>
@@ -241,7 +240,7 @@ export function Bookings() {
       <BookingSchedulesDialog open={settingsOpen} onOpenChange={o => { setSettingsOpen(o); if (!o) void load(); }} />
 
       {view === 'day' && (
-        <DayView items={items} customers={customers} canWrite={canWrite}
+        <DayView items={items} customers={customers} canWrite={canCreate('booking')}
           onOpenBooking={id => {
             if (!rows.some(r => r.id === id)) { setStatusFilter('all'); }
             setDetailId(id);
@@ -394,7 +393,8 @@ export function Bookings() {
           booking={detail}
           customer={detail.customerId ? customersById.get(detail.customerId) : undefined}
           item={detail.itemId ? itemsById.get(detail.itemId) : undefined}
-          canWrite={canWrite}
+          // Status changes are PUT /bookings/{id}/status → booking:update.
+          canWrite={canUpdate('booking')}
           canRemove={canRemove}
           onClose={() => setDetailId(null)}
           onChanged={() => { void load(); }}

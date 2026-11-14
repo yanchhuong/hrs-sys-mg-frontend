@@ -20,6 +20,7 @@ import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { ListError } from '../common/ListStates';
 import { NumericInput } from '../common/NumericInput';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 import type { Item } from '../../api/items';
 
 const TYPE_META: Record<LoyaltyType, { label: string; icon: React.ReactNode; hint: string; cls: string }> = {
@@ -43,6 +44,9 @@ export function Loyalty() {
   const [editing, setEditing] = useState<LoyaltyProgram | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const confirm = useConfirm();
+  // LoyaltyController (/loyalty/programs) is hasAnyRole('ADMIN','MANAGER') on the API.
+  const { currentUser } = useAuth();
+  const canManage = currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,7 +127,7 @@ export function Loyalty() {
               policy at a time. Hide the New button once one
               exists so the operator edits it instead of trying
               to create a second (BE would reject with 409). */}
-          {rows.length === 0 && (
+          {canManage && rows.length === 0 && (
             <Button size="sm" onClick={openNew}>
               <Plus className="h-4 w-4 mr-1.5" />
               New program
@@ -181,14 +185,18 @@ export function Loyalty() {
                         )}
                       </div>
                     </div>
-                    <Switch checked={r.active} onCheckedChange={() => void doToggle(r)} />
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(r)} title="Edit">
-                      <Edit3 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => doDelete(r)} title="Delete">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    <Switch checked={r.active} onCheckedChange={() => void doToggle(r)} disabled={!canManage} />
+                    {canManage && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(r)} title="Edit">
+                        <Edit3 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => doDelete(r)} title="Delete">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </li>
                 );
               })}

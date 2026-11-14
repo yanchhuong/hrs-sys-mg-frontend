@@ -55,7 +55,7 @@ export function EncounterSettingsDialog({ open, onOpenChange }: {
   onOpenChange: (next: boolean) => void;
 }) {
   const confirm = useConfirm();
-  const { currentUser } = useAuth();
+  const { currentUser, canUpdate } = useAuth();
   const tenantId = currentUser?.tenantId ?? null;
 
   const [section, setSection] = useState<Section>('branch');
@@ -303,9 +303,12 @@ export function EncounterSettingsDialog({ open, onOpenChange }: {
           {/* Logo and branch changes save the moment they're made; only
               the numbering fields wait for Save. Cancel discards those. */}
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+          {/* PUT /hospital/settings → encounter:update. */}
+          {canUpdate('encounter') && (
           <Button onClick={save} disabled={saving || loading}>
             {saving ? 'Saving…' : 'Save'}
           </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -400,6 +403,8 @@ function BranchList({ branches, loading, onRefresh }: {
   onRefresh: () => Promise<void>;
 }) {
   const confirm = useConfirm();
+  // Branch CRUD is /branches → encounter:create / update / delete.
+  const { canCreate, canUpdate, canDelete } = useAuth();
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
   const [draft, setDraft]         = useState<{ name: string; phone: string; address: string }>({ name: '', phone: '', address: '' });
   const [busy, setBusy]           = useState(false);
@@ -490,9 +495,11 @@ function BranchList({ branches, loading, onRefresh }: {
       <CardContent className="pt-4 space-y-3">
         <div className="flex items-center justify-between">
           <Label className="text-sm font-medium">Branches</Label>
+          {canCreate('encounter') && (
           <Button size="sm" variant="outline" onClick={startNew} disabled={editingId !== null}>
             <Plus className="h-3.5 w-3.5 mr-1" /> Add branch
           </Button>
+          )}
         </div>
 
         {loading ? (
@@ -542,7 +549,7 @@ function BranchList({ branches, loading, onRefresh }: {
                       <Button
                         size="sm" variant="ghost" className="h-7 w-7 p-0"
                         onClick={() => makeDefault(b)}
-                        disabled={editingId !== null || busy || b.isDefault}
+                        disabled={editingId !== null || busy || b.isDefault || !canUpdate('encounter')}
                         title={b.isDefault ? 'Current default branch' : 'Set as default for printing'}
                       >
                         <Star
@@ -561,6 +568,7 @@ function BranchList({ branches, loading, onRefresh }: {
                     </TableCell>
                     <TableCell className="text-right align-top">
                       <div className="inline-flex gap-1">
+                        {canUpdate('encounter') && (
                         <Button
                           size="sm" variant="ghost" className="h-7"
                           onClick={() => startEdit(b)}
@@ -569,6 +577,8 @@ function BranchList({ branches, loading, onRefresh }: {
                         >
                           <Pencil className="h-3 w-3" />
                         </Button>
+                        )}
+                        {canDelete('encounter') && (
                         <Button
                           size="sm" variant="ghost"
                           className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -578,6 +588,7 @@ function BranchList({ branches, loading, onRefresh }: {
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

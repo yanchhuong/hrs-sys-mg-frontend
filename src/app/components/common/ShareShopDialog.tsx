@@ -11,6 +11,7 @@ import { Copy, ExternalLink, RefreshCw, Loader2, Share2, Info, Eye, ShoppingCart
 import { Switch } from '../ui/switch';
 import * as shopApi from '../../api/shop';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 import { ManageTablesDialog } from './ManageTablesDialog';
 import { ShopSpinSection } from './ShopSpinSection';
 
@@ -31,6 +32,9 @@ interface Props {
 
 export function ShareShopDialog({ open, onOpenChange }: Props) {
   const confirm = useConfirm();
+  // Rotate + Order Available toggle are POST /pos/shop-link/* → pos:update.
+  const { canUpdate } = useAuth();
+  const canManageLink = canUpdate('pos');
   const [info, setInfo] = useState<shopApi.ShopLinkInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [rotating, setRotating] = useState(false);
@@ -224,7 +228,7 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
               </div>
               <Switch
                 checked={info.orderingEnabled}
-                disabled={orderingBusy || rotating || loading}
+                disabled={orderingBusy || rotating || loading || !canManageLink}
                 onCheckedChange={async (next) => {
                   if (!info) return;
                   const prev = info.orderingEnabled;
@@ -253,14 +257,19 @@ export function ShareShopDialog({ open, onOpenChange }: Props) {
           {/* V315 — Manage tables opens a sibling dialog for per-table
               QR codes. Left of Rotate so operators reach for it first
               (rotate is a rare / destructive action). */}
-          <Button variant="outline" size="sm" onClick={() => setTablesOpen(true)}>
-            <Utensils className="h-3.5 w-3.5 mr-1.5" />
-            Manage tables
-          </Button>
-          <Button variant="outline" size="sm" onClick={rotate} disabled={rotating || loading || !info}>
-            {rotating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
-            Rotate code
-          </Button>
+          {/* Every table action (add / edit / rotate / remove) is pos:update. */}
+          {canManageLink && (
+            <Button variant="outline" size="sm" onClick={() => setTablesOpen(true)}>
+              <Utensils className="h-3.5 w-3.5 mr-1.5" />
+              Manage tables
+            </Button>
+          )}
+          {canManageLink && (
+            <Button variant="outline" size="sm" onClick={rotate} disabled={rotating || loading || !info}>
+              {rotating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <RefreshCw className="h-3.5 w-3.5 mr-1.5" />}
+              Rotate code
+            </Button>
+          )}
           <Button onClick={() => onOpenChange(false)}>Done</Button>
         </DialogFooter>
 

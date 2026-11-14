@@ -593,10 +593,13 @@ export function Bills() {
           </Button>
           {/* Settings popup — same tenant-wide toggles as the Invoice
               page (Notes / Terms / Discount / Tax). */}
+          {/* Saving PUTs /bills/settings → bill:update on the API. */}
+          {canEdit && (
           <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
                   title="Accountant settings">
             <Settings className="h-4 w-4" />
           </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => exportListToExcel({
@@ -2108,6 +2111,9 @@ function BillDetailDialog({
   onEdit: (inv: billsApi.Bill) => void;
 }) {
   const { formatDate } = useDateFormat();
+  // Record payment = POST /bill-payments (bill:create); delete payment =
+  // DELETE /bill-payments/{id} (bill:delete).
+  const { canCreate, canDelete } = useAuth();
   const [invoice, setInvoice] = useState<billsApi.Bill | null>(null);
   const [parentInvoice, setParentInvoice] = useState<billsApi.Bill | null>(null);
   // Tenant-wide currency settings — drives the secondary-total row's
@@ -2593,7 +2599,7 @@ function BillDetailDialog({
                     refunded us). Locks the Record payment button the
                     same way Paid does so the operator can't double-
                     book the return. */}
-                {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && invoice.status !== 'paid' && invoice.status !== 'returned' && (
+                {canCreate('bill') && invoice.status !== 'draft' && invoice.status !== 'void' && invoice.status !== 'paid' && invoice.status !== 'returned' && (
                   <Button size="sm" variant="outline" onClick={() => setPayDialogOpen(true)} className="print:hidden text-blue-600 hover:text-blue-700">
                     <Plus className="h-3 w-3 mr-1" /> Record payment
                   </Button>
@@ -2663,7 +2669,7 @@ function BillDetailDialog({
                           {isOutflow ? '− ' : ''}{fmtMoney(p.amount, p.currency)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {canEdit && (
+                          {canDelete('bill') && (
                             <Button
                               size="sm" variant="ghost"
                               className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 print:hidden"

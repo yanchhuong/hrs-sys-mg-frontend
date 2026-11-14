@@ -74,7 +74,8 @@ function usePrimaryPriceFormatter() {
  */
 export function Property() {
   const { canCreate, canUpdate, canDelete } = useAuth();
-  const canWrite  = canCreate('property') || canUpdate('property');
+  const canAdd    = canCreate('property');
+  const canWrite  = canUpdate('property');
   const canRemove = canDelete('property');
   // v-page-title-i18n — header follows the sidebar leaf label.
   const { t } = useI18n();
@@ -463,7 +464,7 @@ export function Property() {
             {t('nav.receivables.property')}
           </h1>
         </div>
-        {canWrite && (
+        {canAdd && (
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4 mr-1" /> Add property
           </Button>
@@ -913,7 +914,8 @@ export function Property() {
        *  Kept mounted only while `viewingRow` is set so the DOM
        *  stays lean between opens. */}
       {unitsFor && (
-        <ResourcesDialog item={unitsFor} canWrite={canWrite} onClose={() => setUnitsFor(null)} />
+        // Blocks are POST/DELETE /booking-resource-blocks → booking:create / booking:delete.
+        <ResourcesDialog item={unitsFor} canWrite={canCreate('booking')} canRemove={canDelete('booking')} onClose={() => setUnitsFor(null)} />
       )}
       {viewingRow && (
         <ViewPropertyDialog

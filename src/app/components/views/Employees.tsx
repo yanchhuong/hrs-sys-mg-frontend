@@ -1626,7 +1626,8 @@ export function Employees() {
               button whenever the operator can manage SOMETHING
               inside (roster perm for Payout, or hr_telegram perm
               for the bot). */}
-          {(canManageRoster || canManageHrTelegramBot) && (
+          {/* Payout saves PUT /employee-payout-settings → settings:update. */}
+          {(canUpdate('settings') || canManageHrTelegramBot) && (
             <Button
               variant="outline"
               size="icon"
@@ -1666,6 +1667,7 @@ export function Employees() {
               {/* Add Employee + Upload Bulk merged into a single split-style
                   button: primary action ("Add Employee") fires on click,
                   chevron opens the dropdown that reveals "Upload Bulk". */}
+              {canCreateEmp && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button>
@@ -1685,12 +1687,13 @@ export function Employees() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              )}
             </>
           )}
           {/* HR bot settings dialog — mounted at the page level so it
               survives the gear button toggle independently of the
               admin/manager Add-Employee surface above. */}
-          {(canManageRoster || canManageHrTelegramBot) && (
+          {(canUpdate('settings') || canManageHrTelegramBot) && (
             <EmployeeSettingsDialog
               open={employeeSettingsOpen}
               onOpenChange={setEmployeeSettingsOpen}
@@ -2971,7 +2974,8 @@ export function Employees() {
                           employeeId={(selectedEmployee as any).apiId ?? selectedEmployee.id}
                           employeeName={selectedEmployee.name}
                           employeePhone={selectedEmployee.contactNumber}
-                          readOnly={!isEditing && !canManageRoster}
+                          // Beneficiary save/archive is employees:update on the API.
+                          readOnly={!isEditing && !canUpdateEmp}
                         />
                       )}
                     </div>

@@ -27,6 +27,7 @@ import { DateInput } from '../common/DateInput';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../common/ListStates';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 import { statusBadgeClass } from '../../utils/statusTones';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { AuditCell } from '../common/AuditCell';
@@ -169,6 +170,8 @@ export function Exception() {
   const [leaves, setLeaves] = useState<AttendanceException[]>(USE_MOCKS ? mockExceptions : []);
   const [employees, setEmployees] = useState<Employee[]>(USE_MOCKS ? mockEmployees : []);
   const confirm = useConfirm();
+  // Edit / Unmark save via PUT /employees/{id} → employees:update.
+  const canEditException = useAuth().canUpdate('employees');
   const [loading, setLoading] = useState<boolean>(!USE_MOCKS);
   const [loadingEmps, setLoadingEmps] = useState<boolean>(!USE_MOCKS);
   const [leavesError, setLeavesError] = useState<string | null>(null);
@@ -627,6 +630,7 @@ export function Exception() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
+                        {canEditException && (
                         <div className="flex items-center justify-end gap-1.5">
                           <Button
                             size="icon"
@@ -649,6 +653,7 @@ export function Exception() {
                             <RotateCcw className="h-3.5 w-3.5" />
                           </Button>
                         </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

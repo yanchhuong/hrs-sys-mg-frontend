@@ -281,10 +281,12 @@ export function Vouchers() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
-                  title="Accountant settings">
-            <Settings className="h-4 w-4" />
-          </Button>
+          {canEdit && (
+            <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
+                    title="Accountant settings">
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           {canAdd && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

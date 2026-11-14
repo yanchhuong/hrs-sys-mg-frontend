@@ -2080,12 +2080,15 @@ export function Payroll() {
           {isAdminOrManager && (
           <div className="flex gap-2">
             <Dialog open={uploadDialogOpen} onOpenChange={handleDialogOpenChange}>
-              <DialogTrigger asChild>
-                <Button variant="outline" onClick={() => setUploadDialogMode('upload')}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Bulk Payroll
-                </Button>
-              </DialogTrigger>
+              {/* Upload / Generate both POST /payroll/batches → payroll:create. */}
+              {canCreate('payroll') && (
+                <DialogTrigger asChild>
+                  <Button variant="outline" onClick={() => setUploadDialogMode('upload')}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload Bulk Payroll
+                  </Button>
+                </DialogTrigger>
+              )}
               <DialogContent className="max-w-7xl max-h-[90vh] flex flex-col p-0 gap-0">
                 <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
                   <DialogTitle className="inline-flex items-center gap-1.5">
@@ -2789,18 +2792,21 @@ export function Payroll() {
                 earning + deduction categories. Sits to the left of
                 Generate Payroll so HR can tweak the category set
                 before firing a new batch. */}
-            <Button
-              variant="outline"
-              size="icon"
-              title="Payroll settings"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <SettingsIcon className="h-4 w-4" />
-            </Button>
+            {canUpdate('payroll') && (
+              <Button
+                variant="outline"
+                size="icon"
+                title="Payroll settings"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <SettingsIcon className="h-4 w-4" />
+              </Button>
+            )}
             {/* Generate Payroll is a 3-way dropdown — picking an option
                 sets the batch type and opens the upload dialog in
                 generate mode so HR jumps straight to a pre-typed batch
                 without flipping the Type select inside the dialog. */}
+            {canCreate('payroll') && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button>
@@ -2833,6 +2839,7 @@ export function Payroll() {
                   ))}
               </DropdownMenuContent>
             </DropdownMenu>
+            )}
           </div>
           )}
         </div>
@@ -3335,7 +3342,7 @@ export function Payroll() {
                 {/* Submit for Approval — draft-only, uploader-only.
                     Backend enforces both; FE just hides the button so
                     the wrong operator doesn't see it. */}
-                {selectedBatch.status === 'draft' &&
+                {selectedBatch.status === 'draft' && canCreate('payroll') &&
                   (selectedBatch.uploadedBy === myUserId || selectedBatch.uploadedBy === myUserEmpId) && (
                   <Button
                     size="sm"
@@ -3486,7 +3493,8 @@ export function Payroll() {
                       </span>
                     </div>
                   )}
-                  {dispatchEnabled && (
+                  {/* Dispatch = POST …/dispatch → payroll:update. */}
+                  {dispatchEnabled && canApprove && (
                   <div className="flex flex-wrap items-center gap-2 mb-3 text-sm">
                     {selectedRowIds.size > 0 && (
                       <span className="text-gray-500">{selectedRowIds.size} selected</span>
@@ -3706,7 +3714,7 @@ export function Payroll() {
                             / baseSalary for this row in a small popup.
                             Batch aggregates and total earnings/net
                             recompute server-side on save. */}
-                        {selectedBatch?.status === 'draft' && (selectedBatch.uploadedBy === myUserId || selectedBatch.uploadedBy === myUserEmpId) && (
+                        {selectedBatch?.status === 'draft' && canCreate('payroll') && (selectedBatch.uploadedBy === myUserId || selectedBatch.uploadedBy === myUserEmpId) && (
                           <Button
                             variant="ghost"
                             size="icon"

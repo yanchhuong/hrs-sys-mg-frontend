@@ -26,6 +26,7 @@ import { ListEmpty, ListError } from '../common/ListStates';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { usePagination } from '../../hooks/usePagination';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { statusBadgeClass, TONE_CLASS } from '../../utils/statusTones';
 import { format as formatLocalDate } from 'date-fns';
@@ -125,6 +126,7 @@ function ConsignmentReport() {
   // so the operator picks a (possibly different) partner.
   const [copyFrom, setCopyFrom] = useState<consignmentsApi.Consignment | null>(null);
   const confirm = useConfirm();
+  const { canCreate, canUpdate, canDelete } = useAuth();
   const { formatDate } = useDateFormat();
   const [loadError, setLoadError] = useState<string | null>(null);
   // Settlement refs per consignment — powers the "Ref No." column
@@ -307,9 +309,11 @@ function ConsignmentReport() {
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             </Button>
+            {canCreate('consignment') && (
             <Button size="sm" onClick={() => { setEditing(null); setDialogOpen(true); }}>
               <Plus className="h-4 w-4 mr-1.5" /> New consignment
             </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -415,11 +419,13 @@ function ConsignmentReport() {
                               exists. Opens a new-consignment dialog
                               with items pre-filled but supplier blank
                               so the operator picks a new partner. */}
+                          {canCreate('consignment') && (
                           <Button variant="ghost" size="icon" className="h-7 w-7"
                             onClick={() => setCopyFrom(c)}
                             title="Copy — new consignment, same items">
                             <Copy className="h-3.5 w-3.5" />
                           </Button>
+                          )}
                           {/* Edit + Delete only surface for draft rows.
                               Beyond draft, the row has posted a stock
                               movement + started accumulating settlement
@@ -427,16 +433,20 @@ function ConsignmentReport() {
                               audit trail apart. */}
                           {canMutate && (
                             <>
+                              {canUpdate('consignment') && (
                               <Button variant="ghost" size="icon" className="h-7 w-7"
                                 onClick={() => { setEditing(c); setDialogOpen(true); }}
                                 title="Edit">
                                 <Edit3 className="h-3.5 w-3.5" />
                               </Button>
+                              )}
+                              {canDelete('consignment') && (
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                                 onClick={() => doDelete(c)}
                                 title="Delete">
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
+                              )}
                             </>
                           )}
                         </div>
@@ -1901,6 +1911,8 @@ function ConsignmentSettlementView() {
   const [editing, setEditing] = useState<settlementsApi.ConsignmentSettlement | null>(null);
   const [viewing, setViewing] = useState<settlementsApi.ConsignmentSettlement | null>(null);
   const confirm = useConfirm();
+  // Settlements share the consignment module on the API.
+  const { canCreate, canUpdate, canDelete } = useAuth();
   const { formatDate } = useDateFormat();
   const [loadError, setLoadError] = useState<string | null>(null);
   // Client-side filters — same shape as the Consignment tab's
@@ -2070,12 +2082,14 @@ function ConsignmentSettlementView() {
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             </Button>
+            {canCreate('consignment') && (
             <Button size="sm"
               onClick={() => { setEditing(null); setDialogOpen(true); }}
               disabled={consignments.length === 0}
               title={consignments.length === 0 ? 'Create a consignment first' : undefined}>
               <Plus className="h-4 w-4 mr-1.5" /> New settlement
             </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -2161,16 +2175,20 @@ function ConsignmentSettlementView() {
                             paid settlement. */}
                         {canMutate && (
                           <>
+                            {canUpdate('consignment') && (
                             <Button variant="ghost" size="icon" className="h-7 w-7"
                               onClick={() => { setEditing(r); setDialogOpen(true); }}
                               title="Edit">
                               <Edit3 className="h-3.5 w-3.5" />
                             </Button>
+                            )}
+                            {canDelete('consignment') && (
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => doDelete(r)}
                               title="Delete">
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
+                            )}
                           </>
                         )}
                       </div>

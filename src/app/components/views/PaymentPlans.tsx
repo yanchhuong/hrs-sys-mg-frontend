@@ -208,14 +208,17 @@ export function PaymentPlans() {
               family. Property catalogue moved to its own page
               (Receivables → Property) in V287; this gear stays for
               the reminder settings only. */}
-          <Button
-            variant="outline"
-            size="icon"
-            title="Payment Plan reminders — Telegram cadence + template"
-            onClick={() => setItemsSettingsOpen(true)}
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
+          {/* Save is PUT /payment-plans/settings → payment_plan:update. */}
+          {canModify && (
+            <Button
+              variant="outline"
+              size="icon"
+              title="Payment Plan reminders — Telegram cadence + template"
+              onClick={() => setItemsSettingsOpen(true)}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           {canAdd && (
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>

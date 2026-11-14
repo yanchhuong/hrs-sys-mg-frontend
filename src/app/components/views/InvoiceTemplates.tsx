@@ -23,6 +23,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useLogoTint } from '../../utils/useLogoTint';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 import { useDateFormat } from '../../context/DateFormatContext';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { ListError } from '../common/ListStates';
@@ -338,6 +339,11 @@ export function InvoiceTemplates() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const confirm = useConfirm();
   const { formatDate } = useDateFormat();
+  const { canCreate, canUpdate, canDelete } = useAuth();
+  const canAdd    = canCreate('invoice_template');
+  // Set / unset default is a PATCH → invoice_template:update.
+  const canEdit   = canUpdate('invoice_template');
+  const canRemove = canDelete('invoice_template');
   /** Sample-gallery dialog — opens when the operator hits
    *  "New template" so they pick a starting preset instead of a
    *  blank canvas. Null = closed. */
@@ -439,9 +445,11 @@ export function InvoiceTemplates() {
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button onClick={() => setPickingSample(true)}>
-            <Plus className="h-4 w-4 mr-1.5" /> New template
-          </Button>
+          {canAdd && (
+            <Button onClick={() => setPickingSample(true)}>
+              <Plus className="h-4 w-4 mr-1.5" /> New template
+            </Button>
+          )}
         </div>
       </div>
       <div>
@@ -461,7 +469,11 @@ export function InvoiceTemplates() {
               <Card key={kindKey} className="border-gray-200">
                 <CardHeader className="flex flex-row items-center gap-3 py-3">
                   <CardTitle className="text-base">{sectionLabel}</CardTitle>
-                  {activeRow ? (
+                  {activeRow && !canEdit ? (
+                    <span className="inline-flex items-center gap-1 rounded bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[11px] font-semibold">
+                      <Star className="h-3 w-3 fill-current" /> Active: {activeRow.name}
+                    </span>
+                  ) : activeRow ? (
                     <PlainButton
                       type="button"
                       onClick={() => clearDefault(activeRow)}
@@ -514,8 +526,8 @@ export function InvoiceTemplates() {
                             </Badge>
                           }
                           isDefault={r.isDefault}
-                          onSetDefault={() => setDefault(r)}
-                          onClearDefault={() => clearDefault(r)}
+                          onSetDefault={canEdit ? () => setDefault(r) : undefined}
+                          onClearDefault={canEdit ? () => clearDefault(r) : undefined}
                           onThumbnailClick={() => setPreviewingConfig({
                             title: r.name,
                             config: r.config ?? defaultTemplateConfig(),
@@ -536,18 +548,22 @@ export function InvoiceTemplates() {
                               >
                                 <FileText className="h-3.5 w-3.5 mr-1" /> Preview
                               </Button>
-                              <Button variant="outline" size="sm" onClick={() => { setEdit(r); setOpen(true); }} title="Edit template">
-                                <Edit3 className="h-3.5 w-3.5 mr-1" /> Edit
-                              </Button>
-                              <Button
-                                variant="ghost" size="icon"
-                                className="h-7 w-7 text-red-600 hover:text-red-700"
-                                onClick={() => doDelete(r)}
-                                title="Delete template"
-                                aria-label="Delete template"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
+                              {canEdit && (
+                                <Button variant="outline" size="sm" onClick={() => { setEdit(r); setOpen(true); }} title="Edit template">
+                                  <Edit3 className="h-3.5 w-3.5 mr-1" /> Edit
+                                </Button>
+                              )}
+                              {canRemove && (
+                                <Button
+                                  variant="ghost" size="icon"
+                                  className="h-7 w-7 text-red-600 hover:text-red-700"
+                                  onClick={() => doDelete(r)}
+                                  title="Delete template"
+                                  aria-label="Delete template"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              )}
                             </>
                           }
                         />

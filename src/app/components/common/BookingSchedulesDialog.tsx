@@ -40,7 +40,10 @@ export function BookingSchedulesDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const { canCreate, canUpdate, canDelete } = useAuth();
-  const canWrite  = canCreate('booking') || canUpdate('booking');
+  // Add = POST (booking:create), Edit = PATCH (booking:update) on both
+  // /booking-schedules and /booking-trips.
+  const canAdd    = canCreate('booking');
+  const canEdit   = canUpdate('booking');
   const canRemove = canDelete('booking');
 
   const [topTab, setTopTab] = useState<'schedule' | 'trip'>('schedule');
@@ -238,7 +241,7 @@ export function BookingSchedulesDialog({
                       {filtered.length} schedule{filtered.length === 1 ? '' : 's'}
                     </span>
                   </div>
-                  {canWrite && (
+                  {canAdd && (
                     <Button size="sm" onClick={openAddSchedule}>
                       <Plus className="h-4 w-4 mr-1" /> Add schedule
                     </Button>
@@ -293,7 +296,7 @@ export function BookingSchedulesDialog({
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="inline-flex gap-1">
-                              {canWrite && (
+                              {canEdit && (
                                 <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => openEditSchedule(r)} title="Edit">
                                   <Pencil className="h-3.5 w-3.5" />
                                 </Button>
@@ -336,7 +339,7 @@ export function BookingSchedulesDialog({
                       {filteredTrips.length} session{filteredTrips.length === 1 ? '' : 's'}
                     </span>
                   </div>
-                  {canWrite && (
+                  {canAdd && (
                     <Button size="sm" onClick={openAddTrip} disabled={rows.length === 0}>
                       <Plus className="h-4 w-4 mr-1" /> Add session
                     </Button>
@@ -431,7 +434,7 @@ export function BookingSchedulesDialog({
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="inline-flex gap-1">
-                                {canWrite && (
+                                {canEdit && (
                                   <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => openEditTrip(r)} title="Edit">
                                     <Pencil className="h-3.5 w-3.5" />
                                   </Button>

@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { ListError } from '../common/ListStates';
 import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { useI18n } from '../../i18n/I18nContext';
+import { useAuth } from '../../context/AuthContext';
 import { format as formatLocalDate } from 'date-fns';
 
 /**
@@ -74,6 +75,9 @@ function CommissionReport() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // /commission/programs is hasAnyRole('ADMIN','MANAGER') on the API.
+  const { currentUser } = useAuth();
+  const canManagePlans = currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -239,6 +243,7 @@ function CommissionReport() {
             {/* Gear icon opens the same Commission Plans manager
                 embedded in POS Settings — a manager viewing the
                 report can adjust rates without navigating to POS. */}
+            {canManagePlans && (
             <Button
               variant="ghost" size="icon" className="h-7 w-7 text-gray-500"
               onClick={() => setSettingsOpen(true)}
@@ -247,6 +252,7 @@ function CommissionReport() {
             >
               <SettingsIcon className="h-4 w-4" />
             </Button>
+            )}
           </div>
           {/* Date filter — matches Transactions verbatim (canonical
               style per feedback: From / To labels + DateInput, no

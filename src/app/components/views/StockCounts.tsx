@@ -308,6 +308,12 @@ function CountDetail(
   { id, onBack }: { id: string; onBack: () => void },
 ) {
   const confirm = useConfirm();
+  // Server flags say who may act on THIS count; the API also needs the
+  // role permission: assign / reviewer / cancel = stock_count:create,
+  // count / note / submit = stock_count:update.
+  const { canCreate, canUpdate } = useAuth();
+  const mayManage = canCreate('stock_count');
+  const mayCount  = canUpdate('stock_count');
   const [count, setCount] = useState<api.StockCount | null>(null);
   const [lines, setLines] = useState<api.StockCountLine[]>([]);
   const [filter, setFilter] = useState('all');
@@ -385,7 +391,7 @@ function CountDetail(
           </p>
           <div className="mt-1.5 flex items-center gap-1.5 text-sm text-gray-600">
             <Users className="h-3.5 w-3.5 text-gray-400" />
-            {count.canManage && count.status !== 'approved' && count.status !== 'cancelled' ? (
+            {mayManage && count.canManage && count.status !== 'approved' && count.status !== 'cancelled' ? (
               <AssigneePicker
                 value={(count.assignees ?? []).map(a => a.id)}
                 known={count.assignees ?? []}
@@ -401,7 +407,7 @@ function CountDetail(
           </div>
           <div className="mt-1 flex items-center gap-1.5 text-sm text-gray-600">
             <Eye className="h-3.5 w-3.5 text-gray-400" />
-            {count.canManage && count.status !== 'approved' && count.status !== 'cancelled' ? (
+            {mayManage && count.canManage && count.status !== 'approved' && count.status !== 'cancelled' ? (
               <ReviewerPicker
                 value={count.reviewerId ?? null}
                 known={count.reviewerId && count.reviewerName ? { id: count.reviewerId, name: count.reviewerName } : null}
@@ -429,7 +435,7 @@ function CountDetail(
               <Eye className="h-4 w-4 mr-1.5" /> Review this count
             </Button>
           )}
-          {count.canCount && (
+          {mayCount && count.canCount && (
             <Button disabled={busy}
               onClick={async () => {
                 const left = count.totalLines - count.countedLines;
@@ -468,7 +474,7 @@ function CountDetail(
               <CheckCircle2 className="h-4 w-4 mr-1.5" /> Approve
             </Button>
           )}
-          {count.canManage && count.status !== 'approved' && count.status !== 'cancelled' && (
+          {mayManage && count.canManage && count.status !== 'approved' && count.status !== 'cancelled' && (
             <Button variant="outline" disabled={busy}
               onClick={async () => {
                 if (!(await confirm({
@@ -612,7 +618,7 @@ function CountDetail(
                         : <span className="text-gray-400">—</span>}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {count.canCount
+                    {mayCount && count.canCount
                       ? <CountInput line={l} onSave={async qty => {
                           try {
                             const saved = await api.countLine(id, l.id, { qty });
@@ -661,7 +667,7 @@ function CountDetail(
                   <TableCell className="text-right">
                     <div className="inline-flex gap-1">
                       <EntryHistory countId={id} line={l} roleOf={uid => roleOf(count, uid)}
-                        canNote={count.canCount}
+                        canNote={mayCount && count.canCount}
                         onNoted={saved => setLines(prev => prev.map(x => (x.id === saved.id ? saved : x)))} />
                       {/* Recount is the honest third option next to
                           approve-it and cancel-everything: question one

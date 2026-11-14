@@ -639,10 +639,12 @@ export function Invoices({
               the form. Tenant-wide setting; only users with
               invoice.update see updates persist (read is open to
               invoice.view). */}
-          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
-                  title="Accountant settings">
-            <Settings className="h-4 w-4" />
-          </Button>
+          {canEdit && (
+            <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
+                    title="Accountant settings">
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="outline"
             onClick={() => exportListToExcel({
@@ -990,7 +992,7 @@ export function Invoices({
                               pre-filled from this invoice but the
                               customer left blank so the operator picks
                               fresh. */}
-                          {!isEncounter && !isAdjustment && (inv.status === 'progress' || inv.status === 'paid') && (
+                          {canAdd && !isEncounter && !isAdjustment && (inv.status === 'progress' || inv.status === 'paid') && (
                             <Button size="sm" variant="ghost" className="h-7 px-2"
                               onClick={async () => {
                                 // The list payload can carry an empty
@@ -2591,6 +2593,9 @@ function InvoiceDetailDialog({
   onAutoSendConsumed?: () => void;
 }) {
   const { t } = useI18n();
+  // Record payment = POST /payments (invoice:create); delete payment =
+  // DELETE /payments/{id} (invoice:delete); Bot Link needs telegram:create.
+  const { canCreate, canDelete } = useAuth();
   const [invoice, setInvoice] = useState<invoicesApi.Invoice | null>(null);
   const [parentInvoice, setParentInvoice] = useState<invoicesApi.Invoice | null>(null);
   const { formatDate } = useDateFormat();
@@ -3118,7 +3123,7 @@ function InvoiceDetailDialog({
                         <Mail className="h-4 w-4 mr-2 text-blue-600" />
                         Email
                       </DropdownMenuItem>
-                      {botAvailable && (
+                      {botAvailable && canCreate('telegram') && (
                         <DropdownMenuItem
                           onSelect={(e) => {
                             // Keep the menu's auto-close from firing the
@@ -3517,7 +3522,7 @@ function InvoiceDetailDialog({
                     (a KHR-only payment counted at face value as USD).
                     Drafts and voids stay locked since there's nothing
                     to settle against. */}
-                {canEdit && invoice.status !== 'draft' && invoice.status !== 'void' && arUsd > 0.005 && (
+                {canCreate('invoice') && invoice.status !== 'draft' && invoice.status !== 'void' && arUsd > 0.005 && (
                   <div className="flex items-center gap-2 print:hidden">
                     {/* The old "Payment Link" button opened an on-screen
                         dialog with the QR + URL — but the ops team wants
@@ -3607,7 +3612,7 @@ function InvoiceDetailDialog({
                             >
                               <Receipt className="h-3 w-3" />
                             </Button>
-                            {canEdit && (
+                            {canDelete('invoice') && (
                               <Button
                                 size="sm" variant="ghost"
                                 className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 print:hidden"

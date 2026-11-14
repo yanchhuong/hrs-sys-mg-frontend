@@ -9,6 +9,7 @@ import * as shopApi from '../../api/shop';
 import { SpinWinnersDialog } from './SpinWinnersDialog';
 import { PRIZE_KINDS, COUPON_DAY_CHOICES, couponDaysLabel, autoLabel, fmtExpiry } from '../../utils/spinPrize';
 import { DropdownSelect } from './DropdownSelect';
+import { useAuth } from '../../context/AuthContext';
 
 const kindOf = (s: shopApi.SpinSlice): shopApi.PrizeKind => s.kind ?? (s.prize ? 'gift' : 'none');
 
@@ -39,6 +40,11 @@ const SELECT_CLS = 'h-8 rounded-md border border-input bg-transparent px-1.5 tex
  * public page can choose a better prize.
  */
 export function ShopSpinSection() {
+  // Spin settings (on/off, mode, coupon days, wheel) are PUT
+  // /pos/shop-link/spin = pos:update. Without it they show read-only;
+  // coupon check / redeem below stays (pos:create or pos:update).
+  const { canUpdate } = useAuth();
+  const canEdit = canUpdate('pos');
   const [settings, setSettings] = useState<shopApi.SpinSettings | null>(null);
   const [draft, setDraft] = useState<DraftSlice[]>([]);
   // Drag a row by its grip to change the order on the wheel.
@@ -214,7 +220,7 @@ export function ShopSpinSection() {
                 : 'Customers can spin once a day on the shop page. Prizes give a code to show at the counter.'}
           </div>
         </div>
-        <Switch checked={settings.enabled} disabled={busy} onCheckedChange={toggle} aria-label="Spin & Win" />
+        <Switch checked={settings.enabled} disabled={busy || !canEdit} onCheckedChange={toggle} aria-label="Spin & Win" />
       </div>
 
       {/* V387 — Normal is the official wheel; Demo is a practice one. */}
@@ -234,7 +240,7 @@ export function ShopSpinSection() {
               type="button"
               role="radio"
               aria-checked={mode === m}
-              disabled={busy}
+              disabled={busy || !canEdit}
               onClick={() => setMode(m)}
               className={`h-7 rounded px-2.5 text-xs font-medium transition-colors disabled:opacity-60 ${
                 mode === m
@@ -259,7 +265,7 @@ export function ShopSpinSection() {
         <DropdownSelect
           value={settings.couponDays ?? 0}
           onChange={e => void setCouponDays(Number(e.target.value))}
-          disabled={busy}
+          disabled={busy || !canEdit}
           className={`${SELECT_CLS} h-8 text-sm`}
           aria-label="Coupons valid for"
         >
@@ -281,9 +287,11 @@ export function ShopSpinSection() {
               {s.label}
             </span>
           ))}
-          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => { setDraft(withKeys(settings.slices)); setEditing(true); }}>
-            Edit wheel
-          </Button>
+          {canEdit && (
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => { setDraft(withKeys(settings.slices)); setEditing(true); }}>
+              Edit wheel
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

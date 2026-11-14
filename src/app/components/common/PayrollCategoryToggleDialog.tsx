@@ -12,6 +12,7 @@ import { Eye, TrendingUp, TrendingDown, Loader2, Info } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import * as categoriesApi from '../../api/payrollCategories';
 import * as settingsApi from '../../api/accountingSettings';
+import { useAuth } from '../../context/AuthContext';
 import { PAY_FREQUENCIES, salaryTokenOf, type PayFrequency } from '../../utils/payFrequency';
 
 interface Props {
@@ -65,6 +66,10 @@ const MENU: { key: Section; label: string; hint: string; icon: React.ReactNode }
  */
 export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved, onSettingsSaved }: Props) {
   const [section, setSection] = useState<Section>('display');
+  // Category toggles save via PATCH /payroll-categories/{id} → settings:update
+  // (the Display section's PUT /payroll/settings is payroll:update).
+  const { canUpdate } = useAuth();
+  const canEditCategories = canUpdate('settings');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
   const [draft, setDraft]     = useState<categoriesApi.PayrollCategory[]>([]);
@@ -220,7 +225,7 @@ export function PayrollCategoryToggleDialog({ open, onOpenChange, onSaved, onSet
                   id={`tog_${c.id}`}
                   checked={on}
                   onCheckedChange={v => toggleForActive(c.id, v)}
-                  disabled={loading || saving}
+                  disabled={loading || saving || !canEditCategories}
                 />
               </div>
             );

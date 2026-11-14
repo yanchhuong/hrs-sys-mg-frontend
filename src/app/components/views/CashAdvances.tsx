@@ -87,6 +87,7 @@ function fmtMoney(amt: number, ccy: string): string {
 export function CashAdvances() {
   const { formatDate } = useDateFormat();
   const { t } = useI18n();
+  const { canCreate, canUpdate } = useAuth();
   const [rows, setRows] = useState<cashAdvancesApi.CashAdvance[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -189,6 +190,8 @@ export function CashAdvances() {
           </TooltipProvider>
         </h1>
         <div className="flex items-center gap-2">
+          {/* Purpose presets save via /cash-advances/purposes → cashadvance:update. */}
+          {canUpdate('cashadvance') && (
           <Button
             variant="outline" size="icon"
             onClick={() => setSettingsOpen(true)}
@@ -196,14 +199,17 @@ export function CashAdvances() {
           >
             <Settings className="h-4 w-4" />
           </Button>
+          )}
           <Button variant="outline" onClick={() => load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+          {canCreate('cashadvance') && (
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             New Advance
           </Button>
+          )}
         </div>
       </div>
 
@@ -681,6 +687,8 @@ function CashAdvanceDetailDialog({
 }) {
   const { formatDate } = useDateFormat();
   const confirm = useConfirm();
+  // Edit / cancel / disburse / settle / expenses are all cashadvance:update on the API.
+  const canUpdateAdvance = useAuth().canUpdate('cashadvance');
   const [advance, setAdvance] = useState<cashAdvancesApi.CashAdvance | null>(null);
   const [busy, setBusy] = useState(false);
   const [newCategory, setNewCategory] = useState('hotel');
@@ -773,11 +781,11 @@ function CashAdvanceDetailDialog({
 
   if (!advance) return null;
 
-  const canDisburse = advance.status === 'draft';
-  const canSettle   = advance.status === 'disbursed' || advance.status === 'partially_settled';
-  const canCancel   = advance.status === 'draft';
-  const canEdit     = advance.status === 'draft';
-  const canAddExpense = advance.status === 'disbursed' || advance.status === 'partially_settled';
+  const canDisburse = canUpdateAdvance && advance.status === 'draft';
+  const canSettle   = canUpdateAdvance && (advance.status === 'disbursed' || advance.status === 'partially_settled');
+  const canCancel   = canUpdateAdvance && advance.status === 'draft';
+  const canEdit     = canUpdateAdvance && advance.status === 'draft';
+  const canAddExpense = canUpdateAdvance && (advance.status === 'disbursed' || advance.status === 'partially_settled');
   const isTerminal  = advance.status === 'settled' || advance.status === 'cancelled';
 
   const action = async (fn: () => Promise<unknown>, label: string) => {
@@ -953,7 +961,7 @@ function CashAdvanceDetailDialog({
                           receipt-funded + settlement rows are derived
                           (delete the receipt or revoke settle from
                           the parent action instead). */}
-                      {!isTerminal && e.source === 'manual' && (
+                      {canUpdateAdvance && !isTerminal && e.source === 'manual' && (
                         <Button
                           size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
                           disabled={busy}

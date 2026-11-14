@@ -331,10 +331,12 @@ export function Quotations() {
           </Button>
           {/* Settings popup — shared Sale-side row, gates Notes / Terms /
               Discount / Tax on Quotation, Invoice, and Voucher forms. */}
-          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
-                  title="Accountant settings">
-            <Settings className="h-4 w-4" />
-          </Button>
+          {canEdit && (
+            <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)}
+                    title="Accountant settings">
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           {canAdd && (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4 mr-1.5" /> New Quotation
@@ -1482,6 +1484,7 @@ function QuotationDetailDialog({
 }) {
   const [quotation, setQuotation] = useState<quotationsApi.Quotation | null>(null);
   const { formatDate } = useDateFormat();
+  const { canCreate } = useAuth();
   const confirm = useConfirm();
   const [companyInfo, setCompanyInfo] = useState<settingsApi.CompanyInfo | null>(null);
   const [currencySettings, setCurrencySettings] = useState<currencyApi.CurrencySettings | null>(null);
@@ -1736,7 +1739,8 @@ function QuotationDetailDialog({
                       <Mail className="h-4 w-4 mr-2 text-blue-600" />
                       Email
                     </DropdownMenuItem>
-                    {botAvailable && (
+                    {/* send-telegram needs telegram:create on the API. */}
+                    {botAvailable && canCreate('telegram') && (
                       <DropdownMenuItem
                         onSelect={(e) => {
                           // Stop the auto-close so we can drive the
