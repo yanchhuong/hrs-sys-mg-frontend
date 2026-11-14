@@ -2893,8 +2893,9 @@ function InvoiceDetailDialog({
 
   // Item codes (SKU) and pictures for the print template's lines, which
   // carry only the stock item's id. A line without one prints its name
-  // alone. The lookup already sends each item's thumbnail inline, so a
-  // picture costs no extra call and never taints the image capture.
+  // alone. The lookup already sends each item's image inline, so a
+  // picture costs no extra call and never taints the image capture. The
+  // full image, not the thumbnail: the evidence photo prints large.
   const [skuById, setSkuById] = useState<Record<string, string>>({});
   const [imageById, setImageById] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -2906,7 +2907,7 @@ function InvoiceDetailDialog({
         if (!live) return;
         setSkuById(Object.fromEntries(found.filter(i => i.sku).map(i => [i.id, i.sku as string])));
         setImageById(Object.fromEntries(found
-          .map(i => [i.id, i.imageThumbUrl || i.imageUrl] as const)
+          .map(i => [i.id, i.imageUrl || i.imageThumbUrl] as const)
           .filter((e): e is readonly [string, string] => !!e[1])));
       })
       .catch(() => { if (live) { setSkuById({}); setImageById({}); } });
@@ -4024,17 +4025,16 @@ function BiLabel({ kh, en, wrapEn = false }: { kh: string; en: string; wrapEn?: 
   );
 }
 
-/** v-print-item-image — an item's picture on the printed invoice: a
- *  fixed square so every row lines up, the photo fitted inside (never
- *  cropped or stretched), an empty slot for a line with no picture. */
-function PrintItemThumb({ src }: { src?: string }) {
+/** v-print-item-image — the evidence photo: one per document, under the
+ *  first pictured line's name. Large (up to 288 px) and never stretched or
+ *  cropped; a smaller image keeps its own size. */
+function PrintItemPhoto({ src }: { src: string }) {
   return (
-    <div style={{
-      width: '36px', height: '36px', flexShrink: 0, borderRadius: '4px', overflow: 'hidden',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      border: src ? '1px solid #e5e7eb' : 'none', background: src ? '#fff' : 'transparent',
-    }}>
-      {src && <img src={src} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
+    <div style={{ marginTop: '6px' }}>
+      <img src={src} alt="" style={{
+        display: 'block', width: 'auto', height: 'auto', maxWidth: '288px', maxHeight: '288px',
+        objectFit: 'contain', borderRadius: '6px', border: '1px solid #e5e7eb',
+      }} />
     </div>
   );
 }
@@ -4061,8 +4061,9 @@ export function PrintTaxInvoice({
    *  name. The lines carry only the id; a line without one, or a
    *  free-text line, prints its name alone. */
   skuById?: Record<string, string>;
-  /** Item picture (inline thumbnail) by stock item id — printed beside
-   *  the line's name when the template's `columns.image` is on. */
+  /** Item picture (inline image) by stock item id — the first pictured
+   *  line prints it under its name when the template's `columns.image`
+   *  is on (evidence photo). */
   imageById?: Record<string, string>;
   /** Overrides the per-kind title — Bills print as "PURCHASE BILL" /
    *  ទិញចូល (v-bill-print-title). Omitted, the kind decides as before. */
@@ -4081,12 +4082,12 @@ export function PrintTaxInvoice({
   const cfgCols    = { ...defaults.columns,      ...(cfg.columns ?? {}) };
   const cfgLabels  = { ...defaults.columnLabels, ...(cfg.columnLabels ?? {}) };
   const cfgFooter  = { ...defaults.footer,       ...(cfg.footer ?? {}) };
-  /* v-print-item-image — pictures only when the template asks AND at
-   * least one line has one. Then every row keeps the slot, so names
-   * stay lined up; a document with no pictured line (a bill, services)
-   * prints exactly as before. */
+  /* v-print-item-image — the picture is evidence, not a catalogue: when
+   * the template asks, only the FIRST line that has one shows it, large,
+   * under its name. Every other line prints its name as usual, and a
+   * document with no pictured line (a bill, services) prints as before. */
   const imageOf = (it: { stockItemId?: string | null }) => (it.stockItemId ? imageById[it.stockItemId] : undefined);
-  const showImages = !!cfgCols.image && invoice.items.some(it => !!imageOf(it));
+  const photoIdx = cfgCols.image ? invoice.items.findIndex(it => !!imageOf(it)) : -1;
 
   /* v-footer-logo-tint — the thank-you band's background colour.
    *
@@ -4466,12 +4467,8 @@ export function PrintTaxInvoice({
                 );
                 return (
                   <td style={tdStyle}>
-                    {showImages ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <PrintItemThumb src={imageOf(it)} />
-                        <div style={{ minWidth: 0 }}>{text}</div>
-                      </div>
-                    ) : text}
+                    {text}
+                    {idx === photoIdx && <PrintItemPhoto src={imageOf(it) as string} />}
                   </td>
                 );
               })()}

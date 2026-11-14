@@ -1067,14 +1067,15 @@ function TemplateEditorDialog({
                   );
                 })}
               </div>
-              {/* v-print-item-image — the item's picture beside its name.
-                  A4 / A5 only: a thermal strip prints no images. */}
+              {/* v-print-item-image — one evidence photo: the first pictured
+                  item's, under its name. A4 / A5 only: a thermal strip
+                  prints no images. */}
               <SwitchRow
-                label="Show item image"
+                label="Show item image (first item, as evidence)"
                 checked={kind === 'receipt' ? false : !!config.columns?.image}
                 onChange={v => patchColumns({ image: v })}
                 disabled={kind === 'receipt'}
-                title={kind === 'receipt' ? 'Not available on thermal receipts' : 'Print each item\'s picture beside its name'}
+                title={kind === 'receipt' ? 'Not available on thermal receipts' : 'Prints the first pictured item\'s photo under its name. Other lines print their names only.'}
               />
               <p className="text-[11px] text-gray-500">
                 {kind === 'receipt'
@@ -1670,27 +1671,19 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
                 <td style={td}>
                   {/* Two-line description: name on line 1, spec on
                       line 2 (smaller + muted). Matches the real
-                      invoice print output. With "Show item image" a
-                      picture slot sits in front, as on the print. */}
-                  {c.image ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{
-                        width: 36, height: 36, flexShrink: 0, borderRadius: 4,
-                        background: '#f3f4f6', border: '1px solid #e5e7eb',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <ImageIcon className="h-4 w-4 text-gray-400" aria-hidden />
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div>{row.name}</div>
-                        <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
-                      </div>
+                      invoice print output. With "Show item image" the
+                      first line gets the evidence photo under its name,
+                      as on the print; the others stay name-only. */}
+                  <div>{row.name}</div>
+                  <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
+                  {c.image && i === 0 && (
+                    <div style={{
+                      marginTop: 6, width: 288, maxWidth: '100%', height: 216, borderRadius: 6,
+                      background: '#f3f4f6', border: '1px solid #e5e7eb',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <ImageIcon className="h-10 w-10 text-gray-400" aria-hidden />
                     </div>
-                  ) : (
-                    <>
-                      <div>{row.name}</div>
-                      <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
-                    </>
                   )}
                 </td>
               )}
