@@ -4068,11 +4068,14 @@ export function PrintTaxInvoice({
   const cfgCols    = { ...defaults.columns,      ...(cfg.columns ?? {}) };
   const cfgLabels  = { ...defaults.columnLabels, ...(cfg.columnLabels ?? {}) };
   const cfgFooter  = { ...defaults.footer,       ...(cfg.footer ?? {}) };
-  /* v-print-item-image — the picture is evidence, not a catalogue: when
-   * the template asks, the first picture among the lines prints ONCE, in
-   * the empty space left of the totals. Item rows print their names only. */
+  /* v-print-item-image — the pictures are evidence, not a catalogue: when
+   * the template asks, up to 3 different item pictures (in line order)
+   * print side by side in the empty space left of the totals. Item rows
+   * print their names only. */
   const imageOf = (it: { stockItemId?: string | null }) => (it.stockItemId ? imageById[it.stockItemId] : undefined);
-  const photoSrc = cfgCols.image && cfgCols.item ? invoice.items.map(imageOf).find((s): s is string => !!s) : undefined;
+  const photos = cfgCols.image && cfgCols.item
+    ? [...new Set(invoice.items.map(imageOf).filter((s): s is string => !!s))].slice(0, 3)
+    : [];
 
   /* v-footer-logo-tint — the thank-you band's background colour.
    *
@@ -4425,7 +4428,7 @@ export function PrintTaxInvoice({
               column). */}
           <tr>
             <th style={{ ...thStyle, ...fitHeadStyle }}><BiLabel kh="ល.រ." en="N°" wrapEn /></th>
-            {cfgCols.item      && <th colSpan={photoSrc ? 2 : undefined} style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={cfgLabels.item ?? 'Description'} /></th>}
+            {cfgCols.item      && <th colSpan={photos.length ? 2 : undefined} style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={cfgLabels.item ?? 'Description'} /></th>}
             {/* Qty and UOM share one column — "1 m" reads as the quantity it
                 is. The template's two toggles still decide what goes in it. */}
             {cfgCols.quantity  && <th style={{ ...thStyle, ...fitHeadStyle }}><BiLabel kh="បរិមាណ" en={cfgLabels.quantity ?? 'Quantity'} wrapEn /></th>}
@@ -4439,7 +4442,7 @@ export function PrintTaxInvoice({
             <tr key={it.id}>
               <td style={{ ...tdStyle, ...fitStyle, textAlign: 'center' }}>{idx + 1}</td>
               {cfgCols.item && (
-                <td style={tdStyle} colSpan={photoSrc ? 2 : undefined}>
+                <td style={tdStyle} colSpan={photos.length ? 2 : undefined}>
                   <div>
                     {it.stockItemId && skuById[it.stockItemId] && (
                       <span style={{ fontFamily: 'monospace', color: '#555', marginRight: '8px' }}>{skuById[it.stockItemId]}</span>
@@ -4464,17 +4467,17 @@ export function PrintTaxInvoice({
               stays flush-right and the value lines up with the
               Amount column.
 
-              v-print-item-image — the evidence photo fills the empty
-              left of these rows: one cell over N° and the photo's share
+              v-print-item-image — the evidence photos fill the empty
+              left of these rows: one cell over N° and the photos' share
               of Description (an extra column the item rows span),
-              covering every total row. The photo is that cell's
-              background, fitted inside, so it takes whatever height the
-              rows have instead of stretching them (120 px at least). */}
+              covering every total row. Up to 3, side by side, each
+              100 px tall and fitted (never stretched) — three still
+              leave the labels their line. */}
           {(() => {
             const dataCols =
               1 /* N° */ +
               (cfgCols.item ? 1 : 0) + (cfgCols.quantity || cfgCols.uom ? 1 : 0) +
-              (cfgCols.unitPrice ? 1 : 0) + (photoSrc ? 1 : 0);
+              (cfgCols.unitPrice ? 1 : 0) + (photos.length ? 1 : 0);
             const totalsSpan = cfgCols.total ? dataCols : Math.max(1, dataCols);
             const paidAmt = invoice.paidAmount ?? 0;
             const remainPrimary = (invoice.netBalance ?? (invoice.total - paidAmt));
@@ -4496,15 +4499,19 @@ export function PrintTaxInvoice({
             ];
             return rows.map((r, i) => (
               <tr key={r.key}>
-                {photoSrc && i === 0 && (
-                  <td rowSpan={rows.length} colSpan={2} style={{
-                    ...tdStyle, padding: '6px', width: '240px', height: '120px',
-                    backgroundImage: `url("${photoSrc}")`, backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'left center', backgroundSize: 'contain',
-                    backgroundOrigin: 'content-box', backgroundClip: 'content-box',
-                  }} />
+                {photos.length > 0 && i === 0 && (
+                  <td rowSpan={rows.length} colSpan={2} style={{ ...tdStyle, padding: '6px', verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      {photos.map((src, k) => (
+                        <img key={k} src={src} alt="" style={{
+                          display: 'block', height: '100px', width: 'auto', maxWidth: '100px',
+                          objectFit: 'contain', borderRadius: '4px',
+                        }} />
+                      ))}
+                    </div>
+                  </td>
                 )}
-                <td colSpan={photoSrc ? totalsSpan - 2 : totalsSpan} style={{ ...tdStyle, textAlign: 'right', ...(r.bold ? { fontWeight: 700 } : {}) }}>{r.label}</td>
+                <td colSpan={photos.length ? totalsSpan - 2 : totalsSpan} style={{ ...tdStyle, textAlign: 'right', ...(r.bold ? { fontWeight: 700 } : {}) }}>{r.label}</td>
                 {cfgCols.total && (
                   <td style={{ ...tdStyle, ...fitStyle, textAlign: 'right', ...(r.bold ? { fontWeight: 700 } : {}) }}>{r.value}</td>
                 )}

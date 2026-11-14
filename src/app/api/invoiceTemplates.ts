@@ -77,9 +77,9 @@ export interface TemplateConfig {
     quantity?: boolean;
     unitPrice?: boolean;
     total?: boolean;
-    /** v-print-item-image — one evidence photo: the first picture among
-     *  the lines, printed once in the empty space left of the totals;
-     *  item rows print names only (A4 / A5). Default false, so an
+    /** v-print-item-image — evidence photos: up to 3 different item
+     *  pictures (line order), side by side in the empty space left of the
+     *  totals; item rows print names only (A4 / A5). Default false, so an
      *  existing template prints as before. */
     image?: boolean;
   };

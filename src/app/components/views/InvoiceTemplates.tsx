@@ -1071,11 +1071,11 @@ function TemplateEditorDialog({
                   item's, under its name. A4 / A5 only: a thermal strip
                   prints no images. */}
               <SwitchRow
-                label="Show item image (one, as evidence)"
+                label="Show item images (up to 3, as evidence)"
                 checked={kind === 'receipt' ? false : !!config.columns?.image}
                 onChange={v => patchColumns({ image: v })}
                 disabled={kind === 'receipt'}
-                title={kind === 'receipt' ? 'Not available on thermal receipts' : 'Prints one item photo, the first among the lines, in the space left of the totals. Item rows print names only.'}
+                title={kind === 'receipt' ? 'Not available on thermal receipts' : 'Prints up to 3 item photos, in line order, in the space left of the totals. Item rows print names only.'}
               />
               <p className="text-[11px] text-gray-500">
                 {kind === 'receipt'
@@ -1673,7 +1673,7 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
                       line 2 (smaller + muted). Matches the real
                       invoice print output. With "Show item image" the
                       Description spans one more column, the one the
-                      evidence photo takes left of the totals. */}
+                      evidence photos take left of the totals. */}
                   <div>{row.name}</div>
                   <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
                 </td>
@@ -1693,19 +1693,24 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
               (c.item ? 1 : 0) + (c.quantity || c.uom ? 1 : 0) +
               (c.unitPrice ? 1 : 0) + (photo ? 1 : 0);
             const totalsSpan = 1 + Math.max(dataCols, 1);
-            // The evidence photo's place, as on the print: left of the
-            // totals, over N° and its share of Description, all 3 rows.
+            // The evidence photos' place, as on the print: left of the
+            // totals, over N° and their share of Description, all rows —
+            // up to 3 side by side.
             const labelSpan = photo ? totalsSpan - 2 : totalsSpan;
             return (
               <>
                 <tr>
                   {photo && (
-                    <td rowSpan={3} colSpan={2} style={{ ...td, padding: 6, width: 130, height: 96 }}>
-                      <div style={{
-                        height: '100%', minHeight: 84, width: 112, borderRadius: 6, background: '#f3f4f6',
-                        border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        <ImageIcon className="h-8 w-8 text-gray-400" aria-hidden />
+                    <td rowSpan={3} colSpan={2} style={{ ...td, padding: 6 }}>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        {[0, 1, 2].map(k => (
+                          <div key={k} style={{
+                            width: 42, height: 42, flexShrink: 0, borderRadius: 4, background: '#f3f4f6',
+                            border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <ImageIcon className="h-4 w-4 text-gray-400" aria-hidden />
+                          </div>
+                        ))}
                       </div>
                     </td>
                   )}
