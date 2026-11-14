@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -41,6 +41,7 @@ import { loadBankAccounts, MAX_BANK_ACCOUNTS_ON_INVOICE } from '../../utils/bank
 import { addRecentLineItems, getRecentLineItems } from '../../utils/recentLineItems';
 import { StockItemPicker } from '../common/StockItemPicker';
 import { printWithKhmerFonts } from '../../utils/printFonts';
+import { PrintPaperChooser, type PaperOption } from '../common/PrintPaperChooser';
 import { capturePrintImage } from '../../utils/capturePrintInvoice';
 import { capturePrintPdf } from '../../utils/capturePrintPdf';
 import { printPosReceipt } from '../../utils/posReceipt';
@@ -2589,6 +2590,7 @@ function InvoiceDetailDialog({
    *  the send never fires twice (e.g. on a re-render). */
   onAutoSendConsumed?: () => void;
 }) {
+  const { t } = useI18n();
   const [invoice, setInvoice] = useState<invoicesApi.Invoice | null>(null);
   const [parentInvoice, setParentInvoice] = useState<invoicesApi.Invoice | null>(null);
   const { formatDate } = useDateFormat();
@@ -2773,6 +2775,31 @@ function InvoiceDetailDialog({
       await printWithKhmerFonts();
     }
   };
+
+  /* Print paper — chosen in PrintPaperChooser (Invoice A5 / A4, or the
+   * receipt for a POS sale), with "Set as default" so a counter stops
+   * being asked. The page size goes into the print @page below; null
+   * until someone picks, which keeps the template's own paper. */
+  const [printPaper, setPrintPaper] = useState<'A4' | 'A5' | null>(null);
+  const templatePaper: 'A4' | 'A5' = invoiceTemplate?.config?.paperSize === 'A5' ? 'A5' : 'A4';
+  const printPage = async (paper: 'A4' | 'A5') => {
+    flushSync(() => setPrintPaper(paper));
+    await printWithKhmerFonts();
+  };
+  const receiptPaper = receiptTemplate?.paperSize === '58mm' ? '58mm' : '80mm';
+  const paperOptions: PaperOption[] = invoice ? [
+    ...(invoice.posOrderId ? [{
+      key: 'receipt', label: t('print.receipt', 'Receipt'),
+      hint: t('print.receipt_hint', '{size} receipt roll').replace('{size}', receiptPaper),
+      short: receiptPaper, icon: <Receipt className="h-4 w-4" />,
+      run: () => printInvoiceOrReceipt(invoice),
+    }] : []),
+    { key: 'invoice-a5', label: t('print.invoice_a5', 'Invoice A5'), hint: t('print.a5_hint', 'Half sheet, 148 × 210 mm'),
+      short: 'A5', icon: <FileText className="h-4 w-4" />, run: () => printPage('A5') },
+    { key: 'invoice-a4', label: t('print.invoice_a4', 'Invoice A4'), hint: t('print.a4_hint', 'Full sheet, 210 × 297 mm'),
+      short: 'A4', icon: <ScrollText className="h-4 w-4" />, run: () => printPage('A4') },
+  ] : [];
+  const suggestedPaper = invoice?.posOrderId ? 'receipt' : templatePaper === 'A5' ? 'invoice-a5' : 'invoice-a4';
 
   // USD-equivalent AR — collapses USD + (KHR ÷ rate) payments against
   // Total USD (= invoice.total + ΣDN − ΣCN). Used both by the AR row in
@@ -3059,9 +3086,7 @@ function InvoiceDetailDialog({
                 below the title instead of overflowing horizontally. */}
             {invoice && (
               <div className="flex flex-wrap gap-1.5 justify-end print:hidden">
-                <Button size="sm" variant="outline" onClick={() => printInvoiceOrReceipt(invoice)} title="Print invoice">
-                  <Printer className="h-3.5 w-3.5 mr-1" /> Print
-                </Button>
+                <PrintPaperChooser kind="invoice" options={paperOptions} suggestedKey={suggestedPaper} />
                 {/* v-invoice-void-hide-send — hide the entire Send
                     dropdown for void invoices. A void invoice
                     represents "this document is cancelled and no
@@ -3720,7 +3745,7 @@ function InvoiceDetailDialog({
                   font-weight: 400 !important;
                   letter-spacing: 0.5px;
                 }
-                @page { margin: 0; size: ${invoiceTemplate?.config?.paperSize === 'A5' ? 'A5' : 'A4'}; }
+                @page { margin: 0; size: ${printPaper ?? templatePaper}; }
               }
             `}</style>
             <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} currencySettings={currencySettings} template={invoiceTemplate} skuById={skuById} imageById={imageById} />
