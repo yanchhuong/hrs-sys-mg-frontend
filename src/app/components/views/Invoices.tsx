@@ -4025,20 +4025,6 @@ function BiLabel({ kh, en, wrapEn = false }: { kh: string; en: string; wrapEn?: 
   );
 }
 
-/** v-print-item-image — the evidence photo: one per document, under the
- *  first pictured line's name. Large (up to 288 px) and never stretched or
- *  cropped; a smaller image keeps its own size. */
-function PrintItemPhoto({ src }: { src: string }) {
-  return (
-    <div style={{ marginTop: '6px' }}>
-      <img src={src} alt="" style={{
-        display: 'block', width: 'auto', height: 'auto', maxWidth: '288px', maxHeight: '288px',
-        objectFit: 'contain', borderRadius: '6px', border: '1px solid #e5e7eb',
-      }} />
-    </div>
-  );
-}
-
 export function PrintTaxInvoice({
   invoice, customer, company, paid, currencySettings, template, skuById = {}, imageById = {}, title, partyLabel,
 }: {
@@ -4083,11 +4069,10 @@ export function PrintTaxInvoice({
   const cfgLabels  = { ...defaults.columnLabels, ...(cfg.columnLabels ?? {}) };
   const cfgFooter  = { ...defaults.footer,       ...(cfg.footer ?? {}) };
   /* v-print-item-image — the picture is evidence, not a catalogue: when
-   * the template asks, only the FIRST line that has one shows it, large,
-   * under its name. Every other line prints its name as usual, and a
-   * document with no pictured line (a bill, services) prints as before. */
+   * the template asks, the first picture among the lines prints ONCE, in
+   * the empty space left of the totals. Item rows print their names only. */
   const imageOf = (it: { stockItemId?: string | null }) => (it.stockItemId ? imageById[it.stockItemId] : undefined);
-  const photoIdx = cfgCols.image ? invoice.items.findIndex(it => !!imageOf(it)) : -1;
+  const photoSrc = cfgCols.image && cfgCols.item ? invoice.items.map(imageOf).find((s): s is string => !!s) : undefined;
 
   /* v-footer-logo-tint — the thank-you band's background colour.
    *
@@ -4440,7 +4425,7 @@ export function PrintTaxInvoice({
               column). */}
           <tr>
             <th style={{ ...thStyle, ...fitHeadStyle }}><BiLabel kh="ល.រ." en="N°" wrapEn /></th>
-            {cfgCols.item      && <th style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={cfgLabels.item ?? 'Description'} /></th>}
+            {cfgCols.item      && <th colSpan={photoSrc ? 2 : undefined} style={{ ...thStyle, textAlign: 'left' }}><BiLabel kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={cfgLabels.item ?? 'Description'} /></th>}
             {/* Qty and UOM share one column — "1 m" reads as the quantity it
                 is. The template's two toggles still decide what goes in it. */}
             {cfgCols.quantity  && <th style={{ ...thStyle, ...fitHeadStyle }}><BiLabel kh="បរិមាណ" en={cfgLabels.quantity ?? 'Quantity'} wrapEn /></th>}
@@ -4453,25 +4438,17 @@ export function PrintTaxInvoice({
           {invoice.items.map((it, idx) => (
             <tr key={it.id}>
               <td style={{ ...tdStyle, ...fitStyle, textAlign: 'center' }}>{idx + 1}</td>
-              {cfgCols.item && (() => {
-                const text = (
-                  <>
-                    <div>
-                      {it.stockItemId && skuById[it.stockItemId] && (
-                        <span style={{ fontFamily: 'monospace', color: '#555', marginRight: '8px' }}>{skuById[it.stockItemId]}</span>
-                      )}
-                      {it.name}
-                    </div>
-                    {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
-                  </>
-                );
-                return (
-                  <td style={tdStyle}>
-                    {text}
-                    {idx === photoIdx && <PrintItemPhoto src={imageOf(it) as string} />}
-                  </td>
-                );
-              })()}
+              {cfgCols.item && (
+                <td style={tdStyle} colSpan={photoSrc ? 2 : undefined}>
+                  <div>
+                    {it.stockItemId && skuById[it.stockItemId] && (
+                      <span style={{ fontFamily: 'monospace', color: '#555', marginRight: '8px' }}>{skuById[it.stockItemId]}</span>
+                    )}
+                    {it.name}
+                  </div>
+                  {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
+                </td>
+              )}
               {(cfgCols.quantity || cfgCols.uom) && (
                 <td style={{ ...tdStyle, ...fitStyle, textAlign: 'center' }}>
                   {[cfgCols.quantity ? it.quantity : null, cfgCols.uom ? it.unit : null]
@@ -4485,82 +4462,54 @@ export function PrintTaxInvoice({
           {/* Totals folded into the same table. colSpan tracks how
               many data columns the template turned on so the label
               stays flush-right and the value lines up with the
-              Amount column. */}
+              Amount column.
+
+              v-print-item-image — the evidence photo fills the empty
+              left of these rows: one cell over N° and the photo's share
+              of Description (an extra column the item rows span),
+              covering every total row. The photo is that cell's
+              background, fitted inside, so it takes whatever height the
+              rows have instead of stretching them (120 px at least). */}
           {(() => {
             const dataCols =
               1 /* N° */ +
               (cfgCols.item ? 1 : 0) + (cfgCols.quantity || cfgCols.uom ? 1 : 0) +
-              (cfgCols.unitPrice ? 1 : 0);
+              (cfgCols.unitPrice ? 1 : 0) + (photoSrc ? 1 : 0);
             const totalsSpan = cfgCols.total ? dataCols : Math.max(1, dataCols);
-            const AmountCell = ({ value, bold }: { value: string; bold?: boolean }) =>
-              cfgCols.total
-                ? <td style={{ ...tdStyle, ...fitStyle, textAlign: 'right', ...(bold ? { fontWeight: 700 } : {}) }}>{value}</td>
-                : null;
-            return (
-              <>
-                <tr>
-                  <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right' }}>សរុប ({primaryCode}) / Sub Total ({primaryCode})</td>
-                  <AmountCell value={fmtPrimary(invoice.subtotal)} />
-                </tr>
-                {showDiscount && (
-                  <tr>
-                    <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right' }}>
-                      បញ្ចុះតម្លៃ{invoice.discountType === 'percent' && discountPct > 0 ? ` ${discountPct}%` : ''} ({primaryCode}) / Discount{invoice.discountType === 'percent' && discountPct > 0 ? ` ${discountPct}%` : ''} ({primaryCode})
-                    </td>
-                    <AmountCell value={`− ${fmtPrimary(invoice.discountAmount ?? 0)}`} />
-                  </tr>
+            const paidAmt = invoice.paidAmount ?? 0;
+            const remainPrimary = (invoice.netBalance ?? (invoice.total - paidAmt));
+            // v-invoice-print-deposit-remain — Deposit / Remain only on a
+            // partial payment: not when nothing's been paid (a noisy "$0.00"
+            // line), not when it's settled (Grand Total is what they owe).
+            const hasPartialPayment = paidAmt > 0 && invoice.status !== 'paid' && remainPrimary > 0;
+            const pct = invoice.discountType === 'percent' && discountPct > 0 ? ` ${discountPct}%` : '';
+            const rows: { key: string; label: string; value: string; bold?: boolean }[] = [
+              { key: 'sub', label: `សរុប (${primaryCode}) / Sub Total (${primaryCode})`, value: fmtPrimary(invoice.subtotal) },
+              ...(showDiscount ? [{ key: 'discount', label: `បញ្ចុះតម្លៃ${pct} (${primaryCode}) / Discount${pct} (${primaryCode})`, value: `− ${fmtPrimary(invoice.discountAmount ?? 0)}` }] : []),
+              ...(showVat ? [{ key: 'vat', label: `អាករលើតម្លៃបន្ថែម ${vatPct}% (${primaryCode}) / VAT ${vatPct}% (${primaryCode})`, value: fmtPrimary(invoice.taxAmount) }] : []),
+              { key: 'grand', label: `សរុបរួម (${primaryCode}) / Grand Total (${primaryCode})`, value: fmtPrimary(invoice.total), bold: true },
+              ...(showSecondary ? [{ key: 'grand2', label: `សរុបរួម (${secondaryCode}) / Grand Total (${secondaryCode})`, value: fmtSecondary(grandSecondary), bold: true }] : []),
+              ...(hasPartialPayment ? [
+                { key: 'deposit', label: `បានទទួល (${primaryCode}) / Deposit (${primaryCode})`, value: fmtPrimary(paidAmt) },
+                { key: 'remain', label: `នៅសល់ (${primaryCode}) / Remain (${primaryCode})`, value: fmtPrimary(remainPrimary), bold: true },
+              ] : []),
+            ];
+            return rows.map((r, i) => (
+              <tr key={r.key}>
+                {photoSrc && i === 0 && (
+                  <td rowSpan={rows.length} colSpan={2} style={{
+                    ...tdStyle, padding: '6px', width: '240px', height: '120px',
+                    backgroundImage: `url("${photoSrc}")`, backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'left center', backgroundSize: 'contain',
+                    backgroundOrigin: 'content-box', backgroundClip: 'content-box',
+                  }} />
                 )}
-                {showVat && (
-                  <tr>
-                    <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right' }}>
-                      អាករលើតម្លៃបន្ថែម {vatPct}% ({primaryCode}) / VAT {vatPct}% ({primaryCode})
-                    </td>
-                    <AmountCell value={fmtPrimary(invoice.taxAmount)} />
-                  </tr>
+                <td colSpan={photoSrc ? totalsSpan - 2 : totalsSpan} style={{ ...tdStyle, textAlign: 'right', ...(r.bold ? { fontWeight: 700 } : {}) }}>{r.label}</td>
+                {cfgCols.total && (
+                  <td style={{ ...tdStyle, ...fitStyle, textAlign: 'right', ...(r.bold ? { fontWeight: 700 } : {}) }}>{r.value}</td>
                 )}
-                <tr>
-                  <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({primaryCode}) / Grand Total ({primaryCode})</td>
-                  <AmountCell value={fmtPrimary(invoice.total)} bold />
-                </tr>
-                {showSecondary && (
-                  <tr>
-                    <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>សរុបរួម ({secondaryCode}) / Grand Total ({secondaryCode})</td>
-                    <AmountCell value={fmtSecondary(grandSecondary)} bold />
-                  </tr>
-                )}
-                {/* v-invoice-print-deposit-remain — when a partial
-                    payment has been recorded (paidAmount > 0 AND
-                    the invoice isn't fully paid) show two extra
-                    rows so the printed copy reflects what's already
-                    been received and what's still owed. Skipped
-                    entirely when nothing's been paid (avoids a
-                    noisy "$0.00" Deposit line) OR when the invoice
-                    is fully settled (Grand Total = what they owe,
-                    no need for the split). */}
-                {(() => {
-                  const paid = invoice.paidAmount ?? 0;
-                  const remainPrimary = (invoice.netBalance ?? (invoice.total - paid));
-                  const hasPartialPayment = paid > 0 && invoice.status !== 'paid' && remainPrimary > 0;
-                  if (!hasPartialPayment) return null;
-                  return (
-                    <>
-                      <tr>
-                        <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right' }}>
-                          បានទទួល ({primaryCode}) / Deposit ({primaryCode})
-                        </td>
-                        <AmountCell value={fmtPrimary(paid)} />
-                      </tr>
-                      <tr>
-                        <td colSpan={totalsSpan} style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>
-                          នៅសល់ ({primaryCode}) / Remain ({primaryCode})
-                        </td>
-                        <AmountCell value={fmtPrimary(remainPrimary)} bold />
-                      </tr>
-                    </>
-                  );
-                })()}
-              </>
-            );
+              </tr>
+            ));
           })()}
         </tbody>
       </table>

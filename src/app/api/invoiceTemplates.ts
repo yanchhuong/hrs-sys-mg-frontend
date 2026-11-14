@@ -77,10 +77,10 @@ export interface TemplateConfig {
     quantity?: boolean;
     unitPrice?: boolean;
     total?: boolean;
-    /** v-print-item-image — an evidence photo: the FIRST line that has a
-     *  picture prints it, large, under its name; every other line prints
-     *  its name only (A4 / A5). Default false, so an existing template
-     *  prints as before. */
+    /** v-print-item-image — one evidence photo: the first picture among
+     *  the lines, printed once in the empty space left of the totals;
+     *  item rows print names only (A4 / A5). Default false, so an
+     *  existing template prints as before. */
     image?: boolean;
   };
   columnLabels?: {

@@ -1071,11 +1071,11 @@ function TemplateEditorDialog({
                   item's, under its name. A4 / A5 only: a thermal strip
                   prints no images. */}
               <SwitchRow
-                label="Show item image (first item, as evidence)"
+                label="Show item image (one, as evidence)"
                 checked={kind === 'receipt' ? false : !!config.columns?.image}
                 onChange={v => patchColumns({ image: v })}
                 disabled={kind === 'receipt'}
-                title={kind === 'receipt' ? 'Not available on thermal receipts' : 'Prints the first pictured item\'s photo under its name. Other lines print their names only.'}
+                title={kind === 'receipt' ? 'Not available on thermal receipts' : 'Prints one item photo, the first among the lines, in the space left of the totals. Item rows print names only.'}
               />
               <p className="text-[11px] text-gray-500">
                 {kind === 'receipt'
@@ -1653,8 +1653,8 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
       }}>
         <thead>
           <tr>
-            <th style={th}><BiLbl kh="ល.រ." en="N°" /></th>
-            {c.item      && <th style={{ ...th, textAlign: 'left' }}><BiLbl kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={l.item ?? 'Description'} /></th>}
+            <th style={{ ...th, width: 32 }}><BiLbl kh="ល.រ." en="N°" /></th>
+            {c.item      && <th colSpan={c.image ? 2 : undefined} style={{ ...th, textAlign: 'left' }}><BiLbl kh="បរិយាយមុខទំនិញ ឬ សេវាកម្ម" en={l.item ?? 'Description'} /></th>}
             {/* Qty and UOM share one column — "1 m" reads as the quantity it
                 is. The template's two toggles still decide what goes in it. */}
             {c.quantity  && <th style={th}><BiLbl kh="បរិមាណ" en={l.quantity ?? 'Quantity'} /></th>}
@@ -1668,23 +1668,14 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
             <tr key={i}>
               <td style={{ ...td, textAlign: 'center' }}>{i + 1}</td>
               {c.item && (
-                <td style={td}>
+                <td style={td} colSpan={c.image ? 2 : undefined}>
                   {/* Two-line description: name on line 1, spec on
                       line 2 (smaller + muted). Matches the real
                       invoice print output. With "Show item image" the
-                      first line gets the evidence photo under its name,
-                      as on the print; the others stay name-only. */}
+                      Description spans one more column, the one the
+                      evidence photo takes left of the totals. */}
                   <div>{row.name}</div>
                   <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
-                  {c.image && i === 0 && (
-                    <div style={{
-                      marginTop: 6, width: 288, maxWidth: '100%', height: 216, borderRadius: 6,
-                      background: '#f3f4f6', border: '1px solid #e5e7eb',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <ImageIcon className="h-10 w-10 text-gray-400" aria-hidden />
-                    </div>
-                  )}
                 </td>
               )}
               {(c.quantity || c.uom) && (
@@ -1697,22 +1688,36 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
             </tr>
           ))}
           {(() => {
+            const photo = !!c.image && !!c.item;
             const dataCols =
               (c.item ? 1 : 0) + (c.quantity || c.uom ? 1 : 0) +
-              (c.unitPrice ? 1 : 0);
+              (c.unitPrice ? 1 : 0) + (photo ? 1 : 0);
             const totalsSpan = 1 + Math.max(dataCols, 1);
+            // The evidence photo's place, as on the print: left of the
+            // totals, over N° and its share of Description, all 3 rows.
+            const labelSpan = photo ? totalsSpan - 2 : totalsSpan;
             return (
               <>
                 <tr>
-                  <td colSpan={totalsSpan} style={{ ...td, textAlign: 'right' }}>សរុប (USD) / Sub Total (USD)</td>
+                  {photo && (
+                    <td rowSpan={3} colSpan={2} style={{ ...td, padding: 6, width: 130, height: 96 }}>
+                      <div style={{
+                        height: '100%', minHeight: 84, width: 112, borderRadius: 6, background: '#f3f4f6',
+                        border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <ImageIcon className="h-8 w-8 text-gray-400" aria-hidden />
+                      </div>
+                    </td>
+                  )}
+                  <td colSpan={labelSpan} style={{ ...td, textAlign: 'right' }}>សរុប (USD) / Sub Total (USD)</td>
                   {c.total && <td style={{ ...td, textAlign: 'right' }}>${subtotal.toFixed(2)}</td>}
                 </tr>
                 <tr>
-                  <td colSpan={totalsSpan} style={{ ...td, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (USD) / Grand Total (USD)</td>
+                  <td colSpan={labelSpan} style={{ ...td, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (USD) / Grand Total (USD)</td>
                   {c.total && <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>${subtotal.toFixed(2)}</td>}
                 </tr>
                 <tr>
-                  <td colSpan={totalsSpan} style={{ ...td, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (KHR) / Grand Total (KHR)</td>
+                  <td colSpan={labelSpan} style={{ ...td, textAlign: 'right', fontWeight: 700 }}>សរុបរួម (KHR) / Grand Total (KHR)</td>
                   {c.total && <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>៛ {(subtotal * 4050).toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>}
                 </tr>
               </>
