@@ -2891,16 +2891,25 @@ function InvoiceDetailDialog({
     ]).then(() => setTemplatesSettled(true));
   }, []);
 
-  // Item codes (SKU) for the print template's lines, which carry only
-  // the stock item's id. A line without one prints its name alone.
+  // Item codes (SKU) and pictures for the print template's lines, which
+  // carry only the stock item's id. A line without one prints its name
+  // alone. The lookup already sends each item's thumbnail inline, so a
+  // picture costs no extra call and never taints the image capture.
   const [skuById, setSkuById] = useState<Record<string, string>>({});
+  const [imageById, setImageById] = useState<Record<string, string>>({});
   useEffect(() => {
     const ids = [...new Set((invoice?.items ?? []).map(l => l.stockItemId).filter((v): v is string => !!v))];
-    if (ids.length === 0) { setSkuById({}); return; }
+    if (ids.length === 0) { setSkuById({}); setImageById({}); return; }
     let live = true;
     itemsApi.lookup(ids)
-      .then(found => { if (live) setSkuById(Object.fromEntries(found.filter(i => i.sku).map(i => [i.id, i.sku as string]))); })
-      .catch(() => { if (live) setSkuById({}); });
+      .then(found => {
+        if (!live) return;
+        setSkuById(Object.fromEntries(found.filter(i => i.sku).map(i => [i.id, i.sku as string])));
+        setImageById(Object.fromEntries(found
+          .map(i => [i.id, i.imageThumbUrl || i.imageUrl] as const)
+          .filter((e): e is readonly [string, string] => !!e[1])));
+      })
+      .catch(() => { if (live) { setSkuById({}); setImageById({}); } });
     return () => { live = false; };
   }, [invoice]);
 
@@ -3713,7 +3722,7 @@ function InvoiceDetailDialog({
                 @page { margin: 0; size: ${invoiceTemplate?.config?.paperSize === 'A5' ? 'A5' : 'A4'}; }
               }
             `}</style>
-            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} currencySettings={currencySettings} template={invoiceTemplate} skuById={skuById} />
+            <PrintTaxInvoice invoice={invoice} customer={customer} company={companyInfo} paid={isPaid} currencySettings={currencySettings} template={invoiceTemplate} skuById={skuById} imageById={imageById} />
           </>
         )}
 
@@ -4015,8 +4024,23 @@ function BiLabel({ kh, en, wrapEn = false }: { kh: string; en: string; wrapEn?: 
   );
 }
 
+/** v-print-item-image — an item's picture on the printed invoice: a
+ *  fixed square so every row lines up, the photo fitted inside (never
+ *  cropped or stretched), an empty slot for a line with no picture. */
+function PrintItemThumb({ src }: { src?: string }) {
+  return (
+    <div style={{
+      width: '36px', height: '36px', flexShrink: 0, borderRadius: '4px', overflow: 'hidden',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      border: src ? '1px solid #e5e7eb' : 'none', background: src ? '#fff' : 'transparent',
+    }}>
+      {src && <img src={src} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />}
+    </div>
+  );
+}
+
 export function PrintTaxInvoice({
-  invoice, customer, company, paid, currencySettings, template, skuById = {}, title, partyLabel,
+  invoice, customer, company, paid, currencySettings, template, skuById = {}, imageById = {}, title, partyLabel,
 }: {
   invoice: invoicesApi.Invoice;
   customer?: customersApi.Customer;
@@ -4037,6 +4061,9 @@ export function PrintTaxInvoice({
    *  name. The lines carry only the id; a line without one, or a
    *  free-text line, prints its name alone. */
   skuById?: Record<string, string>;
+  /** Item picture (inline thumbnail) by stock item id — printed beside
+   *  the line's name when the template's `columns.image` is on. */
+  imageById?: Record<string, string>;
   /** Overrides the per-kind title — Bills print as "PURCHASE BILL" /
    *  ទិញចូល (v-bill-print-title). Omitted, the kind decides as before. */
   title?: { kh: string; en: string };
@@ -4054,6 +4081,12 @@ export function PrintTaxInvoice({
   const cfgCols    = { ...defaults.columns,      ...(cfg.columns ?? {}) };
   const cfgLabels  = { ...defaults.columnLabels, ...(cfg.columnLabels ?? {}) };
   const cfgFooter  = { ...defaults.footer,       ...(cfg.footer ?? {}) };
+  /* v-print-item-image — pictures only when the template asks AND at
+   * least one line has one. Then every row keeps the slot, so names
+   * stay lined up; a document with no pictured line (a bill, services)
+   * prints exactly as before. */
+  const imageOf = (it: { stockItemId?: string | null }) => (it.stockItemId ? imageById[it.stockItemId] : undefined);
+  const showImages = !!cfgCols.image && invoice.items.some(it => !!imageOf(it));
 
   /* v-footer-logo-tint — the thank-you band's background colour.
    *
@@ -4419,17 +4452,29 @@ export function PrintTaxInvoice({
           {invoice.items.map((it, idx) => (
             <tr key={it.id}>
               <td style={{ ...tdStyle, ...fitStyle, textAlign: 'center' }}>{idx + 1}</td>
-              {cfgCols.item && (
-                <td style={tdStyle}>
-                  <div>
-                    {it.stockItemId && skuById[it.stockItemId] && (
-                      <span style={{ fontFamily: 'monospace', color: '#555', marginRight: '8px' }}>{skuById[it.stockItemId]}</span>
-                    )}
-                    {it.name}
-                  </div>
-                  {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
-                </td>
-              )}
+              {cfgCols.item && (() => {
+                const text = (
+                  <>
+                    <div>
+                      {it.stockItemId && skuById[it.stockItemId] && (
+                        <span style={{ fontFamily: 'monospace', color: '#555', marginRight: '8px' }}>{skuById[it.stockItemId]}</span>
+                      )}
+                      {it.name}
+                    </div>
+                    {it.description && <div style={{ fontSize: '10px', color: '#555' }}>{it.description}</div>}
+                  </>
+                );
+                return (
+                  <td style={tdStyle}>
+                    {showImages ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <PrintItemThumb src={imageOf(it)} />
+                        <div style={{ minWidth: 0 }}>{text}</div>
+                      </div>
+                    ) : text}
+                  </td>
+                );
+              })()}
               {(cfgCols.quantity || cfgCols.uom) && (
                 <td style={{ ...tdStyle, ...fitStyle, textAlign: 'center' }}>
                   {[cfgCols.quantity ? it.quantity : null, cfgCols.uom ? it.unit : null]

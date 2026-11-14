@@ -77,6 +77,11 @@ export interface TemplateConfig {
     quantity?: boolean;
     unitPrice?: boolean;
     total?: boolean;
+    /** v-print-item-image — the item's picture beside its name in the
+     *  Description cell (A4 / A5 only). Default false, so an existing
+     *  template prints as before. A document with no pictured line
+     *  prints no picture slot at all. */
+    image?: boolean;
   };
   columnLabels?: {
     item?: string;
@@ -188,6 +193,7 @@ export function defaultTemplateConfig(): TemplateConfig {
       quantity: true,
       unitPrice: true,
       total: true,
+      image: false,
     },
     columnLabels: {
       item: 'Description',

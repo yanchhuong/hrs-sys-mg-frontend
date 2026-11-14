@@ -18,7 +18,7 @@ import {
   FileText, Plus, RefreshCw, Trash2, Edit3, Star, StarOff, Loader2, Copy, Lock,
   AlignLeft, AlignCenter, AlignRight,
   Circle, Square, RectangleHorizontal,
-  Info,
+  Info, Image as ImageIcon,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { useLogoTint } from '../../utils/useLogoTint';
@@ -1067,6 +1067,15 @@ function TemplateEditorDialog({
                   );
                 })}
               </div>
+              {/* v-print-item-image — the item's picture beside its name.
+                  A4 / A5 only: a thermal strip prints no images. */}
+              <SwitchRow
+                label="Show item image"
+                checked={kind === 'receipt' ? false : !!config.columns?.image}
+                onChange={v => patchColumns({ image: v })}
+                disabled={kind === 'receipt'}
+                title={kind === 'receipt' ? 'Not available on thermal receipts' : 'Print each item\'s picture beside its name'}
+              />
               <p className="text-[11px] text-gray-500">
                 {kind === 'receipt'
                   ? 'Receipt columns are locked on — labels are still editable.'
@@ -1661,9 +1670,28 @@ function A4InvoicePreview({ config: stored }: { config: TemplateConfig }) {
                 <td style={td}>
                   {/* Two-line description: name on line 1, spec on
                       line 2 (smaller + muted). Matches the real
-                      invoice print output. */}
-                  <div>{row.name}</div>
-                  <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
+                      invoice print output. With "Show item image" a
+                      picture slot sits in front, as on the print. */}
+                  {c.image ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 36, height: 36, flexShrink: 0, borderRadius: 4,
+                        background: '#f3f4f6', border: '1px solid #e5e7eb',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <ImageIcon className="h-4 w-4 text-gray-400" aria-hidden />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div>{row.name}</div>
+                        <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div>{row.name}</div>
+                      <div style={{ fontSize: 9, color: '#555' }}>{row.spec}</div>
+                    </>
+                  )}
                 </td>
               )}
               {(c.quantity || c.uom) && (
