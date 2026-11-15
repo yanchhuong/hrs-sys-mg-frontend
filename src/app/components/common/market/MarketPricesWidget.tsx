@@ -10,7 +10,7 @@
  * are entered in General Settings → Company. Renders nothing until a
  * tenant has entered at least one price.
  */
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Calculator, History, NotebookPen } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '../../ui/popover';
 import { useI18n } from '../../../i18n/I18nContext';
@@ -19,7 +19,11 @@ import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
 import * as marketApi from '../../../api/marketPrices';
 import { MarketStatCard, marketWord } from './MarketStatCard';
-import { MarketPriceHistoryDialog } from './MarketPriceHistoryDialog';
+// The history dialog carries the chart library (recharts, about half a
+// megabyte): it loads the first time History is opened, not with the
+// Dashboard, so the Dashboard paints without waiting for it.
+const MarketPriceHistoryDialog = lazy(() =>
+  import('./MarketPriceHistoryDialog').then(m => ({ default: m.MarketPriceHistoryDialog })));
 import { GoldCalculatorDialog } from './GoldCalculatorDialog';
 
 
@@ -62,6 +66,9 @@ export function MarketPricesWidget() {
   const { t } = useI18n();
   const [data, setData] = useState<marketApi.MarketDashboard | null>(null);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
+  /** True once History has been opened; from then on the dialog stays mounted. */
+  const historyOpened = useRef(false);
+  if (historyFor != null) historyOpened.current = true;
   /** The gold price the calculator is quoting from, when open. */
   const [calcFor, setCalcFor] = useState<marketApi.MarketItem | null>(null);
 
@@ -204,12 +211,17 @@ export function MarketPricesWidget() {
 
       <GoldCalculatorDialog item={calcFor} onClose={() => setCalcFor(null)} />
 
-      <MarketPriceHistoryDialog
-        open={historyFor != null}
-        onOpenChange={v => { if (!v) setHistoryFor(null); }}
-        titles={titles}
-        initialTitle={historyFor ?? undefined}
-      />
+      {/* Mounted from its first opening on, so closing still animates. */}
+      {historyOpened.current && (
+        <Suspense fallback={null}>
+          <MarketPriceHistoryDialog
+            open={historyFor != null}
+            onOpenChange={v => { if (!v) setHistoryFor(null); }}
+            titles={titles}
+            initialTitle={historyFor ?? undefined}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
