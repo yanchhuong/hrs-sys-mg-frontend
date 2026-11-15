@@ -8,6 +8,12 @@
 #
 # Start:   docker compose --env-file ./.env up -d --build
 # Logs:    docker compose logs -f backend
+#
+# v-2gb-droplet — every service has a memory ceiling so one of them can
+# not starve the rest on a 2 GB droplet (the API plus a 50-connection
+# pool once took the whole box). Budget, with the AI agent's 300 MB and
+# ~250 MB for the OS: backend 1100 + db 512 + caddy 128 + frontend 64.
+# Pair it with a swap file on the droplet — see README "2 GB droplet".
 
 name: hrms-cloud
 
@@ -15,6 +21,16 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    # Small-box Postgres: 50 connections is the API pool (25) with room
+    # for psql and migrations; each connection is its own process, so the
+    # default 100 let it grow by hundreds of MB.
+    command: ["postgres",
+              "-c", "max_connections=50",
+              "-c", "shared_buffers=128MB",
+              "-c", "work_mem=4MB",
+              "-c", "maintenance_work_mem=64MB",
+              "-c", "effective_cache_size=512MB"]
+    mem_limit: 512m
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hrms}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -53,6 +69,15 @@ services:
       # the AI-Agent side or the agent rejects with 403.
       TELEGRAM_AGENT_BASE_URL: ${TELEGRAM_AGENT_BASE_URL:-http://host.docker.internal:5174}
       TELEGRAM_AGENT_SECRET: ${TELEGRAM_AGENT_SECRET:-}
+      # v-2gb-droplet — the pool grows to this only under a burst (a
+      # dashboard load fans out ~15 requests) and idles at 2; with
+      # open-in-view off a request holds a connection only while it
+      # queries, so 25 covers the burst. Was 50 (application.yml).
+      HIKARI_MAX_POOL: ${HIKARI_MAX_POOL:-25}
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: ${HIKARI_MIN_IDLE:-2}
+      # Hibernate keeps up to 2048 compiled queries by default; 512 is
+      # plenty for this app and caps a slow-growing heap user.
+      SPRING_JPA_PROPERTIES_HIBERNATE_QUERY_PLAN_CACHE_MAX_SIZE: "512"
     # Make host.docker.internal resolve on Linux droplets — Docker
     # Desktop on Mac/Windows ships this hostname for free; on Linux
     # we have to add it explicitly via the magic host-gateway value.
@@ -64,6 +89,10 @@ services:
       - api-storage:/data/hrms-storage
     expose:
       - "4000"
+    # JVM caps live in the image (Dockerfile JAVA_OPTS: heap 640 MB, and
+    # exit-on-OOM so this restart policy recovers it). 1100 MB covers
+    # heap + metaspace + JIT + threads with margin.
+    mem_limit: 1100m
 
   frontend:
     build:
@@ -72,12 +101,14 @@ services:
       args:
         VITE_API_URL: /api
     restart: unless-stopped
+    mem_limit: 64m
     expose:
       - "80"
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    mem_limit: 128m
     ports:
       - "80:80"
       - "443:443"

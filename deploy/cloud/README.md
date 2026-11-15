@@ -105,3 +105,57 @@ docker compose up -d --build
 | db        | —               | 5432     |
 
 Only Caddy is reachable from the internet; everything else lives on the private docker network.
+
+## 2 GB droplet
+
+The whole stack — API, Postgres, the AI agent, Caddy and the web
+container — fits a 2 GB droplet, but only with ceilings. Without them
+the API and a 50-connection pool once used the whole box, and the JVM
+stayed alive but hung, so the site sat on "loading" until a manual
+restart (v-2gb-droplet).
+
+What is in place:
+
+| Service  | Limit  | Inside it |
+|----------|--------|-----------|
+| backend  | 1100 MB | heap ≤ 640 MB, metaspace ≤ 256 MB, Serial GC, **exits on OutOfMemoryError** so Docker restarts it (Dockerfile `JAVA_OPTS`); DB pool 25, idles at 2 |
+| db       | 512 MB | `max_connections=50`, `shared_buffers=128MB`, `work_mem=4MB` |
+| ai-agent | 300 MB | Node heap ≤ 200 MB (AI-Agent `docker-compose.yml`) |
+| caddy    | 128 MB | |
+| frontend | 64 MB  | |
+
+Measured locally with those settings: about 550 MB in use for the API
+under a dashboard-style burst (heap ~170 MB used).
+
+**One-time on the droplet — add swap.** A safety net, so a spike slows
+things down instead of the kernel killing a process:
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+# Use swap only under real pressure:
+echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf
+sudo sysctl -p /etc/sysctl.d/99-swappiness.conf
+free -m          # Swap: 2047 total
+```
+
+**Apply / redeploy:**
+
+```bash
+cd deploy/cloud
+docker compose --env-file ./.env up -d --build      # rebuilds the API image with the new JAVA_OPTS
+cd ../../../AI-Agent-Invoice && docker compose up -d # picks up its limit
+docker stats --no-stream                             # MEM USAGE / LIMIT per container
+```
+
+Building the API image runs Maven inside Docker, which itself needs
+~1 GB — the swap above is what keeps a build from starving the running
+stack. If a build is still too heavy, build the image elsewhere and
+`docker save | ssh … docker load` it.
+
+**If it hangs or restarts:** `docker compose logs --tail=200 backend`
+and look for `OutOfMemoryError` — the API now exits and comes back by
+itself, and the log names the request that ran out.
