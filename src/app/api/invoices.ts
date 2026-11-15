@@ -228,9 +228,16 @@ export async function listPurposes(): Promise<string[]> {
 /** Create an invoice. {@code notifyTelegram=false} suppresses the
  *  backend's auto-issue text-only Telegram so the caller can follow
  *  up with an image-based sendPhoto. Defaults to true (legacy). */
-export async function create(req: InvoiceRequest, notifyTelegram = true): Promise<Invoice> {
-  const q = notifyTelegram ? '' : '?notify=false';
-  return apiJson(`/api/v1/invoices${q}`, { method: 'POST', json: req });
+/** `teamPost=false` skips the Telegram team-group post for this step —
+ *  Pay now uses it on create and issue so the payment is the sale's one
+ *  post (v-pay-now-one-post). */
+function invoiceQuery(notifyTelegram: boolean, teamPost: boolean): string {
+  const p = [notifyTelegram ? '' : 'notify=false', teamPost ? '' : 'teamPost=false'].filter(Boolean);
+  return p.length ? `?${p.join('&')}` : '';
+}
+
+export async function create(req: InvoiceRequest, notifyTelegram = true, teamPost = true): Promise<Invoice> {
+  return apiJson(`/api/v1/invoices${invoiceQuery(notifyTelegram, teamPost)}`, { method: 'POST', json: req });
 }
 
 /** Edit a draft or progress invoice. Server rejects updates on paid /
@@ -244,9 +251,8 @@ export async function update(id: string, req: InvoiceRequest): Promise<Invoice> 
  *  suppresses the backend's text-only Telegram fallback so the caller
  *  can follow up with an image-based sendPhoto via {@link sendTelegram}.
  *  Defaults to true (legacy behaviour). */
-export async function issue(id: string, notifyTelegram = true): Promise<Invoice> {
-  const q = notifyTelegram ? '' : '?notify=false';
-  return apiJson(`/api/v1/invoices/${id}/issue${q}`, { method: 'POST' });
+export async function issue(id: string, notifyTelegram = true, teamPost = true): Promise<Invoice> {
+  return apiJson(`/api/v1/invoices/${id}/issue${invoiceQuery(notifyTelegram, teamPost)}`, { method: 'POST' });
 }
 
 /** Mark an invoice as void (legal-document soft delete). */

@@ -1734,8 +1734,8 @@ function InvoiceFormDialog({
    *  button). The double-issue guard checks the returned status —
    *  the BE may have already issued, in which case calling issue()
    *  a second time would 409 with "Only draft can be issued".</p> */
-  const createAndIssue = async () => {
-    const created = await invoicesApi.create(buildPayload(), false);
+  const createAndIssue = async (teamPost = true) => {
+    const created = await invoicesApi.create(buildPayload(), false, teamPost);
     if (created.status === 'progress') {
       // BE auto-issued at create time (tenant has auto-issue on).
       // Nothing else to do — return the already-issued row.
@@ -1743,7 +1743,7 @@ function InvoiceFormDialog({
       return created;
     }
     try {
-      const issued = await invoicesApi.issue(created.id, false);
+      const issued = await invoicesApi.issue(created.id, false, teamPost);
       toast.success(`${KIND_LABEL[kind]} ${issued.invoiceNo} issued`);
       return issued;
     } catch (e) {
@@ -1796,7 +1796,9 @@ function InvoiceFormDialog({
     if (!validate() || !payCurrency) return;
     setSaving(true);
     try {
-      const created = await createAndIssue();
+      // No team-group post for create / issue: the payment post is the
+      // sale's one message, as a POS checkout's is (v-pay-now-one-post).
+      const created = await createAndIssue(false);
       if (created.status === 'draft') {
         // Issue failed (createAndIssue said why) — a draft takes no payment.
         setPayNowOpen(false);
