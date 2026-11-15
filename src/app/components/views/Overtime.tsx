@@ -53,7 +53,7 @@ import { TableBodySkeletonRows } from '../common/LoadingSkeletons';
 import { statusBadgeClass } from '../../utils/statusTones';
 import { EmployeeCell } from '../common/EmployeeCell';
 import { DocAuditLine } from '../common/DocAuditLine';
-import { Plus, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Download, Upload, Info, FileSpreadsheet, Banknote, Undo2 } from 'lucide-react';
+import { Plus, Check, X, Search, Timer as TimerIcon, Moon, Pencil, Lock, Upload, Info, FileSpreadsheet, Banknote, Undo2 } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadOtDialog } from '../common/BulkUploadOtDialog';
 import { useAuth } from '../../context/AuthContext';

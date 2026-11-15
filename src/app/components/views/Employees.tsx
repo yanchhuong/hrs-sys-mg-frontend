@@ -46,11 +46,7 @@ import { TableBodySkeletonRows, TableRowsSkeleton } from '../common/LoadingSkele
 import { ListEmpty, ListError } from '../common/ListStates';
 import { Textarea } from '../ui/textarea';
 import { TONE_CLASS, statusBadgeClass } from '../../utils/statusTones';
-import { Eye, Search, Plus, Mail, Phone, MapPin, Calendar, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, Send, Copy, Check, Link2Off, CheckCircle2, Wallet, IdCard, Network, ClipboardList } from 'lucide-react';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '../ui/alert-dialog';
+import { Eye, Search, Plus, Mail, Phone, MapPin, User, FileText, Upload, RefreshCw, Building2, Briefcase, Edit, FileSpreadsheet, Download, Trash2, GraduationCap, Info, ChevronDown, Settings, IdCard, Network, ClipboardList } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
@@ -71,7 +67,6 @@ import { AllDocumentsTab } from './AllDocumentsTab';
 import { EmployeeRecordsTab } from './EmployeeRecordsTab';
 import { EmployeeRecordsPanel } from '../common/EmployeeRecords';
 import { EmployeeIdCardDialog } from '../common/EmployeeIdCardDialog';
-import { EmployeePhoto } from '../common/EmployeePhoto';
 import { useProfileImage } from '../../hooks/useProfileImage';
 import { invalidateProfileImage, markProfileImageUploaded } from '../../api/profileImageCache';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from './documentExtension';

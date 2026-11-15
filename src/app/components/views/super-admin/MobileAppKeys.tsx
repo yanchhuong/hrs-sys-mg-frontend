@@ -22,7 +22,7 @@ import { Label } from '../../ui/label';
 import { Badge } from '../../ui/badge';
 import { Textarea } from '../../ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
-import { ListTable, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
+import { ListTable, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../../ui/select';

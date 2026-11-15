@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, ArrowRight, BedDouble, CalendarDays, Check, ChevronLeft,
+  AlertCircle, ArrowRight, BedDouble, CalendarDays, Check,
   Loader2, MapPin, Phone, ShieldCheck, Users,
 } from 'lucide-react';
 import { Button } from '../ui/button';
