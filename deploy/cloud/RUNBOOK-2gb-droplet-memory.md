@@ -188,6 +188,12 @@ docker compose up -d
 
 ## Also worth doing
 
+- **Auto-restart when the API hangs.** The settings above restart the API
+  when it crashes or hits its memory limit, but not when it hangs without
+  exiting. See [RUNBOOK-oom-auto-restart.md](RUNBOOK-oom-auto-restart.md):
+  a health check plus a cron job, no swap for the API, and protecting the
+  database from the kernel's OOM killer.
+
 - **Postgres is public.** `db-02` publishes `5433:5432`, so the database
   is reachable from the internet. If nothing outside the droplet needs it,
   remove that `ports:` entry, or bind it locally:
