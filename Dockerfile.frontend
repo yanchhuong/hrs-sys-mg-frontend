@@ -4,7 +4,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN --mount=type=cache,target=/root/.npm npm install --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY . .
 # VITE_API_URL is baked into the bundle at build time. Pass --build-arg from compose.
 ARG VITE_API_URL=/api

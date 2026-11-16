@@ -8,11 +8,11 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-# Cache deps independently of source. `npm install` (not `npm ci`)
-# because the committed lockfile drifts from package.json on this repo
-# — `npm install` regenerates it; `npm ci` would refuse to start.
+# Cache deps independently of source. `npm ci` so the image is built from
+# the committed lockfile, same as Vercel — an install that resolves fresh
+# versions is how prod and local drift apart.
 COPY package*.json ./
-RUN npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 
