@@ -1417,7 +1417,9 @@ function ConsignmentDialog({
             </div>
           )}
           <div className="space-y-1">
-            <Label className="text-xs">Commission % — apply to all lines</Label>
+            {/* Just the field's name — the Apply button beside it already
+                says what it does. */}
+            <Label className="text-xs">Commission %</Label>
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Input
