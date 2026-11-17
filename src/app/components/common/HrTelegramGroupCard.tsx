@@ -6,7 +6,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
-import { Users, Loader2, Copy, Check, Plus, Unlink, X } from 'lucide-react';
+import { Users, Loader2, Copy, Check, Plus, Unlink, X, RefreshCw } from 'lucide-react';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
 import * as groupApi from '../../api/hrTelegramGroup';
@@ -33,6 +33,14 @@ const EVENTS: { key: EventKey; label: string; modules: string[] }[] = [
   { key: 'postEmployee',    label: 'Employees',              modules: ['employees'] },
   { key: 'postMarketPrices', label: 'Gold & currency prices', modules: [] },
 ];
+
+/** v-add-group-progress — the Add-to-Telegram control. Shared by the
+ *  <a> (idle / waiting) and the <button> (Check again) so the three
+ *  states are one control to the eye: swapping an anchor for a button
+ *  must not change a pixel. */
+const ADD_GROUP_BTN =
+  'flex w-full items-center justify-center gap-2 rounded-full bg-sky-600 hover:bg-sky-700 ' +
+  'text-white text-sm font-semibold px-4 h-11 shadow-sm';
 
 const POLL_MS = 5000;
 /** Stop polling this long after a code appears — the admin either sent
@@ -100,6 +108,10 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  /** v-add-group-progress — group ids whose Add button has opened
+   *  Telegram. Drives the button's waiting state; keyed by id so a
+   *  second card never inherits the first one's spinner. */
+  const [openedFor, setOpenedFor] = useState<Record<string, boolean>>({});
   /** Bumped by "Check again" / new codes to restart the poll window. */
   const [pollRound, setPollRound] = useState(0);
   const [pollTimedOut, setPollTimedOut] = useState(false);
@@ -409,36 +421,52 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
     const copied = copiedId === g.id;
     return (
       <div className="space-y-3 text-sm">
-          {/* v-startgroup — the one-tap path first, like ABA PayWay. */}
+          {/* v-add-group-progress — the button IS the progress, same as
+              mobile. It used to be ringed by three lines of prose
+              ("Pick your group in Telegram…", "Waiting for the group…",
+              "Can't use the button?…") that said what the button
+              already said and what a spinner shows better. One control,
+              three states:
+
+                idle      + Add to Telegram group   (an <a> to Telegram)
+                waiting   ◌ Waiting for the group…  (still the <a>, so a
+                            second click re-opens the picker)
+                stuck     ↻ Check again             (a <button>; there is
+                            nothing to navigate to) */}
           {addToGroupUrl(g) && !codeExpired && (
-            <div className="space-y-1.5">
+            pollTimedOut ? (
+              <button
+                type="button"
+                onClick={checkAgain}
+                className={ADD_GROUP_BTN}
+              >
+                <RefreshCw className="h-4 w-4" />
+                Check again
+              </button>
+            ) : (
               <a
                 href={addToGroupUrl(g)}
                 target="_blank"
                 rel="noreferrer"
-                className="flex w-full items-center justify-center gap-2 rounded-full bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold px-4 h-11 shadow-sm"
+                onClick={() => setOpenedFor(s => ({ ...s, [g.id]: true }))}
+                className={ADD_GROUP_BTN}
+                aria-busy={!!openedFor[g.id]}
               >
-                <Plus className="h-4 w-4" />
-                Add to Telegram group
+                {openedFor[g.id]
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <Plus className="h-4 w-4" />}
+                {openedFor[g.id] ? 'Waiting for the group…' : 'Add to Telegram group'}
               </a>
-              <p className="text-xs text-gray-500">
-                Pick your group in Telegram — @{bot?.botUsername} joins it.
-              </p>
-            </div>
+            )
           )}
-          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            {!codeExpired && !pollTimedOut && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
-            {!codeExpired && (pollTimedOut ? 'Not connected yet.' : 'Waiting for the group…')}
-            {!codeExpired && pollTimedOut && (
-              <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" onClick={checkAgain}>
-                Check again
-              </Button>
-            )}
-          </div>
-          {/* The typed command stays as the fallback — a desktop without
-              Telegram installed, or a group the picker does not list. */}
+          {/* The typed command is the escape hatch for when the deep link
+              does not land — a desktop without Telegram installed, or a
+              group the picker does not list. It now appears only once the
+              wait has actually failed, instead of sitting under every
+              fresh code. */}
+          {(pollTimedOut || codeExpired) && (
           <details className="text-xs text-gray-600">
-            <summary className="cursor-pointer select-none">Can't use the button? Type a command instead</summary>
+            <summary className="cursor-pointer select-none">Type the command instead</summary>
             <ol className="list-decimal pl-5 space-y-2 mt-2">
               <li>
                 Add the HR bot{bot?.botUsername && <> (<span className="font-medium">@{bot.botUsername}</span>)</>} to your Telegram group.
@@ -459,6 +487,7 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
               </li>
             </ol>
           </details>
+          )}
           {g.linkCodeExpiresAt && !codeExpired && (
             <p className="text-[11px] text-gray-500">Code expires {fmt(g.linkCodeExpiresAt)}</p>
           )}
