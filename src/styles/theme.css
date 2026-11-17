@@ -142,6 +142,21 @@
     @apply border-border outline-ring/50;
   }
 
+  /* v-soft-input — a field's height follows the device: a touch-size 46px
+   * on phones (the phone app's field), a compact 40px on desktop. Here in
+   * the base layer, so a page that sets its own h-* (a dense filter strip,
+   * an inline cell editor) keeps it. */
+  [data-slot="input"],
+  [data-slot="select-trigger"][data-size="default"] {
+    height: 40px;
+  }
+  @media (max-width: 767px) {
+    [data-slot="input"],
+    [data-slot="select-trigger"][data-size="default"] {
+      height: 46px;
+    }
+  }
+
   body {
     @apply bg-background text-foreground;
   }

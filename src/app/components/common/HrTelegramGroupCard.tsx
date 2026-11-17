@@ -5,6 +5,7 @@ import { Badge } from '../ui/badge';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Users, Loader2, Copy, Check, Plus, Unlink, X } from 'lucide-react';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
@@ -75,12 +76,16 @@ function errMsg(e: unknown, fallback: string): string {
 
 /**
  * "Team group" card — connects one or more Telegram groups where the HR
- * bot posts team activity, each with its own "Posts" tags. Flow:
- * Add group → server mints a pending row with a `/link CODE` → admin
- * sends it in the group → card polls GET every 5 s (only while a live
- * code exists, tab visible, for at most 5 min) until the row is linked.
- * Tags save on add/remove (pending rows can be preset); only events whose
- * module the tenant has are shown.
+ * bot posts team activity, each with its own "Posts" tags. Flow, same as
+ * the phone's: Add group → a popup on a pending row with a `/link CODE`
+ * (a live one is reused, so repeated clicks never stack up waiting
+ * groups) → "Add to Telegram group" or the typed command → the popup
+ * polls GET every 5 s (tab visible, for at most 5 min) until the row is
+ * linked, then closes. Cancel (or ✕ / Esc) drops the pending row; a click
+ * outside does not, so coming back from Telegram keeps it.
+ *
+ * The list shows connected groups only. Tags save on add/remove; only
+ * events whose module the tenant has are shown.
  */
 export function HrTelegramGroupCard({ bot, active }: Props) {
   const confirm = useConfirm();
@@ -99,8 +104,12 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
   const [pollRound, setPollRound] = useState(0);
   const [pollTimedOut, setPollTimedOut] = useState(false);
   const [, forceTick] = useState(0);
+  /** The pending group the "Add group" popup is showing; null = closed. */
+  const [dialogId, setDialogId] = useState<string | null>(null);
   const groupsRef = useRef(groups);
   groupsRef.current = groups;
+  const dialogRef = useRef(dialogId);
+  dialogRef.current = dialogId;
 
   const setBusyFor = (id: string, v: boolean) =>
     setBusy(prev => {
@@ -113,21 +122,20 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
     setGroups(prev => (prev ? prev.map(g => (g.id === next.id ? next : g)) : prev));
   }, []);
 
-  /** Replace the list with a server snapshot and announce pending rows
-   *  that got linked (or merged into an already-connected group). */
+  /** Replace the list with a server snapshot. With `announce`, the group
+   *  the popup waits on is reported once it is linked (or merged into an
+   *  already-connected group), which also closes the popup. */
   const applyList = useCallback((next: Group[], announce: boolean) => {
-    const prev = groupsRef.current ?? [];
-    if (announce) {
-      const byId = new Map(next.map(g => [g.id, g]));
-      const now = Date.now();
-      for (const old of prev) {
-        if (old.linked) continue;
-        const cur = byId.get(old.id);
-        if (cur?.linked) {
-          toast.success(cur.title ? `Connected to «${cur.title}»` : 'Team group connected');
-        } else if (!cur && isLivePending(old, now)) {
-          toast.info('That Telegram group was already connected — the existing connection was kept.');
-        }
+    const waiting = dialogRef.current;
+    const old = waiting ? (groupsRef.current ?? []).find(g => g.id === waiting) : undefined;
+    if (announce && old && !old.linked) {
+      const cur = next.find(g => g.id === old.id);
+      if (cur?.linked) {
+        setDialogId(null);
+        toast.success(cur.title ? `Connected to «${cur.title}»` : 'Team group connected');
+      } else if (!cur) {
+        setDialogId(null);
+        toast.info('That Telegram group was already connected — the existing connection was kept.');
       }
     }
     groupsRef.current = next;
@@ -147,17 +155,14 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
   }, [active, disabled, applyList]);
 
   const now = Date.now();
-  const hasLivePending = !!groups?.some(g => isLivePending(g, now));
+  const dialogGroup = dialogId ? groups?.find(g => g.id === dialogId) ?? null : null;
+  const waitingLive = !!dialogGroup && isLivePending(dialogGroup, now);
 
-  // Re-render at the next code-expiry instant so rows flip to "expired"
-  // and polling stops once no live code remains.
-  const nextExpiry = (groups ?? [])
-    .filter(g => isLivePending(g, now))
-    .map(expiryOf)
-    .filter(ms => !isNaN(ms))
-    .reduce((a, b) => Math.min(a, b), Infinity);
+  // Re-render when the popup's code expires, so it flips to "expired"
+  // and polling stops.
+  const nextExpiry = dialogGroup && waitingLive ? expiryOf(dialogGroup) : Infinity;
   useEffect(() => {
-    if (!isFinite(nextExpiry)) return;
+    if (!isFinite(nextExpiry) || isNaN(nextExpiry)) return;
     const t = window.setTimeout(
       () => forceTick(n => n + 1),
       Math.min(Math.max(nextExpiry - Date.now() + 50, 0), 2 ** 31 - 1),
@@ -165,16 +170,17 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
     return () => window.clearTimeout(t);
   }, [nextExpiry]);
 
-  // Poll only while at least one pending group has a live code; stop once
-  // none remain or the window runs out. Ticks are skipped while hidden.
+  // Poll only while the popup waits on a live code; stop once it closes,
+  // the code lapses or the window runs out. Ticks are skipped while hidden.
   useEffect(() => {
-    if (!active || disabled || !hasLivePending) return;
+    if (!active || disabled || !waitingLive) return;
     setPollTimedOut(false);
     const deadline = Date.now() + POLL_WINDOW_MS;
     let cancelled = false;
     let inFlight = false;
     const id = window.setInterval(() => {
-      if (!(groupsRef.current ?? []).some(g => isLivePending(g))) { window.clearInterval(id); return; }
+      const waiting = (groupsRef.current ?? []).find(g => g.id === dialogRef.current);
+      if (!waiting || !isLivePending(waiting)) { window.clearInterval(id); return; }
       if (Date.now() >= deadline) { window.clearInterval(id); setPollTimedOut(true); return; }
       if (document.hidden || inFlight) return;
       inFlight = true;
@@ -184,7 +190,7 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
         .finally(() => { inFlight = false; });
     }, POLL_MS);
     return () => { cancelled = true; window.clearInterval(id); };
-  }, [active, disabled, hasLivePending, pollRound, applyList]);
+  }, [active, disabled, waitingLive, pollRound, applyList]);
 
   const checkAgain = () => {
     groupApi.listGroups().then(list => applyList(list, true)).catch(() => {});
@@ -192,6 +198,15 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
   };
 
   const addGroup = async () => {
+    setCopiedId(null);
+    // A code still waiting (an earlier click, the phone) is reused, so
+    // "Add group" never leaves a second waiting group behind.
+    const waiting = (groups ?? []).find(g => isLivePending(g));
+    if (waiting) {
+      setDialogId(waiting.id);
+      setPollRound(n => n + 1);
+      return;
+    }
     setAdding(true);
     try {
       const g = await groupApi.addGroup();
@@ -200,6 +215,7 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
         groupsRef.current = next;
         return next;
       });
+      setDialogId(g.id);
       setPollRound(n => n + 1);
     } catch (e) {
       toast.error(errMsg(e, 'Failed to add group'));
@@ -253,7 +269,14 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
     try {
       await groupApi.deleteGroup(g.id);
       removeGroup(g.id);
+      setDialogId(null);
     } catch (e) {
+      if ((e as { status?: number })?.status === 404) {
+        // Already gone (linked or merged meanwhile) — close and refresh.
+        setDialogId(null);
+        groupApi.listGroups().then(list => applyList(list, false)).catch(() => {});
+        return;
+      }
       toast.error(errMsg(e, 'Failed to cancel'));
     } finally {
       setBusyFor(g.id, false);
@@ -378,41 +401,14 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
     );
   };
 
-  const renderPending = (g: Group) => {
+  /** The "Add group" popup's body for the waiting group. */
+  const renderPendingSteps = (g: Group) => {
     const isBusy = !!busy[g.id];
     const exp = expiryOf(g);
     const codeExpired = !isNaN(exp) && now >= exp;
     const copied = copiedId === g.id;
     return (
-      <div key={g.id} className="rounded-md border px-3 py-2.5 space-y-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-gray-700 min-w-0 truncate">New group — waiting for /link</span>
-          <div className="flex items-center gap-1 shrink-0">
-            <Button
-              type="button"
-              variant={codeExpired ? 'outline' : 'ghost'}
-              size="sm"
-              className="h-7 px-2"
-              onClick={() => newCode(g)}
-              disabled={isBusy}
-            >
-              {isBusy && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
-              New code
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-gray-600"
-              onClick={() => cancelPending(g)}
-              disabled={isBusy}
-            >
-              <X className="h-3.5 w-3.5 mr-1" />
-              Cancel
-            </Button>
-          </div>
-        </div>
-        <div className="bg-slate-50 border rounded-md px-3 py-2.5 space-y-2 text-sm">
+      <div className="space-y-3 text-sm">
           {/* v-startgroup — the one-tap path first, like ABA PayWay. */}
           {addToGroupUrl(g) && !codeExpired && (
             <div className="space-y-1.5">
@@ -420,14 +416,13 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
                 href={addToGroupUrl(g)}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-md bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold px-4 h-10 shadow-sm"
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold px-4 h-11 shadow-sm"
               >
                 <Plus className="h-4 w-4" />
                 Add to Telegram group
               </a>
               <p className="text-xs text-gray-500">
-                Telegram opens — pick your group and @{bot?.botUsername} joins and connects it.
-                This card updates by itself.
+                Pick your group in Telegram — @{bot?.botUsername} joins it.
               </p>
             </div>
           )}
@@ -464,21 +459,27 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
               </li>
             </ol>
           </details>
-          {g.linkCodeExpiresAt && (
-            <p className={`text-[11px] ${codeExpired ? 'text-red-600' : 'text-gray-500'}`}>
-              {codeExpired
-                ? `Code expired ${fmt(g.linkCodeExpiresAt)} — generate a new one.`
-                : `Code expires ${fmt(g.linkCodeExpiresAt)}`}
-            </p>
+          {g.linkCodeExpiresAt && !codeExpired && (
+            <p className="text-[11px] text-gray-500">Code expires {fmt(g.linkCodeExpiresAt)}</p>
           )}
-        </div>
-        {renderTags(g)}
+          {codeExpired && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-red-600">This code has expired.</p>
+              <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => newCode(g)} disabled={isBusy}>
+                {isBusy && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+                New code
+              </Button>
+            </div>
+          )}
       </div>
     );
   };
 
-  const linkedCount = groups?.filter(g => g.linked).length ?? 0;
-  const hasGroups = !!groups && groups.length > 0;
+  // Waiting groups live in the popup, not the list.
+  const linked = (groups ?? []).filter(g => g.linked);
+  const linkedCount = linked.length;
+  const hasGroups = linkedCount > 0;
+  const cancelling = !!dialogGroup && !!busy[dialogGroup.id];
 
   return (
     <div className={`rounded-md border p-4 space-y-3 ${disabled ? 'opacity-60' : ''}`} aria-disabled={disabled}>
@@ -507,7 +508,7 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
         </div>
       ) : hasGroups ? (
         <div className="space-y-2.5">
-          {groups!.map(g => (g.linked ? renderLinked(g) : renderPending(g)))}
+          {linked.map(renderLinked)}
         </div>
       ) : (
         <p className="text-xs text-gray-500">No groups yet — add one, then pick what the bot posts there.</p>
@@ -517,6 +518,37 @@ export function HrTelegramGroupCard({ bot, active }: Props) {
         {adding ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Plus className="h-4 w-4 mr-1.5" />}
         Add group
       </Button>
+
+      {/* "Add group" popup: one waiting group at a time. Closes on its own
+          once the group connects; Cancel, ✕ or Esc drop the waiting code.
+          A click outside does nothing — coming back from Telegram must not
+          lose it. */}
+      <Dialog
+        open={!!dialogGroup}
+        onOpenChange={open => { if (!open && dialogGroup && !cancelling) void cancelPending(dialogGroup); }}
+      >
+        <DialogContent className="sm:max-w-md" onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-sky-600" />
+              Add a Telegram group
+            </DialogTitle>
+          </DialogHeader>
+          {dialogGroup && renderPendingSteps(dialogGroup)}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full rounded-full"
+              onClick={() => { if (dialogGroup) void cancelPending(dialogGroup); }}
+              disabled={cancelling}
+            >
+              {cancelling && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

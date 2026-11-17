@@ -156,9 +156,12 @@ export function DropdownSelect({
           // made dialog selects lose their outline.) Call sites that set
           // a colour, e.g. the filter strip's border-input, still win.
           'rounded-md border bg-transparent px-2.5 text-sm outline-none',
-          'focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+          'focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/15 transition-[color,box-shadow,border-color] duration-150 disabled:cursor-not-allowed disabled:opacity-50',
           'data-[placeholder]:text-muted-foreground',
-          !sized && 'h-9',
+          // v-soft-input — unsized ones follow the field height: 46px
+          // on phones, 40px on desktop, so they line up with an Input.
+          // In px: the root font here is 17.6px, so h-10 would be 44.
+          !sized && 'h-[40px] rounded-xl max-md:h-[46px]',
           className,
         )}
       >
