@@ -709,9 +709,17 @@ export function Invoices({
                   <DropdownMenuItem onClick={() => openCreate('commercial')}>
                     <FileText className="h-4 w-4 mr-2 text-blue-600" /> Commercial Invoice
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openCreate('tax')}>
-                    <Receipt className="h-4 w-4 mr-2 text-violet-600" /> Tax Invoice
-                  </DropdownMenuItem>
+                  {/* v-invoice-kinds-follow-setup — Accountant settings >
+                      Show Tax says whether this tenant issues tax
+                      invoices. With it off the form hides every tax
+                      field (settings.showTax, below), so offering the
+                      kind here just leads to a tax invoice with no tax
+                      on it. Mobile's + drops the same entry. */}
+                  {settings.showTax && (
+                    <DropdownMenuItem onClick={() => openCreate('tax')}>
+                      <Receipt className="h-4 w-4 mr-2 text-violet-600" /> Tax Invoice
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={() => openCreate('credit_note')}>
                     <CornerDownRight className="h-4 w-4 mr-2 text-emerald-600" /> Credit Note
                   </DropdownMenuItem>
