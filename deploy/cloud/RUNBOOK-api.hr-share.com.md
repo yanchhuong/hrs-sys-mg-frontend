@@ -152,6 +152,24 @@ curl -i http://api.hr-share.com/api/v1/health
 
 Expected: `HTTP/1.1 200` + `{"ok":true,…}`.
 
+**Streams (SSE) need no extra location.** nginx buffers this proxy by
+default, which held every event stream back: the paired POS Display
+and the notification bell received nothing, not even headers. The API
+now sends `X-Accel-Buffering: no` on its streams (v-sse-unbuffered),
+which switches buffering off for those responses only. Never add
+`proxy_ignore_headers X-Accel-Buffering` here. Check after a deploy:
+
+```bash
+curl -sN -m 5 -D - https://api.hr-share.com/api/v1/pos/display/TEST1/stream
+```
+
+Expected within a second: `Content-Type: text/event-stream` and a
+`:connected` line, then `:ping` every 25 s. The `X-Accel-Buffering`
+header itself does not show: nginx consumes it. Nothing for 5 s means
+a buffered stream, and the paired Display will stay on "Welcome". The
+Vercel route (`https://www.hr-share.com/api-02/v1/pos/display/TEST1/stream`)
+streams the same way (verified 2026-11-18).
+
 ### Phase 4 — Let's Encrypt cert via certbot
 
 ```bash
