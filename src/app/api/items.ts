@@ -392,12 +392,20 @@ export async function getByBarcode(code: string): Promise<Item> {
   return apiJson(`/api/v1/stock-items/by-barcode/${encodeURIComponent(code)}`);
 }
 
+/**
+ * v-item-save-no-echo — `images=ref` stops the server echoing the (up to
+ * 5) inline base64 photos we just uploaded. Items.tsx splices the
+ * returned row into a list fetched with `images: 'ref'`, so the stripped
+ * shape — imagePath / thumbPath, no inline data URI — is the one that
+ * matches the rows around it; before this the new row was the only
+ * inline-image row in the table.
+ */
 export async function create(req: ItemRequest): Promise<Item> {
-  return apiJson('/api/v1/stock-items', { method: 'POST', json: req });
+  return apiJson('/api/v1/stock-items', { method: 'POST', json: req, query: { images: 'ref' } });
 }
 
 export async function update(id: string, req: ItemRequest): Promise<Item> {
-  return apiJson(`/api/v1/stock-items/${id}`, { method: 'PUT', json: req });
+  return apiJson(`/api/v1/stock-items/${id}`, { method: 'PUT', json: req, query: { images: 'ref' } });
 }
 
 export async function remove(id: string): Promise<void> {

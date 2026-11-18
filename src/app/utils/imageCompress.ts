@@ -38,10 +38,38 @@
 // same photo taken on mobile is kept at that size too (item-edit).
 // Thumbnails (`makeThumbnailFromUrl` below) emit 512/Q85 — the mobile
 // POS tile is ~170 dp, ~510 px at 3× — see the defaults on the export.
-const BYPASS_COMPRESS_BYTES = 2 * 1024 * 1024;
+// v-image-byte-budget — the bypass above conflated "small file" with
+// "needs no pipeline", and a phone photo is neither. A 12 MP picture
+// that happens to weigh 1.9 MB fell under the 2 MB bar and shipped at
+// FULL RESOLUTION, base64'd to ~2.6 MB inside the item JSON. That was
+// measured as the difference between an item save that returns promptly
+// and one that takes many seconds; the same item saved with no picture
+// is fast. (The mobile client never had this hole — it resizes every
+// pick to 1280 — which is why the web was the worse of the two.)
+//
+// The original intent is kept: a pristine shop photo that genuinely
+// needs nothing must not be re-encoded, because re-encoding it was what
+// made POS covers look soft (v-image-sharpen-v2). So a bypass now has
+// to earn itself on BOTH counts — the picture already fits MAX_EDGE,
+// AND its bytes are already modest. A 1000x1000 / 180 KB shop photo
+// still ships untouched; a 4000x3000 / 1.9 MB phone photo no longer does.
+const BYPASS_COMPRESS_BYTES = 300 * 1024;
 const MAX_EDGE = 1280;
 const QUALITY  = 0.85;
 const HARD_MAX_BYTES = 25 * 1024 * 1024;
+
+/** The most base64 one encoded image may cost, and the ladder tried to
+ *  get under it. Mirrors src/lib/imageBudget.ts in the mobile app — the
+ *  two clients write to the same column and should not disagree about
+ *  how large a picture may be. Measured in BASE64 bytes because the
+ *  base64 string is what is uploaded; 96 KB of it is ~70 KB of JPEG.
+ *  The 0.55 floor is where JPEG ringing starts to show on fine detail. */
+const MAX_ENCODED_BYTES = 96 * 1024;
+const QUALITY_STEPS = [0.78, 0.7, 0.62, 0.55];
+
+/** What a `data:` URI costs on the wire: the base64 payload, excluding
+ *  the `data:image/jpeg;base64,` prefix. */
+export const encodedBytes = (dataUrl: string) => dataUrl.length - (dataUrl.indexOf(',') + 1);
 
 /** File formats we refuse to compress because Canvas.toBlob can't
  *  represent them (HEIC on Windows Chromium) or because they're
@@ -133,15 +161,20 @@ export async function compressImageToDataUrl(file: File): Promise<string> {
   if (PASSTHROUGH_MIME.has(file.type)) {
     return await fileToDataUrl(file);
   }
-  // Under 2 MB — return the source bytes as-is. Avoids the quality
-  // hit of a canvas re-encode on a picture that never needed
-  // compression to begin with. GIFs already short-circuited above.
-  if (file.size < BYPASS_COMPRESS_BYTES) {
+  // Decoding first is what lets the bypass see the PICTURE and not just
+  // the file size — the whole point of the change. It costs one decode
+  // on a path that was about to upload the thing anyway.
+  const source = await decode(file);
+  const { w: srcW, h: srcH } = edges(source);
+
+  // Earns its bypass on both counts: already within MAX_EDGE, and
+  // already modest on the wire. Such a picture gains nothing from a
+  // re-encode and would only lose sharpness, so it ships untouched.
+  if (Math.max(srcW, srcH) <= MAX_EDGE && file.size <= BYPASS_COMPRESS_BYTES) {
+    if ('close' in source && typeof source.close === 'function') source.close();
     return await fileToDataUrl(file);
   }
 
-  const source = await decode(file);
-  const { w: srcW, h: srcH } = edges(source);
   const scale = Math.min(1, MAX_EDGE / Math.max(srcW, srcH));
   const w = Math.max(1, Math.round(srcW * scale));
   const h = Math.max(1, Math.round(srcH * scale));
@@ -154,14 +187,32 @@ export async function compressImageToDataUrl(file: File): Promise<string> {
   ctx.drawImage(source as CanvasImageSource, 0, 0, w, h);
 
   const outMime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-  const blob: Blob | null = await new Promise(res =>
-    canvas.toBlob(res, outMime, outMime === 'image/jpeg' ? QUALITY : undefined));
-  if (!blob) throw new Error('Compression failed');
+  const encode = (q?: number): Promise<Blob | null> =>
+    new Promise(res => canvas.toBlob(res, outMime, q));
+
+  const first = await encode(outMime === 'image/jpeg' ? QUALITY : undefined);
+  if (!first) throw new Error('Compression failed');
+  let out = await blobToDataUrl(first);
+
+  // Quality is capped by RESULT, not by a fixed setting: a photo that
+  // already fits keeps the quality it had, and only a heavy one steps
+  // down, only as far as it must. JPEG only — PNG ignores the quality
+  // argument, and re-encoding it to JPEG would drop the transparency
+  // the PNG branch exists to preserve.
+  if (outMime === 'image/jpeg') {
+    for (const step of QUALITY_STEPS) {
+      if (encodedBytes(out) <= MAX_ENCODED_BYTES) break;
+      if (step >= QUALITY) continue;       // never trade quality upward
+      const smaller = await encode(step);
+      if (!smaller) break;                 // keep the best we have
+      out = await blobToDataUrl(smaller);
+    }
+  }
 
   // Free the decoded bitmap when the browser gave us one.
   if ('close' in source && typeof source.close === 'function') source.close();
 
-  return await blobToDataUrl(blob);
+  return out;
 }
 
 function fileToDataUrl(file: File): Promise<string> {
