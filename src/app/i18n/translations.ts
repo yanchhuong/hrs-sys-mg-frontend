@@ -428,7 +428,40 @@ export const dict: Dict = {
   'contract.validate.start_required':{ en: 'Pick a start date first',  km: 'ជ្រើសរើសថ្ងៃចាប់ផ្តើមជាមុនសិន', zh: '请先选择开始日期' },
   'contract.empty':               { en: 'No contracts yet.',           km: 'មិនទាន់មានកិច្ចសន្យានៅឡើយ', zh: '尚无合同' },
   'contract.empty.hint':          { en: 'Click "Add Contract" to create one.', km: 'ចុច "បន្ថែមកិច្ចសន្យា" ដើម្បីបង្កើតថ្មី', zh: '点击"添加合同"以创建' },
+
+  // --- Plain-language errors (api/client friendlyError) -------------------
+  // What a person reads when a call fails. Word for word the same keys and
+  // sentences as the mobile build's src/i18n/translations.ts, so the same
+  // failure reads the same on a phone and in a browser. Keep them in step.
+  'err.offline':   { en: "Failed to reach the server. Check your internet connection and try again.", km: 'មិនអាចភ្ជាប់ទៅម៉ាស៊ីនមេបានទេ។ សូមពិនិត្យអ៊ីនធឺណិត ហើយព្យាយាមម្ដងទៀត។', zh: '无法连接服务器。请检查网络后重试。' },
+  'err.invalid':   { en: "Some details aren't valid. Please check them and try again.", km: 'ព័ត៌មានខ្លះមិនត្រឹមត្រូវ។ សូមពិនិត្យ ហើយព្យាយាមម្ដងទៀត។', zh: '部分信息无效，请检查后重试。' },
+  'err.session':   { en: 'Your session has ended. Please sign in again.', km: 'វគ្គរបស់អ្នកបានផុតកំណត់។ សូមចូលម្ដងទៀត។', zh: '登录已过期，请重新登录。' },
+  'err.forbidden': { en: "You don't have permission to do this.", km: 'អ្នកមិនមានសិទ្ធិធ្វើសកម្មភាពនេះទេ។', zh: '您没有执行此操作的权限。' },
+  'err.not_found': { en: "We couldn't find it — it may have been deleted. Please refresh.", km: 'រកមិនឃើញ — ប្រហែលជាត្រូវបានលុប។ សូមផ្ទុកឡើងវិញ។', zh: '未找到，可能已被删除。请刷新。' },
+  'err.conflict':  { en: 'It was changed by someone else. Please refresh and try again.', km: 'មានអ្នកផ្សេងបានកែប្រែវា។ សូមផ្ទុកឡើងវិញ ហើយព្យាយាមម្ដងទៀត។', zh: '已被他人修改，请刷新后重试。' },
+  'err.too_large': { en: 'That file is too large.', km: 'ឯកសារនេះធំពេក។', zh: '文件太大。' },
+  'err.too_many':  { en: 'Too many tries. Please wait a moment and try again.', km: 'ព្យាយាមច្រើនដងពេក។ សូមរង់ចាំបន្តិច ហើយព្យាយាមម្ដងទៀត។', zh: '尝试次数过多，请稍后重试。' },
+  'err.timeout':   { en: 'The server took too long to answer. Please try again.', km: 'ម៉ាស៊ីនមេឆ្លើយយឺតពេក។ សូមព្យាយាមម្ដងទៀត។', zh: '服务器响应超时，请重试。' },
+  'err.server':    { en: 'The server had a problem. Please try again in a moment.', km: 'ម៉ាស៊ីនមេមានបញ្ហា។ សូមព្យាយាមម្ដងទៀតបន្តិចទៀត។', zh: '服务器出现问题，请稍后重试。' },
+  'err.generic':   { en: 'Something went wrong. Please try again.', km: 'មានបញ្ហាកើតឡើង។ សូមព្យាយាមម្ដងទៀត។', zh: '出了点问题，请重试。' },
 };
+
+/** Where the chosen language is kept. Owned here rather than by the
+ *  provider so code outside React can read it — api/client.ts phrases a
+ *  failure before any component has seen it. */
+export const LANG_STORAGE_KEY = 'hrms:lang';
+
+/** The language in force, readable outside React. Same order the
+ *  provider uses on first paint: stored choice, then the browser's. */
+export function currentLang(): Lang {
+  if (typeof window === 'undefined') return 'en';
+  try {
+    const stored = window.localStorage.getItem(LANG_STORAGE_KEY) as Lang | null;
+    if (stored === 'en' || stored === 'km' || stored === 'zh') return stored;
+  } catch { /* private mode, blocked storage — fall through to the browser */ }
+  const browser = window.navigator.language.slice(0, 2).toLowerCase();
+  return browser === 'km' ? 'km' : browser === 'zh' ? 'zh' : 'en';
+}
 
 const missingLogged = new Set<string>();
 

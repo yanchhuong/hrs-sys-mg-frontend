@@ -7,6 +7,7 @@
  */
 
 import { migrateLegacyApiBaseOverride } from '../utils/runtime';
+import { currentLang, translate } from '../i18n/translations';
 
 /**
  * Resolves the API base in this order (highest precedence first):
@@ -242,6 +243,15 @@ export async function apiFetch(path: string, opts: RawFetchOptions = {}): Promis
       setToken(null);
       window.dispatchEvent(new CustomEvent('auth:api-unreachable'));
     }
+    // The browser's own wording for this is "Failed to fetch", and every
+    // call site puts `err.message` in a toast — so that is what the
+    // operator was reading when their wifi dropped. Re-word it, but keep
+    // the TypeError: PublicShopPage tells a network failure from an API
+    // one by `instanceof`, and wrapping it would break that.
+    if (isNetworkError && err instanceof Error) {
+      (err as Error & { networkMessage?: string }).networkMessage = err.message;
+      err.message = friendlyError(0);
+    }
     throw err;
   }
 }
@@ -340,14 +350,57 @@ export async function apiVoid(path: string, opts: FetchOptions = {}): Promise<vo
   }
 }
 
+/**
+ * What a person reads when a call fails — never a stack trace.
+ *
+ * Ported from the mobile build's `src/api/client.ts`, keys, regex and
+ * sentences alike, so the same failure reads the same on a phone and in
+ * a browser. Before this, the web handed `body.message` straight to a
+ * toast: a Hibernate constraint, a Java exception or a bare "Internal
+ * Server Error" went to the operator as-is, and a response with no
+ * message at all became "Request failed (500)".
+ *
+ *  - the server's own sentence ("You can't delete X because it's still
+ *    on INV-…") is kept — those are written for people;
+ *  - technical text and a missing message are replaced by a plain one
+ *    for the status, in the user's language.
+ *
+ * Status 0 is "no answer at all" — offline, or the server down.
+ * Keep this in step with the mobile copy; its friendlyError.test.ts
+ * covers the same table.
+ */
+const TECHNICAL = /exception|java\.|org\.(springframework|hibernate|postgresql)|hibernate|could not execute|nested|constraint \[|duplicate key|violates|sql|jdbc|json parse|unexpected token|cannot invoke|is null|no message available|^(bad request|unauthorized|forbidden|not found|internal server error|service unavailable|bad gateway|gateway timeout)$|^\d{3}\b/i;
+
+const STATUS_TEXT: { test: (s: number) => boolean; key: string; en: string }[] = [
+  { test: s => s === 0,   key: 'err.offline',   en: "Failed to reach the server. Check your internet connection and try again." },
+  { test: s => s === 400 || s === 422, key: 'err.invalid', en: "Some details aren't valid. Please check them and try again." },
+  { test: s => s === 401, key: 'err.session',   en: 'Your session has ended. Please sign in again.' },
+  { test: s => s === 403, key: 'err.forbidden', en: "You don't have permission to do this." },
+  { test: s => s === 404, key: 'err.not_found', en: "We couldn't find it — it may have been deleted. Please refresh." },
+  { test: s => s === 409, key: 'err.conflict',  en: 'It was changed by someone else. Please refresh and try again.' },
+  { test: s => s === 413, key: 'err.too_large', en: 'That file is too large.' },
+  { test: s => s === 429, key: 'err.too_many',  en: 'Too many tries. Please wait a moment and try again.' },
+  { test: s => s === 408 || s === 504, key: 'err.timeout', en: 'The server took too long to answer. Please try again.' },
+  { test: s => s >= 500,  key: 'err.server',    en: 'The server had a problem. Please try again in a moment.' },
+];
+
+export function friendlyError(status: number, serverMessage?: string | null): string {
+  const msg = (serverMessage ?? '').trim();
+  if (msg && !TECHNICAL.test(msg) && status !== 0) return msg;
+  const hit = STATUS_TEXT.find(x => x.test(status));
+  return hit ? translate(hit.key, currentLang(), hit.en) : translate('err.generic', currentLang(), 'Something went wrong. Please try again.');
+}
+
 /** Build the user-visible error string for ApiError.
- *  - {@code body.message} is the top-level reason ("Validation failed").
+ *  - {@code body.message} is the top-level reason ("Validation failed"),
+ *    passed through {@link friendlyError} so technical text never lands
+ *    in a toast.
  *  - {@code body.fieldErrors[]} carries per-field reasons; we append the
  *    first 3 so a toast that previously read just "Validation failed"
  *    now reads "Validation failed: items must not be empty; …" and
  *    the operator can fix the form without opening DevTools. */
 function formatErrorMessage(body: any, status: number): string {
-  const base = body?.message ?? `Request failed (${status})`;
+  const base = friendlyError(status, body?.message);
   const issues = Array.isArray(body?.fieldErrors) ? body.fieldErrors : [];
   if (issues.length === 0) return base;
   const parts: string[] = [];

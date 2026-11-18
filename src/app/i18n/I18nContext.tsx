@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
-import { Lang, translate } from './translations';
+import { Lang, LANG_STORAGE_KEY, currentLang, translate } from './translations';
 
 interface I18nContextValue {
   lang: Lang;
@@ -7,18 +7,10 @@ interface I18nContextValue {
   t: (key: string, fallback?: string) => string;
 }
 
-const STORAGE_KEY = 'hrms:lang';
-const SUPPORTED: Lang[] = ['en', 'km', 'zh'];
-
-function loadInitial(): Lang {
-  if (typeof window === 'undefined') return 'en';
-  const stored = window.localStorage.getItem(STORAGE_KEY) as Lang | null;
-  if (stored && SUPPORTED.includes(stored)) return stored;
-  const browser = window.navigator.language.slice(0, 2).toLowerCase();
-  if (browser === 'km') return 'km';
-  if (browser === 'zh') return 'zh';
-  return 'en';
-}
+// The key and the first-paint choice live in translations.ts now, so
+// api/client.ts can read the same language without importing React.
+const STORAGE_KEY = LANG_STORAGE_KEY;
+const loadInitial = currentLang;
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
