@@ -295,10 +295,50 @@ function isTenantFrozenResponse(status: number, body: any): boolean {
   return status === 423 && body && body.code === 'TenantFrozen';
 }
 
+/**
+ * Has the token we are holding already lapsed?
+ *
+ * The API answers 403 "Access Denied" — not 401 — for a dead token, so
+ * status alone cannot tell an expired session from an ordinary
+ * permission denial. The mobile client has always allowed for this
+ * (`res.status === 401 || res.status === 403`); the web only ever
+ * checked 401, so an expired session left the operator sitting on a
+ * protected page while every call failed, never routed to login.
+ *
+ * Reading `exp` off the token settles it without a probe: lapsed means
+ * the session ended, still-valid means the server really is refusing
+ * this particular thing and signing them out would be wrong. No token
+ * at all is not an expiry — they were never signed in.
+ */
+function storedTokenHasLapsed(): boolean {
+  const token = getToken();
+  if (!token) return false;
+  try {
+    const part = token.split('.')[1];
+    if (!part) return false;
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    const exp = (JSON.parse(json) as { exp?: number }).exp;
+    return typeof exp === 'number' && exp * 1000 <= Date.now();
+  } catch {
+    // Not a JWT we can read — say no rather than sign someone out on a
+    // parse error.
+    return false;
+  }
+}
+
+/** 401, or the 403 this API returns when the token behind it is dead. */
+function isSessionOver(status: number): boolean {
+  return status === 401 || (status === 403 && storedTokenHasLapsed());
+}
+
 /** JSON request that throws ApiError on non-2xx. */
 export async function apiJson<T>(path: string, opts: FetchOptions = {}): Promise<T> {
   const res = await apiFetch(path, opts);
-  if (res.status === 401) {
+  // Decided BEFORE setToken(null) below — once the token is gone there
+  // is nothing left to read an exp off, and the message would fall back
+  // to "You don't have permission to do this."
+  const sessionOver = isSessionOver(res.status);
+  if (sessionOver) {
     // v-session-timeout-redirect — clear the token AND fire a page-
     // scoped event so AuthContext can drop currentUser + route back
     // to the login screen. Without this, the user keeps sitting on
@@ -319,7 +359,7 @@ export async function apiJson<T>(path: string, opts: FetchOptions = {}): Promise
       423, path, body);
   }
   if (!res.ok) {
-    throw new ApiError(formatErrorMessage(body, res.status), res.status, path, body);
+    throw new ApiError(formatErrorMessage(body, res.status, sessionOver), res.status, path, body);
   }
   return body as T;
 }
@@ -327,7 +367,8 @@ export async function apiJson<T>(path: string, opts: FetchOptions = {}): Promise
 /** For DELETE / 204 endpoints that return no body. */
 export async function apiVoid(path: string, opts: FetchOptions = {}): Promise<void> {
   const res = await apiFetch(path, opts);
-  if (res.status === 401) {
+  const sessionOver = isSessionOver(res.status);
+  if (sessionOver) {
     // v-session-timeout-redirect — clear the token AND fire a page-
     // scoped event so AuthContext can drop currentUser + route back
     // to the login screen. Without this, the user keeps sitting on
@@ -346,7 +387,7 @@ export async function apiVoid(path: string, opts: FetchOptions = {}): Promise<vo
         'This company is in read-only mode. Contact your administrator to unfreeze.',
         423, path, body);
     }
-    throw new ApiError(formatErrorMessage(body, res.status), res.status, path, body);
+    throw new ApiError(formatErrorMessage(body, res.status, sessionOver), res.status, path, body);
   }
 }
 
@@ -369,7 +410,7 @@ export async function apiVoid(path: string, opts: FetchOptions = {}): Promise<vo
  * Keep this in step with the mobile copy; its friendlyError.test.ts
  * covers the same table.
  */
-const TECHNICAL = /exception|java\.|org\.(springframework|hibernate|postgresql)|hibernate|could not execute|nested|constraint \[|duplicate key|violates|sql|jdbc|json parse|unexpected token|cannot invoke|is null|no message available|^(bad request|unauthorized|forbidden|not found|internal server error|service unavailable|bad gateway|gateway timeout)$|^\d{3}\b/i;
+const TECHNICAL = /exception|java\.|org\.(springframework|hibernate|postgresql)|hibernate|could not execute|nested|constraint \[|duplicate key|violates|sql|jdbc|json parse|unexpected token|cannot invoke|is null|no message available|^(access denied|bad request|unauthorized|forbidden|not found|internal server error|service unavailable|bad gateway|gateway timeout)$|^\d{3}\b/i;
 
 const STATUS_TEXT: { test: (s: number) => boolean; key: string; en: string }[] = [
   { test: s => s === 0,   key: 'err.offline',   en: "Failed to reach the server. Check your internet connection and try again." },
@@ -399,8 +440,11 @@ export function friendlyError(status: number, serverMessage?: string | null): st
  *    first 3 so a toast that previously read just "Validation failed"
  *    now reads "Validation failed: items must not be empty; …" and
  *    the operator can fix the form without opening DevTools. */
-function formatErrorMessage(body: any, status: number): string {
-  const base = friendlyError(status, body?.message);
+function formatErrorMessage(body: any, status: number, sessionOver = false): string {
+  // A 403 behind a dead token IS the session ending, so say that rather
+  // than "You don't have permission to do this.", which sends the
+  // operator hunting for a permission they already have.
+  const base = friendlyError(sessionOver ? 401 : status, body?.message);
   const issues = Array.isArray(body?.fieldErrors) ? body.fieldErrors : [];
   if (issues.length === 0) return base;
   const parts: string[] = [];
