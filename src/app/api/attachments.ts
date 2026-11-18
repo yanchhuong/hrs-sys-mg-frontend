@@ -21,9 +21,18 @@ export async function list(docType: AttachmentDocType, docId: string): Promise<A
 /** docId → file count for the given documents. Documents with none are
  *  absent. `docIds` travels comma-joined; Spring binds it to the list. */
 export async function counts(docType: AttachmentDocType, docIds: string[]): Promise<Record<string, number>> {
-  if (docIds.length === 0) return {};
-  return apiJson('/api/v1/attachments/counts', { query: { docType, docIds: docIds.join(',') } });
+  // In batches: every id rides the query string, and a long Open tickets
+  // list would otherwise outgrow the server's 8 KB request line — the
+  // request fails and every paperclip quietly disappears.
+  const out: Record<string, number> = {};
+  for (let i = 0; i < docIds.length; i += COUNTS_BATCH) {
+    Object.assign(out, await apiJson<Record<string, number>>('/api/v1/attachments/counts',
+      { query: { docType, docIds: docIds.slice(i, i + COUNTS_BATCH).join(',') } }));
+  }
+  return out;
 }
+/** About 2 KB of query per request. */
+const COUNTS_BATCH = 50;
 
 /** Multipart upload. Builds a FormData manually because the
  *  apiFetch helper only special-cases JSON; for multipart we let

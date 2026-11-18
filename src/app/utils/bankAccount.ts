@@ -117,8 +117,20 @@ export function saveBankAccounts(scope: Scope, accounts: BankAccount[]): void {
 // /api/v1/bank-accounts/pos. This browser keeps its copy in localStorage
 // for when the server cannot be reached. Every other scope is still
 // browser-only, as above.
+//
+// Moving this browser's cards up (v-shop-khqr-proof-hardening). Cards
+// that only this browser held are never discarded unseen: the first time
+// it syncs, any card the server lacks is added to the server's list —
+// whether or not another device saved first — and from then on (a
+// per-tenant marker) the server's list wins, so a card deleted
+// elsewhere stays deleted. Only someone who may change the payment
+// cards (settings:update) can move them up; for anyone else this
+// browser keeps showing its own cards next to the server's until such a
+// person opens POS here.
 
 const SERVER_SCOPE: Scope = 'pos';
+/** The server's limit on one list. */
+const MAX_SERVER_CARDS = 10;
 
 /** The server's answer: the list, and whether it was ever saved. */
 interface StoredAccounts { accounts: Partial<BankAccount>[]; saved: boolean }
@@ -139,37 +151,77 @@ function fromServer(rows: Partial<BankAccount>[] | null | undefined): BankAccoun
   }));
 }
 
+/** Set once this browser's cards are reconciled with the server's list;
+ *  from then on the server's list wins. Per tenant, like the cards. */
+const syncedKey = (): string => `${storageKey(SERVER_SCOPE)}:synced`;
+function isSynced(): boolean {
+  try { return localStorage.getItem(syncedKey()) === '1'; } catch { return false; }
+}
+function markSynced(): void {
+  try { localStorage.setItem(syncedKey(), '1'); } catch { /* best effort */ }
+}
+/** This session was refused the upload (no settings:update): don't ask
+ *  again on every load. */
+let uploadRefused = false;
+
+/** Cards this browser holds that the server's list does not (by id). */
+export function cardsOnlyHere(local: BankAccount[], server: BankAccount[]): BankAccount[] {
+  const ids = new Set(server.map(c => c.id));
+  return local.filter(c => !!c.id && !ids.has(c.id));
+}
+
 async function putServer(accounts: BankAccount[]): Promise<BankAccount[]> {
   const r = await apiJson<StoredAccounts>(`/api/v1/bank-accounts/${SERVER_SCOPE}`, { method: 'PUT', json: accounts });
   return fromServer(r.accounts);
 }
 
 /**
- * The cards for `scope`, from the server for 'pos'. Cards this browser
- * held from before the server kept them are moved up once — only while
- * nothing was ever saved there, so a list emptied on purpose stays empty.
+ * The cards for `scope` as the server has them (reconciling this
+ * browser's own cards first, see above), or null when the server could
+ * not be asked. Callers that let someone EDIT the list use this: a null
+ * means there is no trustworthy list to edit.
  */
-export async function loadBankAccountsSynced(scope: Scope): Promise<BankAccount[]> {
+export async function loadBankAccountsFromServer(scope: Scope): Promise<BankAccount[] | null> {
+  if (scope !== SERVER_SCOPE) return loadBankAccounts(scope);
   const local = loadBankAccounts(scope);
-  if (scope !== SERVER_SCOPE) return local;
-  let server: StoredAccounts;
+  let server: BankAccount[];
   try {
-    server = await apiJson<StoredAccounts>(`/api/v1/bank-accounts/${SERVER_SCOPE}`);
+    server = fromServer((await apiJson<StoredAccounts>(`/api/v1/bank-accounts/${SERVER_SCOPE}`)).accounts);
   } catch {
-    return local;   // offline, or this user may not read POS
+    return null;   // offline, an API from before V418, or no pos:view
   }
-  if (!server.saved && local.length > 0) {
+  if (isSynced()) {
+    saveBankAccounts(scope, server);
+    return server;
+  }
+  const extra = cardsOnlyHere(local, server);
+  if (extra.length === 0) {
+    saveBankAccounts(scope, server);
+    markSynced();
+    return server;
+  }
+  const merged = [...server, ...extra].slice(0, MAX_SERVER_CARDS);
+  if (!uploadRefused) {
     try {
-      const moved = await putServer(local);
-      saveBankAccounts(scope, moved);
-      return moved;
-    } catch {
-      return local; // no pos:update here — keep showing this browser's copy
+      const stored = await putServer(merged);
+      saveBankAccounts(scope, stored);
+      markSynced();
+      return stored;
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) uploadRefused = true;
+      else console.warn('[bank-accounts] could not move this browser\'s cards to the server', e);
     }
   }
-  const accounts = fromServer(server.accounts);
-  saveBankAccounts(scope, accounts);
-  return accounts;
+  // Not moved up from this session: show the server's cards and this
+  // browser's own, and leave the local copy as it is for a session that
+  // can move it.
+  return merged;
+}
+
+/** The cards for `scope`: the server's for 'pos' when it answers, this
+ *  browser's copy when it does not. For screens that only SHOW cards. */
+export async function loadBankAccountsSynced(scope: Scope): Promise<BankAccount[]> {
+  return (await loadBankAccountsFromServer(scope)) ?? loadBankAccounts(scope);
 }
 
 /** Save `scope`'s cards: to the server for 'pos' (throws when it
@@ -178,6 +230,7 @@ export async function saveBankAccountsSynced(scope: Scope, accounts: BankAccount
   if (scope !== SERVER_SCOPE) { saveBankAccounts(scope, accounts); return; }
   try {
     saveBankAccounts(scope, await putServer(accounts));
+    markSynced();
   } catch (e) {
     // An API from before V418 has no /bank-accounts endpoint (the web app
     // deploys on push, the API by hand): keep this browser's copy, as

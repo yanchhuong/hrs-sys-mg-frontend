@@ -3520,7 +3520,10 @@ function ProofImages({ orderId }: { orderId: string }) {
         const rows = await attachmentsApi.list('pos', orderId);
         const out: { id: string; url: string; name: string }[] = [];
         for (const r of rows.filter(a => a.contentType?.startsWith('image/'))) {
-          const url = URL.createObjectURL(await attachmentsApi.fetchBlob(r.id));
+          const blob = await attachmentsApi.fetchBlob(r.id);
+          // Closed while downloading: make no URL nobody will revoke.
+          if (!live) return;
+          const url = URL.createObjectURL(blob);
           made.push(url);
           out.push({ id: r.id, url, name: r.filename });
         }

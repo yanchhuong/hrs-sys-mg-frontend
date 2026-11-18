@@ -16,7 +16,7 @@ import * as settingsApi from '../../api/accountingSettings';
 import * as currencyApi from '../../api/currencySettings';
 import { resolveVideoEmbed } from '../../utils/posCustomerDisplay';
 import {
-  loadBankAccounts, loadBankAccountsSynced, saveBankAccountsSynced, newBankAccountId,
+  loadBankAccounts, loadBankAccountsFromServer, saveBankAccountsSynced, newBankAccountId,
   EMPTY_BANK_ACCOUNT, MAX_BANK_ACCOUNTS_ON_INVOICE, type BankAccount,
 } from '../../utils/bankAccount';
 import { ImageDropZone } from './ImageDropZone';
@@ -25,6 +25,7 @@ import { PayWaySettingsDialog } from './PayWaySettingsDialog';
 import { Loyalty } from '../views/Loyalty';
 import { CommissionSettings } from '../views/CommissionSettings';
 import { DropdownSelect } from './DropdownSelect';
+import { useAuth } from '../../context/AuthContext';
 
 /** v-qr-crop-size-after — what is worth DECODING, versus what is
  *  worth STORING. The first is generous: a phone screenshot is a
@@ -140,6 +141,16 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   // shows every one. Lives in localStorage (per tenant + scope);
   // graduates to the backend settings row when the UX is confirmed.
   const [banks, setBanks] = useState<BankAccount[]>([]);
+  // v-shop-khqr-proof-hardening — POS cards are the shop's payment
+  // destination, shared by every till and the shop page. They are
+  // edited only once the server's list is here (never a stale browser
+  // copy), saved only when edited, and only by someone who holds
+  // settings:update (the PayWay credentials gate; every cashier holds
+  // pos:update). Other scopes stay browser-only, as before.
+  const { canUpdate } = useAuth();
+  const [banksReady, setBanksReady] = useState(true);
+  const [banksDirty, setBanksDirty] = useState(false);
+  const canEditBanks = scope !== 'pos' || canUpdate('settings');
   /** Tab inside the Bank Account section — Manual (uploaded KHQR PNG)
    *  vs ABA PayWay (dynamic KHQR minted per transaction). Filters the
    *  card grid + drives the default mode for newly-added cards. */
@@ -304,8 +315,19 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       .finally(() => { if (!cancelled) setLoading(false); });
     // This browser's copy at once; then, for POS, the server's
     // (v-shop-khqr-proof), which every till and the shop page share.
+    // Until it arrives the cards are shown but not editable, and a
+    // failed load leaves them that way rather than offering this
+    // browser's possibly stale copy for saving.
     setBanks(loadBankAccounts(scope));
-    void loadBankAccountsSynced(scope).then(b => { if (!cancelled) setBanks(b); });
+    setBanksDirty(false);
+    setBanksReady(scope !== 'pos');
+    if (scope === 'pos') {
+      void loadBankAccountsFromServer(scope).then(b => {
+        if (cancelled || b === null) return;
+        setBanks(b);
+        setBanksReady(true);
+      });
+    }
     return () => { cancelled = true; };
   }, [open, scope]);
 
@@ -316,7 +338,12 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       setDraft(saved); // pick up server-stamped updatedAt + updatedByEmail
       // Bank cards save with the same click: to the server for POS
       // (v-shop-khqr-proof), this browser only for the other scopes.
-      await saveBankAccountsSynced(scope, banks);
+      // POS: only when edited, from the server's list, by an owner — an
+      // unrelated settings Save must never write the payment cards.
+      if (scope !== 'pos' || (banksReady && banksDirty && canEditBanks)) {
+        await saveBankAccountsSynced(scope, banks);
+        setBanksDirty(false);
+      }
       toast.success(`${sideLabel} settings saved`);
       onSaved?.(saved);
       onOpenChange(false);
@@ -330,6 +357,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   /** Patch a single bank card by id — keeps the rest of the array
    *  untouched so editing one card doesn't reset siblings. */
   const updateBank = (id: string, patch: Partial<BankAccount>) => {
+    setBanksDirty(true);
     setBanks(prev => prev.map(b => (b.id === id ? { ...b, ...patch } : b)));
   };
   const addBank = () => {
@@ -337,11 +365,16 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     // operator is on — manual cards live in the Manual tab, auto in
     // the ABA PayWay tab. Without this, "Add" from the ABA tab would
     // create a card in the wrong list.
+    setBanksDirty(true);
     setBanks(prev => [...prev, { ...EMPTY_BANK_ACCOUNT, id: newBankAccountId(), mode: bankTab }]);
   };
   const removeBank = (id: string) => {
+    setBanksDirty(true);
     setBanks(prev => prev.filter(b => b.id !== id));
   };
+  /** Bank controls: also locked while the server's list is on its way,
+   *  and for anyone who may not change where payments go. */
+  const banksLocked = loading || saving || !banksReady || !canEditBanks;
 
   /** Read a file as a base64 data URL so the KHQR survives a page
    *  reload (localStorage can't hold a blob). Caps at 1 MB — QR PNGs are
@@ -1031,7 +1064,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                       Settings → PayWay), so the button would just
                       misdirect the operator. */}
                   {bankTab === 'manual' && (
-                    <Button size="sm" onClick={addBank} disabled={loading || saving} className="shrink-0">
+                    <Button size="sm" onClick={addBank} disabled={banksLocked} className="shrink-0">
                       <Plus className="h-3.5 w-3.5 mr-1" /> Add Manual Bank
                     </Button>
                   )}
@@ -1148,6 +1181,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                               type="file"
                               accept="image/*"
                               className="hidden"
+                              disabled={banksLocked}
                               onChange={e => {
                                 const f = e.target.files?.[0];
                                 if (f) handleQrUpload(b.id, f);
@@ -1161,6 +1195,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           <button
                             type="button"
                             onClick={() => updateBank(b.id, { qrDataUrl: '' })}
+                            disabled={banksLocked}
                             className="absolute top-1 right-1 inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/95 border text-red-600 hover:bg-red-50"
                             title="Remove image"
                           >
@@ -1173,6 +1208,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                             type="file"
                             accept="image/*"
                             className="hidden"
+                            disabled={banksLocked}
                             onChange={e => {
                               const f = e.target.files?.[0];
                               if (f) handleQrUpload(b.id, f);
@@ -1201,7 +1237,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           value={b.accountName}
                           onChange={e => updateBank(b.id, { accountName: e.target.value })}
                           placeholder="Account name"
-                          disabled={loading || saving}
+                          disabled={banksLocked}
                           maxLength={25}
                           className="text-sm font-medium"
                         />
@@ -1216,7 +1252,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                             updateBank(b.id, { accountNumber: cleaned });
                           }}
                           placeholder="Account number"
-                          disabled={loading || saving}
+                          disabled={banksLocked}
                           inputMode="numeric"
                           maxLength={9}
                           className="text-sm tabular-nums"
@@ -1225,7 +1261,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           value={b.bankName}
                           onChange={e => updateBank(b.id, { bankName: e.target.value })}
                           placeholder="Bank name (e.g. ABA)"
-                          disabled={loading || saving}
+                          disabled={banksLocked}
                           maxLength={15}
                           className="text-xs h-8"
                         />
@@ -1233,7 +1269,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                           value={b.notes}
                           onChange={e => updateBank(b.id, { notes: e.target.value })}
                           placeholder="Notes (branch, SWIFT…)"
-                          disabled={loading || saving}
+                          disabled={banksLocked}
                           maxLength={20}
                           className="text-xs h-8"
                         />
@@ -1245,7 +1281,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={disableShowOnInvoice || loading || saving}
+                          disabled={disableShowOnInvoice || banksLocked}
                           onChange={e => updateBank(b.id, { showOnInvoice: e.target.checked })}
                           className="h-3.5 w-3.5"
                         />
@@ -1258,6 +1294,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                       <button
                         type="button"
                         onClick={() => removeBank(b.id)}
+                        disabled={banksLocked}
                         className="absolute -top-2 -right-2 inline-flex items-center justify-center w-6 h-6 rounded-full bg-white border border-red-200 text-red-600 hover:bg-red-50 shadow-sm"
                         title="Delete this bank account"
                       >

@@ -798,9 +798,10 @@ export function PublicShopPage() {
           noteParts.push(`Payment: KHQR (${tag} · ${paywaySession.tranId})`);
         } else if (paymentMethod === 'khrqr' && data?.khqrEnabled !== true) {
           // The shop's uploaded KHQR: nothing confirms it but the cashier.
-          noteParts.push(proofFile
-            ? 'Payment: KHQR (shop QR · proof attached)'
-            : 'Payment: KHQR (shop QR · check the bank app)');
+          // The note never claims a proof: the upload runs after this note
+          // is saved and can fail. A proof that did land shows as the
+          // paperclip on the ticket.
+          noteParts.push('Payment: KHQR (shop QR · check the bank app)');
         } else {
           noteParts.push(`Payment: ${paymentMethod === 'khrqr' ? 'KHQR' : 'Cash on hand'}`);
         }
@@ -1685,8 +1686,19 @@ export function PublicShopPage() {
                       <label className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm font-medium text-gray-700 hover:border-blue-400 hover:text-blue-700 cursor-pointer">
                         <Paperclip className="h-4 w-4" />
                         Attach payment screenshot
-                        <input type="file" accept="image/*,application/pdf" className="sr-only"
-                          onChange={e => { const file = e.target.files?.[0]; if (file) setProofFile(file); e.target.value = ''; }} />
+                        {/* The kinds the server keeps (it checks the bytes);
+                            5 MB is its limit for a proof. */}
+                        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" className="sr-only"
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!file) return;
+                            if (file.size > 5 * 1024 * 1024) {
+                              toast.error('That file is too large (5 MB at most). Please attach a screenshot.');
+                              return;
+                            }
+                            setProofFile(file);
+                          }} />
                       </label>
                     )}
                   </div>
