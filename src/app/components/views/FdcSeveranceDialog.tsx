@@ -158,7 +158,7 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
       onCreated?.();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create severance batch');
+      toast.error(err instanceof Error ? err.message : 'Failed to create severance payroll');
     } finally {
       setCreating(false);
     }
@@ -408,7 +408,7 @@ export function FdcSeveranceDialog({ open, onOpenChange, onCreated }: Props) {
             title={rateDirty ? 'Rate changed — click Recalc first' : undefined}
           >
             {creating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Generate Batch ({included.size})
+            Generate Payroll ({included.size})
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -278,7 +278,7 @@ export function SeniorityIndemnityDialog({ open, onOpenChange, onCreated }: Prop
       onCreated?.();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create payroll batch');
+      toast.error(err instanceof Error ? err.message : 'Failed to create payroll');
     } finally {
       setCreating(false);
     }

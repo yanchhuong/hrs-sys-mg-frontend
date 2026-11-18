@@ -672,7 +672,7 @@ export function Payroll() {
       // by the API; its self view reads them separately, so that is not
       // an error worth a toast.
       if (err instanceof ApiError && err.status === 403) { setBatches([]); return; }
-      toast.error(err instanceof Error ? err.message : 'Failed to load payroll batches');
+      toast.error(err instanceof Error ? err.message : 'Failed to load payrolls');
     }
   };
 
@@ -880,7 +880,7 @@ export function Payroll() {
         setSentBank(new Set(items.filter(it => it.bankSentAt).map(it => it.id)));
         setSentBot(new Set(items.filter(it => it.botSentAt).map(it => it.id)));
       } catch (err) {
-        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load batch items');
+        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load payroll items');
       } finally {
         if (!cancelled) setBatchItemsLoading(false);
       }
@@ -975,7 +975,7 @@ export function Payroll() {
     if (!previewData) return;
 
     if (USE_MOCKS) {
-      toast.success(`Payroll batch "${batchName}" uploaded successfully - ${previewData.totalEmployees} employees processed`);
+      toast.success(`Payroll "${batchName}" uploaded successfully - ${previewData.totalEmployees} employees processed`);
       resetUploadDialog();
       return;
     }
@@ -1013,11 +1013,11 @@ export function Payroll() {
         items,
         ...(isPeriodBatch(batchType) ? { periodStart: periodFrom, periodEnd: periodTo } : {}),
       });
-      toast.success(`Payroll batch "${batchName}" submitted for approval - ${previewData.totalEmployees} employees`);
+      toast.success(`Payroll "${batchName}" submitted for approval - ${previewData.totalEmployees} employees`);
       resetUploadDialog();
       await loadBatches();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create payroll batch');
+      toast.error(err instanceof Error ? err.message : 'Failed to create payroll');
     }
   };
 
@@ -1300,7 +1300,7 @@ export function Payroll() {
 
   const requestApproval = (batch: PayrollBatch) => {
     if (batch.uploadedBy === myUserEmpId) {
-      toast.error('Segregation of duties: you cannot approve a batch you uploaded.');
+      toast.error('Segregation of duties: you cannot approve a payroll you uploaded.');
       return;
     }
     setPendingApprovalBatch(batch);
@@ -1331,7 +1331,7 @@ export function Payroll() {
       setPendingApprovalBatch(null);
       await loadBatches();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to approve batch');
+      toast.error(err instanceof Error ? err.message : 'Failed to approve payroll');
     }
   };
 
@@ -1359,7 +1359,7 @@ export function Payroll() {
       setRejectionReason('');
       await loadBatches();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to reject batch');
+      toast.error(err instanceof Error ? err.message : 'Failed to reject payroll');
     }
   };
 
@@ -1384,7 +1384,7 @@ export function Payroll() {
       setCompleteTarget(null);
       await loadBatches();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to mark batch as done');
+      toast.error(err instanceof Error ? err.message : 'Failed to mark payroll as done');
     }
   };
 
@@ -1932,11 +1932,11 @@ export function Payroll() {
       }, asDraft);
       toast.success(asDraft
         ? `Draft "${batchName}" saved — open it to adjust workdays before submitting.`
-        : `Payroll batch "${batchName}" generated for ${activeEmployees.length} employees`);
+        : `Payroll "${batchName}" generated for ${activeEmployees.length} employees`);
       resetUploadDialog();
       await loadBatches();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to generate payroll batch');
+      toast.error(err instanceof Error ? err.message : 'Failed to generate payroll');
     }
   };
 
@@ -2027,7 +2027,7 @@ export function Payroll() {
         deductions: proratedDeductions,
       });
       setBatchItems(prev => prev.map(it => it.id === updated.id ? { ...it, ...updated } as PayrollItem : it));
-      toast.success('Row updated. Batch totals recalculated.');
+      toast.success('Row updated. Payroll totals recalculated.');
       setAdjustTarget(null);
       // Refresh the batch header numbers (totalEarnings / net).
       try {
@@ -2092,7 +2092,7 @@ export function Payroll() {
               <DialogContent className="max-w-7xl max-h-[90vh] flex flex-col p-0 gap-0">
                 <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
                   <DialogTitle className="inline-flex items-center gap-1.5">
-                    {uploadDialogMode === 'generate' ? 'Generate Payroll Batch' : 'Upload Payroll Batch'}
+                    {uploadDialogMode === 'generate' ? 'Generate Payroll' : 'Upload Payroll'}
                     {uploadDialogMode === 'generate' && (
                       <TooltipProvider delayDuration={120}>
                         <Tooltip>
@@ -2245,7 +2245,7 @@ export function Payroll() {
                       value={batchApproverIds}
                       onChange={setBatchApproverIds}
                       max={(payrollSettings.approverCount ?? 3)}
-                      noun="batch"
+                      noun="payroll"
                       candidates={adminUsers
                         .filter(u => u.id !== currentUser?.id)
                         .map(u => {
@@ -2658,7 +2658,7 @@ export function Payroll() {
                           variant="outline"
                           onClick={() => handleComposeBatch('generate', true)}
                           disabled={!batchName.trim() || !periodStart || !periodEnd}
-                          title="Save the batch as a draft so you can review + adjust workdays per employee before submitting for approval"
+                          title="Save the payroll as a draft so you can review + adjust workdays per employee before submitting for approval"
                         >
                           <FileEdit className="mr-2 h-4 w-4" />
                           Save as Draft
@@ -2952,7 +2952,7 @@ export function Payroll() {
                         <span
                           tabIndex={-1}
                           className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
-                          aria-label="About payroll batches"
+                          aria-label="About payrolls"
                         >
                           <Info className="h-3.5 w-3.5" />
                         </span>
@@ -2969,7 +2969,7 @@ export function Payroll() {
                 {statusCounts.pending > 0 && (
                   <p className="text-xs text-gray-500 mt-1">
                     Segregation of duties: Manager uploads, Admin approves.{' '}
-                    <strong>{statusCounts.pending}</strong> batch{statusCounts.pending === 1 ? '' : 'es'} awaiting approval.
+                    <strong>{statusCounts.pending}</strong> payroll{statusCounts.pending === 1 ? '' : 's'} awaiting approval.
                   </p>
                 )}
               </div>
@@ -3885,7 +3885,7 @@ export function Payroll() {
       <AlertDialog open={!!approveTarget} onOpenChange={(o) => !o && setApproveTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Approve payroll batch?</AlertDialogTitle>
+            <AlertDialogTitle>Approve payroll?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>
@@ -3893,7 +3893,7 @@ export function Payroll() {
                 </p>
                 {approveTarget && (
                   <div className="rounded-md border p-3 bg-gray-50 text-sm space-y-1 text-gray-900">
-                    <p><span className="text-gray-500">Batch:</span> <strong>{approveTarget.subject}</strong></p>
+                    <p><span className="text-gray-500">Payroll:</span> <strong>{approveTarget.subject}</strong></p>
                     <p><span className="text-gray-500">Period:</span> {approveTarget.monthYear} · {approveTarget.type}</p>
                     <p><span className="text-gray-500">Employees:</span> {approveTarget.totalEmployees}</p>
                     <p><span className="text-gray-500">Net Salary:</span> <strong>${formatMoney(approveTarget.netSalary)}</strong></p>
@@ -3917,7 +3917,7 @@ export function Payroll() {
       <AlertDialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) { setRejectTarget(null); setRejectionReason(''); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reject payroll batch?</AlertDialogTitle>
+            <AlertDialogTitle>Reject payroll?</AlertDialogTitle>
             <AlertDialogDescription>
               The batch is marked Rejected and the uploader is notified. They can revise and re-submit as a new run.
             </AlertDialogDescription>
@@ -3952,7 +3952,7 @@ export function Payroll() {
       <AlertDialog open={!!completeTarget} onOpenChange={(o) => !o && setCompleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Mark batch as paid / done?</AlertDialogTitle>
+            <AlertDialogTitle>Mark payroll as paid / done?</AlertDialogTitle>
             <AlertDialogDescription>
               Confirm that {completeTarget ? `${completeTarget.totalEmployees} employee${completeTarget.totalEmployees === 1 ? '' : 's'} in ${completeTarget.subject}` : 'this batch'} have received their salary. The bank file should already be processed.
               Marking as Done is permanent and writes an audit entry.

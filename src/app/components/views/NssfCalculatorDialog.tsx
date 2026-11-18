@@ -138,7 +138,7 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
       onCreated?.();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create NSSF batch');
+      toast.error(err instanceof Error ? err.message : 'Failed to create NSSF payroll');
     } finally {
       setCreating(false);
     }
@@ -357,7 +357,7 @@ export function NssfCalculatorDialog({ open, onOpenChange, onCreated }: Props) {
             disabled={!preview || included.size === 0 || creating}
           >
             {creating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Generate Batch ({included.size})
+            Generate Payroll ({included.size})
           </Button>
         </DialogFooter>
       </DialogContent>

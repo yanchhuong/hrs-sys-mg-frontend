@@ -515,7 +515,7 @@ function PayrollDashboardBundle() {
         <StatCard label="Net (MTD)"    value={usd(kpi.netMtd)}       icon={Wallet}    tone="green" />
         <StatCard label="Employees"    value={num(kpi.employeesMtd)} icon={Users}     tone="blue" />
         <StatCard label="Avg. Salary"  value={usd(kpi.avgSalary)}    icon={FileText}  tone="purple" />
-        <StatCard label="Paid batches" value={num(kpi.paidBatchesMtd)} icon={CheckCircle} tone="green" />
+        <StatCard label="Paid payrolls" value={num(kpi.paidBatchesMtd)} icon={CheckCircle} tone="green" />
         <StatCard label="Pending"      value={num(kpi.pendingBatches)} icon={AlertCircle} tone="amber" />
       </div>
 
@@ -561,15 +561,15 @@ function PayrollDashboardBundle() {
           </CardContent>
         </Card>
 
-        {/* Recent batches — status-coloured badges so a Rejected /
+        {/* Recent payrolls — status-coloured badges so a Rejected /
             Pending row jumps out of the log. */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Recent batches</CardTitle>
+            <CardTitle className="text-sm">Recent payrolls</CardTitle>
           </CardHeader>
           <CardContent>
             {recent.length === 0 ? (
-              <div className="text-sm text-gray-400 py-4 text-center">No batches yet.</div>
+              <div className="text-sm text-gray-400 py-4 text-center">No payrolls yet.</div>
             ) : (
               <ul className="space-y-1.5">
                 {recent.map(r => (

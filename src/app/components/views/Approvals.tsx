@@ -774,7 +774,7 @@ export function ApprovalDetailDialog({
                 <div><span className="text-gray-500">Type:</span> <span className="font-medium">{s.type ? capitalize(String(s.type).replace(/_/g, ' ')) : '—'}</span></div>
                 <div><span className="text-gray-500">Employees:</span> <span className="font-medium tabular-nums">{typeof s.totalEmployees === 'number' ? s.totalEmployees : '—'}</span></div>
                 <div><span className="text-gray-500">Net total:</span> <span className="font-medium tabular-nums">{money(s.amount, s.currency)}</span></div>
-                <div><span className="text-gray-500">Batch date:</span> <span className="font-medium tabular-nums">{s.batchDate ? formatDate(String(s.batchDate)) : '—'}</span></div>
+                <div><span className="text-gray-500">Payroll date:</span> <span className="font-medium tabular-nums">{s.batchDate ? formatDate(String(s.batchDate)) : '—'}</span></div>
                 <div><span className="text-gray-500">Status:</span> <span className="font-medium">{s.status ? capitalize(String(s.status)) : '—'}</span></div>
               </div>
             ) : current.sourceType === 'encounter' ? (

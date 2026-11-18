@@ -159,7 +159,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
       onCreated?.();
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create AL Remain batch');
+      toast.error(err instanceof Error ? err.message : 'Failed to create AL Remain payroll');
     } finally {
       setCreating(false);
     }
@@ -353,7 +353,7 @@ export function AlRemainDialog({ open, onOpenChange, onCreated }: Props) {
           </Button>
           <Button onClick={handleCreate} disabled={!preview || included.size === 0 || creating}>
             {creating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Generate Batch ({included.size})
+            Generate Payroll ({included.size})
           </Button>
         </DialogFooter>
       </DialogContent>
