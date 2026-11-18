@@ -143,6 +143,17 @@
       <style>
         html, body { height: 100%; margin: 0; }
         #root { height: 100%; }
+        /* iOS bounces the DOCUMENT, so a drag on an iPad lifts the whole
+           app and shows whatever paints <html> underneath it — which,
+           with no background set, is the theme colour: a slab of brand
+           blue below the chrome. The same thing was reported on the
+           phone build. overscroll-behavior stops the bounce (Safari 16+)
+           and the background colour makes the gutter the app's own grey
+           on anything older. Deliberately NOT overflow: hidden — the
+           shell scrolls inside <main>, but the public landing and shop
+           pages scroll the document and must keep doing so. */
+        html, body { overscroll-behavior: none; }
+        html { background-color: #f9fafb; }
         /* Landing-page style refresh: Hanken Grotesk for display /
            marketing headings, Inter for body copy. Scoped to the
            opt-in .landing-typography wrapper so the in-app UI
