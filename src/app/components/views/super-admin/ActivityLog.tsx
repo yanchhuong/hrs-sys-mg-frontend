@@ -142,7 +142,7 @@ export function ActivityLog() {
     } catch (err: unknown) {
       // Keep the previous events in place, but say the refresh failed
       // instead of letting a failed first load read as "no events".
-      setLoadError(err instanceof Error ? err.message : 'Could not load platform events.');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load platform events.');
     } finally {
       setLoading(false);
     }

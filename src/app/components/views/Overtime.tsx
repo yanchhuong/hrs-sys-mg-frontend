@@ -302,7 +302,7 @@ export function Overtime() {
       setDeptList(await departmentsApi.list());
     } catch (err) {
       // Non-fatal — department cells fall back to the raw UUID.
-      console.warn('Could not load departments', err);
+      console.warn('Failed to load departments', err);
     }
   };
 
@@ -339,7 +339,7 @@ export function Overtime() {
           : 'replace',
       });
     } catch (err) {
-      console.warn('Could not load OT settings — using default 1.5 / 2 / 3 rates', err);
+      console.warn('Failed to load OT settings — using default 1.5 / 2 / 3 rates', err);
     }
   };
 

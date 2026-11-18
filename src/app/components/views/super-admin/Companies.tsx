@@ -537,7 +537,7 @@ export function Companies() {
       // Fall back to "everything on" — the plain Create default — so
       // the dialog is still usable; say so rather than copy silently wrong.
       setModuleToggles(Object.fromEntries(ALL_INSTALL_KEYS.map(k => [k, true])));
-      toast.warning(`Couldn't read ${c.name}'s apps — all apps are checked instead.`);
+      toast.warning(`Failed to read ${c.name}'s apps — all apps are checked instead.`);
       console.warn('tenantModules.get for copy failed', e);
     } finally {
       setCopyLoading(false);

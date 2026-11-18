@@ -244,7 +244,7 @@ export function AttendanceSettings() {
       const list = await departmentsApi.list();
       setDeptList(list);
     } catch (err) {
-      console.warn('Could not load departments for OT rule picker', err);
+      console.warn('Failed to load departments for OT rule picker', err);
     }
   };
 
@@ -286,7 +286,7 @@ export function AttendanceSettings() {
         halfDayDays: (remote.halfDayDays || []).map(d => SHORT_TO_LONG[d] ?? d),
       });
     } catch (err) {
-      console.warn('Could not load General attendance settings', err);
+      console.warn('Failed to load General attendance settings', err);
     }
   };
 
@@ -1467,7 +1467,7 @@ function ScanRuleCard({
       // This used to be a localStorage write that could not fail. Now
       // it's a round trip, so a failure has to be reported instead of
       // leaving the admin believing the rule is live.
-      toast.error(e instanceof Error ? e.message : 'Could not save the scan rule');
+      toast.error(e instanceof Error ? e.message : 'Failed to save the scan rule');
     } finally {
       setSaving(false);
     }
@@ -1486,7 +1486,7 @@ function ScanRuleCard({
       await onSave({ ...DEFAULT_SCAN_RULE });
       toast.success('Scan rule reset to defaults');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not reset the scan rule');
+      toast.error(e instanceof Error ? e.message : 'Failed to reset the scan rule');
     } finally {
       setSaving(false);
     }

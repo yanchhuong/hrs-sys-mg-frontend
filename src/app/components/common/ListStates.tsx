@@ -55,7 +55,7 @@ export function ListError({ message, onRetry, colSpan }: {
       <div className="inline-flex flex-col items-center gap-3">
         <div className="flex items-center gap-2 text-sm text-red-600">
           <AlertCircle className="h-4 w-4" />
-          <span>{message || 'Could not load this list.'}</span>
+          <span>{message || 'Failed to load this list.'}</span>
         </div>
         {onRetry && (
           <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">

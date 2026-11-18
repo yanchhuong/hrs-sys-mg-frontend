@@ -138,7 +138,7 @@ export function Offices({ embedded = false }: Props = {}) {
       }
       navigator.geolocation.getCurrentPosition(
         ok,
-        err => toast.error(`Couldn't read location: ${err.message}`),
+        err => toast.error(`Failed to read location: ${err.message}`),
         { enableHighAccuracy: false, timeout: 15_000, maximumAge: 60_000 },
       );
     };

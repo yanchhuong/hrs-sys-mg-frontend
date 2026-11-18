@@ -88,7 +88,7 @@ export function StockCounts() {
       const res = await api.list({ status: status === 'all' ? undefined : status, size: 200 });
       setRows(res.content ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not load stock counts');
+      toast.error(e instanceof Error ? e.message : 'Failed to load stock counts');
     } finally {
       setLoading(false);
     }
@@ -240,7 +240,7 @@ export function StockCounts() {
                         <Button size="sm" variant="outline" className="h-7 px-2 text-xs"
                                 onClick={async () => {
                                   try { await api.claim(r.id); toast.success(`${r.countNo} is yours`); setOpenId(r.id); }
-                                  catch (e) { toast.error(e instanceof Error ? e.message : 'Could not take it'); void load(); }
+                                  catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to take it'); void load(); }
                                 }}>
                           Take
                         </Button>
@@ -249,7 +249,7 @@ export function StockCounts() {
                         <Button size="sm" variant="outline" className="ml-1 h-7 px-2 text-xs"
                                 onClick={async () => {
                                   try { await api.claimReview(r.id); toast.success(`You review ${r.countNo}`); setOpenId(r.id); }
-                                  catch (e) { toast.error(e instanceof Error ? e.message : 'Could not take the review'); void load(); }
+                                  catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to take the review'); void load(); }
                                 }}>
                           Review
                         </Button>
@@ -327,7 +327,7 @@ function CountDetail(
       const [c, l] = await Promise.all([api.get(id), api.lines(id, filter === 'all' ? undefined : filter)]);
       setCount(c); setLines(l);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not load the count');
+      toast.error(e instanceof Error ? e.message : 'Failed to load the count');
     } finally {
       setLoading(false);
     }
@@ -899,7 +899,7 @@ function NewCountDialog(
         : `${c.countNo} requested — waiting for someone to take it`);
       onCreated(c.id);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not create the count');
+      toast.error(e instanceof Error ? e.message : 'Failed to create the count');
     } finally {
       setSaving(false);
     }

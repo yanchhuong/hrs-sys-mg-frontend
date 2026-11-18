@@ -322,7 +322,7 @@ export function PublicShopPage() {
         setGeoBusy(false);
         const msg = err.code === err.PERMISSION_DENIED
           ? 'Location permission denied — paste a Google Maps link instead.'
-          : 'Could not get your location — paste a Google Maps link instead.';
+          : 'Failed to get your location — paste a Google Maps link instead.';
         toast.error(msg);
       },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 },

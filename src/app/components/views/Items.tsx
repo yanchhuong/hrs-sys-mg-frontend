@@ -1106,7 +1106,7 @@ export function Items() {
     try {
       it = await itemsApi.get(row.id);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not load the item');
+      toast.error(e instanceof Error ? e.message : 'Failed to load the item');
       return;
     }
     setEditing(it);

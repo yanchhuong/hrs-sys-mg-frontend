@@ -93,7 +93,7 @@ export function KitchenSharePage(): JSX.Element {
       // endpoint already excludes done).
       setOrders(prev => prev.map(o => o.id === orderId ? updated : o));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not update the order');
+      toast.error(e instanceof Error ? e.message : 'Failed to update the order');
       // Force a refresh so we're not stuck on the optimistic value.
       try {
         const fresh = await kitchenApi.getPublicKitchenOrders(code);

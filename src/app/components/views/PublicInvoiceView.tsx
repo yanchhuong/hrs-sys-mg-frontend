@@ -85,7 +85,7 @@ export function PublicInvoiceView() {
       );
       setData(payload);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Unable to load invoice';
+      const msg = e instanceof Error ? e.message : 'Failed to load invoice';
       // BE returns BadRequest with message "INVOICE_CODE_REQUIRED"
       // for both missing + mismatched codes (uniform so an attacker
       // can't distinguish "URL is valid" from "URL is invalid").

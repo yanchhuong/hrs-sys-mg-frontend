@@ -38,7 +38,7 @@ export function ResetPasswordPage() {
       await resetPassword(token, password);
       setDone(true);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not reset password');
+      toast.error(err instanceof Error ? err.message : 'Failed to reset password');
     } finally {
       setBusy(false);
     }

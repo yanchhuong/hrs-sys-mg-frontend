@@ -235,7 +235,7 @@ export function PlatformTelegram() {
         toast.info('No chats yet — send any message to the bot (or post in a group it was added to), then press Find again.');
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not read chats');
+      toast.error(e instanceof Error ? e.message : 'Failed to read chats');
     } finally {
       setErrDetecting(false);
     }

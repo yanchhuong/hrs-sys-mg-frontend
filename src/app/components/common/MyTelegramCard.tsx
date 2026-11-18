@@ -40,7 +40,7 @@ export function MyTelegramCard() {
       window.open(res.url, '_blank', 'noopener');
       toast.info('Telegram opened — press Start there, then come back and tap Check.');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not create the link');
+      toast.error(e instanceof Error ? e.message : 'Failed to create the link');
     } finally {
       setBusy(false);
     }
@@ -59,7 +59,7 @@ export function MyTelegramCard() {
       setLink(null);
       toast.success('Telegram disconnected');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not disconnect');
+      toast.error(e instanceof Error ? e.message : 'Failed to disconnect');
     } finally {
       setBusy(false);
     }

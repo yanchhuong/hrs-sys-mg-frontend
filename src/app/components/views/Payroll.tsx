@@ -1622,7 +1622,7 @@ export function Payroll() {
             : 'replace',
         };
       } catch (err) {
-        console.warn('Could not load OT settings — using Cambodian Labour Law defaults', err);
+        console.warn('Failed to load OT settings — using Cambodian Labour Law defaults', err);
       }
     }
     // Per-day bucketed pay (V59). A cross-midnight OT splits at 24:00
@@ -1704,7 +1704,7 @@ export function Payroll() {
       } catch (err) {
         // Non-fatal — the template still downloads, just without the
         // computed OT / deduction / increase columns.
-        console.warn('Could not preload OT / deductions / increases for template', err);
+        console.warn('Failed to preload OT / deductions / increases for template', err);
       }
     }
 
@@ -4193,7 +4193,7 @@ function RemarkCell({
       await onSave(next);
     } catch (e) {
       setText(value);
-      toast.error(e instanceof Error ? e.message : 'Could not save the remark');
+      toast.error(e instanceof Error ? e.message : 'Failed to save the remark');
     } finally {
       setBusy(false);
     }

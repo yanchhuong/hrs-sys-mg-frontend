@@ -110,7 +110,7 @@ export function PlatformPolicy() {
       setDirty(false);
       setLoadError(null);
     } catch (err: unknown) {
-      setLoadError(err instanceof Error ? err.message : 'Could not load the platform policy.');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load the platform policy.');
     } finally {
       setLoading(false);
     }
@@ -129,7 +129,7 @@ export function PlatformPolicy() {
         localStorage.setItem(POLICY_KEY, JSON.stringify(next));
         return true;
       } catch {
-        toast.error('Could not save the policy in this browser');
+        toast.error('Failed to save the policy in this browser');
         return false;
       }
     }

@@ -57,7 +57,7 @@ async function decode(file: File): Promise<HTMLImageElement | ImageBitmap> {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not decode image')); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to decode image')); };
     img.src = url;
   });
 }
@@ -97,7 +97,7 @@ export async function makeThumbnailFromUrl(
     const el = new Image();
     el.crossOrigin = 'anonymous';
     el.onload = () => resolve(el);
-    el.onerror = () => reject(new Error('Could not decode image for thumbnail'));
+    el.onerror = () => reject(new Error('Failed to decode image for thumbnail'));
     el.src = src;
   });
   const srcW = img.naturalWidth || img.width;

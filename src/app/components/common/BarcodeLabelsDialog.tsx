@@ -98,7 +98,7 @@ export function BarcodeLabelsDialog({
       } catch {
         if (!cancelled) {
           setPng(null);
-          toast.error('Could not render this barcode');
+          toast.error('Failed to render this barcode');
         }
       }
     })();
@@ -126,7 +126,7 @@ export function BarcodeLabelsDialog({
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast.success(`${grid.perPage} labels · ${paper}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not build the PDF');
+      toast.error(err instanceof Error ? err.message : 'Failed to build the PDF');
     } finally {
       setBusy(false);
     }

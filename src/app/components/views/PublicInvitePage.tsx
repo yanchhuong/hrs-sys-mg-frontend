@@ -95,7 +95,7 @@ export function PublicInvitePage() {
       setData(res.event);
       setDone(true);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not save your response');
+      toast.error(e instanceof Error ? e.message : 'Failed to save your response');
     } finally {
       setSaving(false);
     }

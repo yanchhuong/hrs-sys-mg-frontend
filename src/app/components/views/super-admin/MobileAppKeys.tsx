@@ -103,7 +103,7 @@ export function MobileAppKeys() {
     } catch {
       // Clipboard API needs a secure context; surface the value so the
       // operator can still select it manually rather than silently failing.
-      toast.error('Could not copy — select the value and copy manually.');
+      toast.error('Failed to copy — select the value and copy manually.');
     }
   };
 
@@ -124,7 +124,7 @@ export function MobileAppKeys() {
       setNewNotes('');
       toast.success(`Key minted — ${created.appKey}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not mint key');
+      toast.error(e instanceof Error ? e.message : 'Failed to mint key');
     } finally {
       setCreating(false);
     }
@@ -139,7 +139,7 @@ export function MobileAppKeys() {
       setKeys(prev => prev.map(k => (k.id === updated.id ? updated : k)));
       toast.success('Key revoked — builds using it can no longer start.');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not revoke key');
+      toast.error(e instanceof Error ? e.message : 'Failed to revoke key');
     }
   };
 
@@ -155,7 +155,7 @@ export function MobileAppKeys() {
     } catch (e) {
       // The server rejects shared providers and already-claimed
       // domains with an explanatory message — surface it verbatim.
-      toast.error(e instanceof Error ? e.message : 'Could not add domain');
+      toast.error(e instanceof Error ? e.message : 'Failed to add domain');
     } finally {
       setAddingDomain(false);
     }
@@ -173,7 +173,7 @@ export function MobileAppKeys() {
       setDomains(prev => prev.filter(x => x.id !== d.id));
       toast.success(`${d.domain} unmapped`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not remove domain');
+      toast.error(e instanceof Error ? e.message : 'Failed to remove domain');
     }
   };
 

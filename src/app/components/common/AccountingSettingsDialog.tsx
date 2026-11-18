@@ -375,12 +375,12 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     reader.onload = () => {
       const raw = String(reader.result || '');
       if (!raw) {
-        toast.error('Could not read image');
+        toast.error('Failed to read image');
         return;
       }
       setCropFor({ id, src: raw });
     };
-    reader.onerror = () => toast.error('Could not read image');
+    reader.onerror = () => toast.error('Failed to read image');
     reader.readAsDataURL(file);
   };
 

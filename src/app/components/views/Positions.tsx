@@ -178,7 +178,7 @@ export function Positions({ embedded = false }: PositionsProps = {}) {
           baseSalary: e.baseSalary,
         })));
       } catch (err) {
-        console.warn('Could not load departments/employees for Positions view', err);
+        console.warn('Failed to load departments/employees for Positions view', err);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

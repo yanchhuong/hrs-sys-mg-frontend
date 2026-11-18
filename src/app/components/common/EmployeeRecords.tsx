@@ -114,7 +114,7 @@ export function RecordRowActions({ rec, onChanged, onEdit }: {
       toast.success(`${RECORD_TYPES[rec.recordType].label}: ${STATUS_LABEL[to] ?? to}`);
       onChanged();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not change the status');
+      toast.error(e instanceof Error ? e.message : 'Failed to change the status');
     } finally {
       setBusy(null);
     }
@@ -283,7 +283,7 @@ export function RecordFormDialog({ open, onOpenChange, record, employeeId, emplo
       onSaved(saved);
       onOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not save the record');
+      toast.error(e instanceof Error ? e.message : 'Failed to save the record');
     } finally {
       setSaving(false);
     }

@@ -707,7 +707,7 @@ export function UserManagement() {
       setDeptList(list ?? []);
     } catch (err) {
       if (err instanceof ModuleDisabledError) { setDeptList([]); return; }
-      console.warn('Could not load departments', err);
+      console.warn('Failed to load departments', err);
     }
   };
 
@@ -1425,7 +1425,7 @@ export function UserManagement() {
       if (n === 0) toast.info(`${what} is already at default`);
       else toast.success(`${what} reset to default — ${n} change${n === 1 ? '' : 's'}. Review, then Save Changes.`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not load default permissions');
+      toast.error(err instanceof Error ? err.message : 'Failed to load default permissions');
     }
   }, [loadDefaults, applyDefaults]);
 

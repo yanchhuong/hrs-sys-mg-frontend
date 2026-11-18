@@ -120,7 +120,7 @@ export function parseAttendanceExcel(file: File): Promise<ParsedAttendance> {
           if (a === 'employee no') { headerIdx = i; break; }
         }
         if (headerIdx < 0) {
-          resolve({ rows: [], errors: ['Could not find header row "Employee No". Use the downloaded template.'], skipped: 0 });
+          resolve({ rows: [], errors: ['Failed to find header row "Employee No". Use the downloaded template.'], skipped: 0 });
           return;
         }
 

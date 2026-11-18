@@ -139,7 +139,7 @@ export function DevicesCard() {
       await navigator.clipboard.writeText(key);
       toast.success('Secret key copied to clipboard');
     } catch {
-      toast.error('Could not copy — your browser blocked clipboard access');
+      toast.error('Failed to copy — your browser blocked clipboard access');
     }
   };
 

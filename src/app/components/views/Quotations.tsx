@@ -2016,7 +2016,7 @@ function MailQuotationDialog({
         ? { filename: pdf.filename, contentType: pdf.contentType, base64: pdf.base64 }
         : undefined;
       if (!pdf) {
-        toast.warning('Could not render the quotation PDF — sending link only.');
+        toast.warning('Failed to render the quotation PDF — sending link only.');
       } else {
         const kb = Math.round((pdf.base64.length * 3 / 4) / 1024);
         console.info(`[MailQuotationDialog] Attaching ${pdf.filename} (${kb} KB)`);
@@ -2038,7 +2038,7 @@ function MailQuotationDialog({
         window.location.href = href;
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not send email');
+      toast.error(e instanceof Error ? e.message : 'Failed to send email');
     } finally {
       setBusy(false);
     }

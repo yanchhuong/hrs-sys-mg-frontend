@@ -537,7 +537,7 @@ export function ReadingTracking() {
           if (coverReq.current !== token) return;
           setForm(f => ({ ...f, coverImageUrl: full.coverImageUrl ?? null }));
         })
-        .catch(e => { if (coverReq.current === token) toast.error(e instanceof Error ? e.message : 'Could not load the cover photo'); })
+        .catch(e => { if (coverReq.current === token) toast.error(e instanceof Error ? e.message : 'Failed to load the cover photo'); })
         .finally(() => { if (coverReq.current === token) setCoverLoading(false); });
     } else {
       setCoverLoading(false);
@@ -614,7 +614,7 @@ export function ReadingTracking() {
     setViewLoading(true);
     library.getReading(r.id)
       .then(full => { if (viewReq.current === token) setView(full); })
-      .catch(e => { if (viewReq.current === token) toast.error(e instanceof Error ? e.message : 'Could not load activity'); })
+      .catch(e => { if (viewReq.current === token) toast.error(e instanceof Error ? e.message : 'Failed to load activity'); })
       .finally(() => { if (viewReq.current === token) setViewLoading(false); });
   };
 
@@ -645,7 +645,7 @@ export function ReadingTracking() {
     if (!view) return;
     setGuestBusy(p.customerId);
     try { applyUpdated(await library.setActivityRsvp(view.id, p.customerId, rsvp)); }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save the answer'); }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to save the answer'); }
     finally { setGuestBusy(null); }
   };
 
@@ -660,7 +660,7 @@ export function ReadingTracking() {
     if (!ok) return;
     setGuestBusy(p.customerId);
     try { applyUpdated(await library.removeActivityGuest(view.id, p.customerId)); toast.success('Guest removed'); }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Could not remove guest'); }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to remove guest'); }
     finally { setGuestBusy(null); }
   };
 
@@ -1542,7 +1542,7 @@ export function ReadingTracking() {
                           // silently staying open on a 403 / validation
                           // fail — otherwise the operator has no idea
                           // why the "+ Add" click did nothing.
-                          const msg = e instanceof Error ? e.message : 'Could not add title';
+                          const msg = e instanceof Error ? e.message : 'Failed to add title';
                           toast.error(msg);
                           throw e;
                         }

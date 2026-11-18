@@ -105,7 +105,7 @@ export function CashAdvances() {
   // A notification (or other page) can ask to open one advance here.
   useOpenIntent('cash-advances', (id) => {
     cashAdvancesApi.get(id).then(setDetail)
-      .catch(e => toast.error(e instanceof Error ? e.message : 'Could not open the cash advance'));
+      .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to open the cash advance'));
   });
   /** Draft being edited — opened from the detail dialog's Edit button. */
   const [editing, setEditing] = useState<cashAdvancesApi.CashAdvance | null>(null);

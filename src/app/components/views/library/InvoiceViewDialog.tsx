@@ -135,7 +135,7 @@ export function InvoiceViewDialog({ open, onOpenChange, invoiceId, memberName, m
     try {
       const res = await invoicesApi.sendEmail(invoiceId, {});
       if (res.delivered) toast.success(`Emailed to ${res.to}`);
-      else               toast.warning(`Could not deliver to ${res.to}`);
+      else               toast.warning(`Failed to deliver to ${res.to}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Email send failed');
     } finally { setSending(false); }

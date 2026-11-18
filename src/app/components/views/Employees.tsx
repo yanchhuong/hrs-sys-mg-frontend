@@ -753,7 +753,7 @@ export function Employees() {
       setDepartments(await departmentsApi.list());
     } catch (err) {
       // Non-fatal — without the map, dept cells fall back to the raw id.
-      console.warn('Could not load departments', err);
+      console.warn('Failed to load departments', err);
     }
   };
 
@@ -764,7 +764,7 @@ export function Employees() {
     try {
       setPositions(await positionsApi.list());
     } catch (err) {
-      console.warn('Could not load positions', err);
+      console.warn('Failed to load positions', err);
     }
   };
 
@@ -1067,7 +1067,7 @@ export function Employees() {
     }
     const raw = rawEmployees.find(r => r.id === employee.apiId || r.empNo === employee.id);
     if (!raw) {
-      toast.error('Could not locate the employee record to update');
+      toast.error('Failed to locate the employee record to update');
       return;
     }
     // Snapshot for rollback if the API call rejects.

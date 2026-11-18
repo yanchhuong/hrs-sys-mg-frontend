@@ -132,7 +132,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
     : undefined;
   const copyPlayUrl = async () => {
     try { await navigator.clipboard.writeText(playUrl); toast.success('Link copied'); }
-    catch { toast.error('Could not copy — long-press the link instead'); }
+    catch { toast.error('Failed to copy — long-press the link instead'); }
   };
   const sharePlayUrl = async () => {
     try { await navigator.share({ title: 'Spin & Win', text: 'Spin the wheel and win a prize!', url: playUrl }); }
@@ -239,7 +239,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
       .catch(e => { err = e; });
     const fail = () => {
       setSpinning(false);
-      toast.error(err instanceof Error ? err.message : 'Could not spin — please try again.');
+      toast.error(err instanceof Error ? err.message : 'Failed to spin — please try again.');
     };
 
     // Reduced motion: no spin — just show where it landed.
@@ -304,7 +304,7 @@ export function PublicShopSpin({ shopCode, lifted }: {
       showResult({ ...r, alreadySpun: result.alreadySpun });
       toast.success('Saved — the shop has your details');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not save — please try again.');
+      toast.error(err instanceof Error ? err.message : 'Failed to save — please try again.');
     } finally {
       setSavingContact(false);
     }

@@ -34,7 +34,7 @@ export function PublicRsvpPage() {
       setData(await api.answerPublicRsvp(token, r));
       setJustAnswered(true);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not save your response');
+      toast.error(e instanceof Error ? e.message : 'Failed to save your response');
     } finally {
       setSaving(false);
     }

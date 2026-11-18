@@ -312,7 +312,7 @@ export function AllLeave() {
     try {
       setDeptList(await departmentsApi.list());
     } catch (err) {
-      console.warn('Could not load departments', err);
+      console.warn('Failed to load departments', err);
     }
   };
 

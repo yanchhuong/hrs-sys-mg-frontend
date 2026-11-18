@@ -238,7 +238,7 @@ export function TaxBrackets({ embedded = false }: Props = {}) {
       {loadError ? (
         <Card>
           <CardContent>
-            <ListError message={`Could not load the saved tax brackets — ${loadError}`} onRetry={() => void load()} />
+            <ListError message={`Failed to load the saved tax brackets — ${loadError}`} onRetry={() => void load()} />
           </CardContent>
         </Card>
       ) : !loaded ? (

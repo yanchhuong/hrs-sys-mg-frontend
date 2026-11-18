@@ -81,7 +81,7 @@ export function AppointmentSettingsDialog({ open, onOpenChange, onChanged }: {
     } catch (e) {
       // Surface the failure — swallowing it showed "No clinical staff yet".
       setEmployees([]);
-      setLoadError(e instanceof Error ? e.message : 'Could not load employees.');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load employees.');
     } finally {
       setLoading(false);
     }

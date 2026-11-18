@@ -47,7 +47,7 @@ export function ResourcesDialog({ item, canWrite, canRemove = canWrite, onClose 
   const [blocks, setBlocks] = useState<bookingsApi.ResourceBlock[] | null>(null);
   const load = () => bookingsApi.listBlocks(item.id)
     .then(setBlocks)
-    .catch(e => { setBlocks([]); toast.error(e instanceof Error ? e.message : 'Could not load blocks'); });
+    .catch(e => { setBlocks([]); toast.error(e instanceof Error ? e.message : 'Failed to load blocks'); });
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [item.id]);
 
   const now = Date.now();
@@ -71,7 +71,7 @@ export function ResourcesDialog({ item, canWrite, canRemove = canWrite, onClose 
       setFrom(''); setTo(''); setReason('');
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not block');
+      toast.error(e instanceof Error ? e.message : 'Failed to block');
     } finally { setSaving(false); }
   };
 
@@ -87,7 +87,7 @@ export function ResourcesDialog({ item, canWrite, canRemove = canWrite, onClose 
       toast.success('Block removed');
       await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not remove');
+      toast.error(e instanceof Error ? e.message : 'Failed to remove');
     }
   };
 

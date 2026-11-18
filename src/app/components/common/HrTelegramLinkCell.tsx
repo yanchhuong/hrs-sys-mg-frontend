@@ -94,7 +94,7 @@ export function HrTelegramLinkCell({
       toast.success('Link copied');
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
-      toast.error('Could not copy to clipboard');
+      toast.error('Failed to copy to clipboard');
     }
   };
 

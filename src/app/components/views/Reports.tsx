@@ -884,7 +884,7 @@ function PayrollReport({
           .sort((a, b) => b.localeCompare(a));
         setAvailableMonths(months);
       } catch (err) {
-        if (!cancelled) console.warn('Could not load payroll batches', err);
+        if (!cancelled) console.warn('Failed to load payroll batches', err);
       }
     })();
     return () => { cancelled = true; };

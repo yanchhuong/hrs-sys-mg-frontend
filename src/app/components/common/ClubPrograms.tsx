@@ -194,7 +194,7 @@ function ProgramFormDialog({ open, onOpenChange, program, employees, onSaved }: 
       onSaved();
       onOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not save the program');
+      toast.error(e instanceof Error ? e.message : 'Failed to save the program');
     } finally {
       setSaving(false);
     }
@@ -298,7 +298,7 @@ export function MyClubsPanel() {
       setApplyTo(null); setNote(''); setRole('member');
       void load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not send the request');
+      toast.error(e instanceof Error ? e.message : 'Failed to send the request');
     } finally {
       setSending(false);
     }

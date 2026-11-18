@@ -2784,7 +2784,7 @@ function InvoiceDetailDialog({
         // the two produce the same document.
         template: receiptTemplate,
       });
-      if (!ok) toast.error('Could not open the print dialog.');
+      if (!ok) toast.error('Failed to open the print dialog.');
     } catch (e) {
       console.warn('POS receipt lookup failed, falling back to invoice print', e);
       await printWithKhmerFonts();
@@ -3849,7 +3849,7 @@ function InvoiceDetailDialog({
                     await load();
                     onChanged();
                   } catch (e) {
-                    toast.error(e instanceof Error ? e.message : 'Could not save');
+                    toast.error(e instanceof Error ? e.message : 'Failed to save');
                   } finally {
                     setBusy(false);
                   }
@@ -4882,7 +4882,7 @@ function PaymentReceiptDialog({
         body { margin: 0; padding: 0; font-family: 'Inter', system-ui, sans-serif; }
       </style></head><body>${node.outerHTML}</body></html>`
     );
-    if (!ok) toast.error('Could not open the print dialog.');
+    if (!ok) toast.error('Failed to open the print dialog.');
   };
 
   return (
@@ -5002,7 +5002,7 @@ function MailInvoiceDialog({
       if (!pdf) {
         // Surface the missing attachment so the operator knows the
         // recipient will only get the link, not the printable PDF.
-        toast.warning('Could not render the invoice PDF — sending link only.');
+        toast.warning('Failed to render the invoice PDF — sending link only.');
       } else {
         const kb = Math.round((pdf.base64.length * 3 / 4) / 1024);
         console.info(`[MailInvoiceDialog] Attaching ${pdf.filename} (${kb} KB)`);
@@ -5027,7 +5027,7 @@ function MailInvoiceDialog({
         window.location.href = href;
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not send email');
+      toast.error(e instanceof Error ? e.message : 'Failed to send email');
     } finally {
       setBusy(false);
     }

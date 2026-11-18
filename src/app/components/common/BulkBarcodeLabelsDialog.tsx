@@ -162,7 +162,7 @@ export function BulkBarcodeLabelsDialog({
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast.success(`${labels.length} label${labels.length === 1 ? '' : 's'} · ${pages} sheet${pages === 1 ? '' : 's'} · ${paper}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not build the PDF');
+      toast.error(err instanceof Error ? err.message : 'Failed to build the PDF');
     } finally {
       setBusy(false);
     }

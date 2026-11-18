@@ -566,7 +566,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       setDeptList(await departmentsApi.list());
     } catch (err) {
       // Non-fatal — department cells fall back to the raw UUID.
-      console.warn('Could not load departments', err);
+      console.warn('Failed to load departments', err);
     }
   };
 
@@ -582,7 +582,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       // approved (per spec), and only rejection makes them disappear.
       setLeaves(res.data.filter(r => r.status !== 'rejected'));
     } catch (err) {
-      console.warn('Could not load leaves', err);
+      console.warn('Failed to load leaves', err);
     }
   };
 
@@ -612,7 +612,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       }
       setMonthlyLeaves(all.filter(r => r.status !== 'rejected'));
     } catch (err) {
-      console.warn('Could not load monthly leaves', err);
+      console.warn('Failed to load monthly leaves', err);
     }
   };
 
@@ -634,7 +634,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       } catch { /* keep the default cutoff */ }
       setMonthlyAttendance(rows.map(r => adaptApiAttendance(r, cutoff)));
     } catch (err) {
-      console.warn('Could not load monthly attendance', err);
+      console.warn('Failed to load monthly attendance', err);
     } finally {
       setMonthlyAttendanceLoading(false);
     }
@@ -673,7 +673,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       for (const list of lists) for (const h of list) if (h.date) dates.add(h.date);
       setHolidayDates(dates);
     } catch (err) {
-      console.warn('Could not load holidays', err);
+      console.warn('Failed to load holidays', err);
     }
   };
 
@@ -714,7 +714,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       // the module-disabled case so the console stays clean; real
       // errors still surface.
       if (isModuleDisabledError(err)) return;
-      console.warn('Could not load OT requests', err);
+      console.warn('Failed to load OT requests', err);
     }
   };
 
@@ -755,7 +755,7 @@ export function Attendance({ onNavigate }: Props = {}) {
             halfDayDays: remote.halfDayDays || [],
           });
         } catch (err) {
-          console.warn('Could not load general attendance settings', err);
+          console.warn('Failed to load general attendance settings', err);
         }
       })();
       // OT settings — feed the rule-type badge on the Apply OT branch.
@@ -779,7 +779,7 @@ export function Attendance({ onNavigate }: Props = {}) {
               : 'replace',
           });
         } catch (err) {
-          console.warn('Could not load OT settings — Apply OT badge will use defaults', err);
+          console.warn('Failed to load OT settings — Apply OT badge will use defaults', err);
         }
       })();
     }
@@ -1837,7 +1837,7 @@ export function Attendance({ onNavigate }: Props = {}) {
       e => e.id === record.employeeId || (e as any).apiId === record.employeeId,
     );
     if (!emp) {
-      toast.error('Could not resolve employee for this row');
+      toast.error('Failed to resolve employee for this row');
       return;
     }
     if (!record.date) {

@@ -173,7 +173,7 @@ export function EventPanel({ announcement, canManage, onChanged }: {
       toast.success('Response saved');
       await onChanged();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not save your response');
+      toast.error(e instanceof Error ? e.message : 'Failed to save your response');
     } finally {
       setSaving(false);
     }
@@ -236,7 +236,7 @@ function ShareInvite({ id, open }: { id: string; open: boolean }) {
         toast.success('Invite link ready');
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not make the link');
+      toast.error(e instanceof Error ? e.message : 'Failed to make the link');
     } finally {
       setBusy(false);
     }
@@ -290,7 +290,7 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
       setRows(await api.listParticipants(announcement.id));
     } catch (e) {
       setRows([]);
-      toast.error(e instanceof Error ? e.message : 'Could not load participants');
+      toast.error(e instanceof Error ? e.message : 'Failed to load participants');
     }
   }, [announcement.id]);
   useEffect(() => { void load(); }, [load]);
@@ -312,7 +312,7 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
       toast.success(ev.closedByHost ? 'Responses reopened' : 'Responses closed');
       await onChanged();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not change it');
+      toast.error(e instanceof Error ? e.message : 'Failed to change it');
     } finally {
       setClosing(false);
     }
@@ -343,7 +343,7 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
       setTimeout(() => setCopied(c => (c === r.id ? null : c)), 1500);
       toast.success(`Link for ${r.name} copied`);
     } catch {
-      toast.error('Could not copy the link');
+      toast.error('Failed to copy the link');
     }
   };
 
@@ -360,7 +360,7 @@ function AttendanceOverview({ announcement, canManage, onChanged }: {
       toast.success(`${r.name} removed`);
       await Promise.all([load(), onChanged()]);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not remove');
+      toast.error(e instanceof Error ? e.message : 'Failed to remove');
     }
   };
 
@@ -529,7 +529,7 @@ function AddParticipantsDialog({ announcement, invitedIds, onClose, onAdded }: {
         setPeople(list.filter(p => !invitedIds.has(`${kind}:${p.id}`)));
       } catch (e) {
         setPeople([]);
-        toast.error(e instanceof Error ? e.message : 'Could not load people');
+        toast.error(e instanceof Error ? e.message : 'Failed to load people');
       }
     })();
     // invitedIds is a fresh Set each render; load once per open.
@@ -548,7 +548,7 @@ function AddParticipantsDialog({ announcement, invitedIds, onClose, onAdded }: {
       toast.success(`${added} ${added === 1 ? 'person' : 'people'} invited`);
       await onAdded();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not add');
+      toast.error(e instanceof Error ? e.message : 'Failed to add');
     } finally {
       setSaving(false);
     }

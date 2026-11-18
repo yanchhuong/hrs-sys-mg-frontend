@@ -148,7 +148,7 @@ export function SyncMonitor() {
       setLoadError(null);
     } catch (e) {
       // Leave whatever was last loaded, but show the failure inline.
-      setLoadError(e instanceof Error ? e.message : 'Could not load local installations.');
+      setLoadError(e instanceof Error ? e.message : 'Failed to load local installations.');
     } finally {
       setLoading(false);
     }
@@ -167,7 +167,7 @@ export function SyncMonitor() {
       await navigator.clipboard.writeText(text);
       toast.success(`${label} copied`);
     } catch {
-      toast.error(`Could not copy ${label.toLowerCase()} — select the text and copy it manually`);
+      toast.error(`Failed to copy ${label.toLowerCase()} — select the text and copy it manually`);
     }
   };
 

@@ -373,7 +373,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       // Non-fatal — the dialog still renders with blank fields, same as
       // before this fix. Most likely cause: user has no linked employee.
-      console.warn('Could not load /employees/me', err);
+      console.warn('Failed to load /employees/me', err);
       setLinkedEmployee(null);
     }
   }, [currentUser?.employeeId]);

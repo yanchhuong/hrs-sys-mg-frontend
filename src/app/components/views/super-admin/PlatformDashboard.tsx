@@ -129,7 +129,7 @@ export function PlatformDashboard() {
       for (const row of p) map[row.planTier] = row;
       setPlansByTier(map);
     } catch (e) {
-      if (!isCancelled()) setError(e instanceof Error ? e.message : 'Could not load the platform dashboard.');
+      if (!isCancelled()) setError(e instanceof Error ? e.message : 'Failed to load the platform dashboard.');
     } finally {
       if (!isCancelled()) setLoading(false);
     }

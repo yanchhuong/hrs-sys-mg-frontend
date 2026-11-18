@@ -138,7 +138,7 @@ export function Backups() {
       setLoadError(null);
     } catch (err: unknown) {
       // Leave previous backups in place, but surface the failure.
-      setLoadError(err instanceof Error ? err.message : 'Could not load backups.');
+      setLoadError(err instanceof Error ? err.message : 'Failed to load backups.');
     } finally {
       setLoading(false);
     }
@@ -154,7 +154,7 @@ export function Backups() {
       setSchedules(list.map(toPageSchedule));
       setScheduleError(null);
     } catch (err: unknown) {
-      setScheduleError(err instanceof Error ? err.message : 'Could not load backup schedules.');
+      setScheduleError(err instanceof Error ? err.message : 'Failed to load backup schedules.');
     }
   };
 

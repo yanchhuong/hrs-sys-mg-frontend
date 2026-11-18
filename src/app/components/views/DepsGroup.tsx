@@ -251,7 +251,7 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
       })));
     } catch (err) {
       // Non-fatal — Manager picker just stays empty.
-      console.warn('Could not load employees for Manager picker', err);
+      console.warn('Failed to load employees for Manager picker', err);
     }
   };
 
@@ -519,7 +519,7 @@ export function DepsGroup({ embedded = false, onChanged }: DepsGroupProps = {}) 
       // so a department move wiped them.
       const raw = rawEmployeesRef.current.get(targetEmployeeId);
       if (!raw) {
-        toast.error('Could not locate the employee record to update');
+        toast.error('Failed to locate the employee record to update');
         return;
       }
       await employeesApi.update(raw.id, {

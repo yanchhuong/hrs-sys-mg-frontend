@@ -75,7 +75,7 @@ async function toCoverDataUrl(file: File): Promise<string> {
     return await new Promise<string>((ok, fail) => {
       const r = new FileReader();
       r.onload = () => ok(String(r.result));
-      r.onerror = () => fail(new Error('Could not read that GIF'));
+      r.onerror = () => fail(new Error('Failed to read that GIF'));
       r.readAsDataURL(file);
     });
   }
@@ -84,7 +84,7 @@ async function toCoverDataUrl(file: File): Promise<string> {
     const img = await new Promise<HTMLImageElement>((ok, fail) => {
       const i = new Image();
       i.onload = () => ok(i);
-      i.onerror = () => fail(new Error('Could not read that image'));
+      i.onerror = () => fail(new Error('Failed to read that image'));
       i.src = url;
     });
     const scale = Math.min(1, 1600 / img.naturalWidth);
@@ -115,7 +115,7 @@ export function EventFields({ value, onChange }: {
         if (total > MAX_COVERS_TOTAL) { toast.error('Photos together are over 14 MB — use fewer or smaller ones'); break; }
         next.push(url);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Could not read that image');
+        toast.error(err instanceof Error ? err.message : 'Failed to read that image');
       }
     }
     onChange({ coverDataUrls: next });

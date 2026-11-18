@@ -330,7 +330,7 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
                   await forgotPassword(forgotEmail.trim());
                   setForgotSent(true);
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Could not send reset email');
+                  toast.error(err instanceof Error ? err.message : 'Failed to send reset email');
                 } finally {
                   setForgotBusy(false);
                 }

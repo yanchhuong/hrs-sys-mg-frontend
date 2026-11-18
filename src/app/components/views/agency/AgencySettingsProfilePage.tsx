@@ -26,7 +26,7 @@ export function AgencySettingsProfilePage() {
     setLoadError(null);
     Promise.all([
       agencyApi.me().catch((e: unknown) => {
-        setLoadError(e instanceof Error ? e.message : 'Could not load agency profile.');
+        setLoadError(e instanceof Error ? e.message : 'Failed to load agency profile.');
         return null;
       }),
       tasksApi.members.list().then(list => list.length).catch(() => 0),
@@ -71,7 +71,7 @@ export function AgencySettingsProfilePage() {
               ))}
             </div>
           ) : !agency ? (
-            <ListError message={loadError ?? 'Could not load agency profile.'} onRetry={load} />
+            <ListError message={loadError ?? 'Failed to load agency profile.'} onRetry={load} />
           ) : (
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
               <ProfileRow label="Name" value={agency.name} />

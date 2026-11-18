@@ -77,7 +77,7 @@ export function QrScanPage() {
     const onError = (err: GeolocationPositionError) => {
       setErrMsg(err.code === err.PERMISSION_DENIED
         ? 'Location permission denied. Tap the lock icon in the address bar to allow it, then refresh.'
-        : `Couldn't read location: ${err.message}`);
+        : `Failed to read location: ${err.message}`);
       setPhase('location_denied');
     };
 
@@ -255,7 +255,7 @@ export function QrScanPage() {
           {phase === 'error' && (
             <div className="text-center py-4">
               <AlertTriangle className="h-10 w-10 text-rose-500 mx-auto mb-2" />
-              <p className="font-medium">Couldn't check you in</p>
+              <p className="font-medium">Failed to check you in</p>
               <p className="text-xs text-gray-500 mt-1">{errMsg}</p>
               <Button
                 className="mt-4 w-full" variant="outline"

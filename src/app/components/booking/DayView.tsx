@@ -62,7 +62,7 @@ export function DayView({ items, customers, canWrite, onOpenBooking, onChanged }
     if (!itemId) return;
     setLoading(true);
     try { setData(await bookingsApi.daySchedule(itemId, day)); }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Could not load the day'); }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to load the day'); }
     finally { setLoading(false); }
   }, [itemId, day]);
   useEffect(() => { void load(); }, [load]);
@@ -223,7 +223,7 @@ function QuickBookDialog({ itemId, unit, priceUnit, from, to, customers, onClose
       toast.success(`${unit.name} booked`);
       onSaved();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not book');
+      toast.error(e instanceof Error ? e.message : 'Failed to book');
     } finally { setSaving(false); }
   };
 

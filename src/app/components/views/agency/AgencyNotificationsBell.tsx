@@ -57,7 +57,7 @@ export function AgencyNotificationsBell() {
     setItems(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x));
     setUnread(c => Math.max(0, c - 1));
     try { await notifApi.notifications.markRead(n.id); }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Could not mark as read'); }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to mark as read'); }
   };
 
   const onMarkAll = async () => {
@@ -66,7 +66,7 @@ export function AgencyNotificationsBell() {
     setUnread(0);
     try { await notifApi.notifications.markAllRead(); }
     catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not mark all as read');
+      toast.error(e instanceof Error ? e.message : 'Failed to mark all as read');
       void loadList();
     }
   };

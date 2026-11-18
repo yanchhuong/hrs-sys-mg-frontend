@@ -2520,7 +2520,7 @@ function PosCheckoutDialog({
         setCouponInput(c.code);
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Could not check the code.';
+      const msg = e instanceof Error ? e.message : 'Failed to check the code.';
       setCouponError(/not found/i.test(msg) ? 'No coupon with that code.' : msg);
     } finally {
       setCheckingCoupon(false);
@@ -3632,7 +3632,7 @@ function PosReceiptDialog({ order, settings, items, companyInfo, receiptTpl, cus
     // some browsers refuse a pop-up triggered mid-render.
     const t = setTimeout(() => {
       const ok = printPosReceipt({ order, settings, items, company: companyInfo, customer, shopNameFallback: companyInfo?.name ?? undefined, template: receiptTpl });
-      if (!ok) toast.error('Could not open the print dialog.');
+      if (!ok) toast.error('Failed to open the print dialog.');
     }, 200);
     return () => clearTimeout(t);
   }, [order, settings, items, companyInfo, customer]);
@@ -3661,7 +3661,7 @@ function PosReceiptDialog({ order, settings, items, companyInfo, receiptTpl, cus
         <DialogFooter>
           <Button variant="outline" onClick={() => {
             const ok = printPosReceipt({ order, settings, items, company: companyInfo, customer, shopNameFallback: companyInfo?.name ?? undefined, template: receiptTpl });
-            if (!ok) toast.error('Could not open the print dialog.');
+            if (!ok) toast.error('Failed to open the print dialog.');
           }}>
             <Printer className="h-4 w-4 mr-1.5" /> Print
           </Button>

@@ -245,7 +245,7 @@ export function BulkUploadItemsDialog({
         const created = await warehousesApi.create({ name: displayName });
         warehouseKeyToId.set(key, created.id);
       } catch (err) {
-        console.warn(`[BulkUpload] Could not create warehouse "${displayName}"`, err);
+        console.warn(`[BulkUpload] Failed to create warehouse "${displayName}"`, err);
         // Fall through — every row that referenced this name will
         // import without a warehouse. Not fatal.
       }

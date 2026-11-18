@@ -100,7 +100,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
       await afterPhotoChange(false);
       toast.success('Profile photo removed');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not remove the photo');
+      toast.error(err instanceof Error ? err.message : 'Failed to remove the photo');
     }
   };
 
@@ -658,7 +658,7 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
                     toast.success(next ? 'Push notifications enabled' : 'Push notifications disabled');
                   } catch (err) {
                     setNotificationsOn(prev);
-                    toast.error(err instanceof Error ? err.message : 'Could not update push notifications');
+                    toast.error(err instanceof Error ? err.message : 'Failed to update push notifications');
                   } finally {
                     setSavingNotifications(false);
                   }

@@ -178,7 +178,7 @@ export function NotificationsBell({ onNavigate }: {
       setUnread(c => Math.max(0, c - 1));
       try { await api.markRead(n.kind, n.id); } catch (e) {
         // Rare — if it fails, the next refresh will reconcile.
-        toast.error(e instanceof Error ? e.message : 'Could not mark as read');
+        toast.error(e instanceof Error ? e.message : 'Failed to mark as read');
       }
     }
     // v-agency-doc-comments-tenant-reply — if this ping is an
@@ -204,7 +204,7 @@ export function NotificationsBell({ onNavigate }: {
         setOpenApproval(chains.get(target.chainId) ?? await approvalsApi.get(target.chainId));
         setOpen(false);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Could not open this approval');
+        toast.error(e instanceof Error ? e.message : 'Failed to open this approval');
       }
       return;
     }
@@ -223,7 +223,7 @@ export function NotificationsBell({ onNavigate }: {
     setItems(prev => prev.map(x => ({ ...x, read: true })));
     setUnread(0);
     try { await api.markAllRead(); } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not mark all as read');
+      toast.error(e instanceof Error ? e.message : 'Failed to mark all as read');
       void loadList(); // resync on failure
     }
   };
