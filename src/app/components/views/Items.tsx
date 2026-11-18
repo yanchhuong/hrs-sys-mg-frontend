@@ -2244,7 +2244,7 @@ export function Items() {
                 <Input
                   value={form.name}
                   onChange={e => setForm({ ...form, name: e.target.value })}
-                  placeholder="Product or service name"
+                  placeholder="Item or service name"
                   maxLength={LEN.name}
                 />
               </div>

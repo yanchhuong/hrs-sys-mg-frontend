@@ -407,7 +407,7 @@ export function Quotations() {
             <ListTable>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-44">Quote No</TableHead>
+                  <TableHead className="w-44">Quotation No</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Recipient</TableHead>
                   <TableHead className="w-28">Issue Date</TableHead>

@@ -1309,7 +1309,7 @@ function ReceiptPreview({ receiptId, formatDate }: PreviewProps & { receiptId: s
       <div className="grid grid-cols-[110px_1fr] gap-y-1.5 text-sm">
         <span className="text-gray-500">Vendor</span>
         <span className="font-medium">{vendorName || '—'}</span>
-        <span className="text-gray-500">Supplier</span>
+        <span className="text-gray-500">Type of Supplier</span>
         <span className="font-medium">{capitalize(receipt.supplierType.replace(/_/g, ' '))}</span>
         {receipt.taxId && (
           <>
