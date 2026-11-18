@@ -564,7 +564,7 @@ export function Overtime() {
   const handleMarkUnpaid = async (id: string) => {
     if (!(await confirm({
       title: 'Undo paid?',
-      message: 'The overtime goes back to Approved and the next payroll run will include it.',
+      message: 'The overtime goes back to Approved and the next payroll will include it.',
       confirmLabel: 'Undo paid',
     }))) return;
     try {

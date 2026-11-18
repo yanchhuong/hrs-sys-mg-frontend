@@ -529,7 +529,7 @@ function PayrollDashboardBundle() {
           <CardContent>
             {trend.length === 0 || peak === 0 ? (
               <div className="text-sm text-gray-400 py-8 text-center">
-                No payroll runs in the last 6 months.
+                No payrolls in the last 6 months.
               </div>
             ) : (
               <div className="flex items-end gap-3 h-48 pt-2">

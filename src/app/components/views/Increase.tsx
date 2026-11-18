@@ -654,7 +654,7 @@ export function Increase() {
             <DialogHeader>
               <DialogTitle>{editingId ? 'Edit Salary Increase' : 'Add Salary Increase'}</DialogTitle>
               <DialogDescription>
-                {editingId ? 'Change this increase — it applies from the next payroll run.' : 'Record a raise, bonus, or promotion'}
+                {editingId ? 'Change this increase — it applies from the next payroll.' : 'Record a raise, bonus, or promotion'}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">

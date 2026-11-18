@@ -162,7 +162,7 @@ export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, o
                       <p className="text-xs text-gray-500 leading-relaxed">
                         When on, the Employee dialog shows a <strong>Beneficiary</strong> section
                         where HR submits the employee's bank/wallet details to PayWay. PayWay returns
-                        a Beneficiary ID stored on the employee record and reused on every payroll run.
+                        a Beneficiary ID stored on the employee record and reused on every payroll.
                       </p>
                       <p className="text-xs text-gray-500 leading-relaxed">
                         When off, the Beneficiary section is hidden entirely and payroll never calls
@@ -172,7 +172,7 @@ export function EmployeeSettingsDialog({ open, onOpenChange, showHrBot = true, o
                         <div className="space-y-0.5">
                           <Label className="text-sm font-medium cursor-pointer">Enable PayWay payout</Label>
                           <p className="text-[11px] text-gray-500">
-                            Show the Beneficiary form + use PayWay's Payout API on payroll runs.
+                            Show the Beneficiary form + use PayWay's Payout API on payrolls.
                           </p>
                         </div>
                         <Switch checked={paywayEnabled} onCheckedChange={setPaywayEnabled} disabled={payoutSaving || !canSavePayout} />
