@@ -16,7 +16,7 @@ import * as settingsApi from '../../api/accountingSettings';
 import * as currencyApi from '../../api/currencySettings';
 import { resolveVideoEmbed } from '../../utils/posCustomerDisplay';
 import {
-  loadBankAccounts, saveBankAccounts, newBankAccountId,
+  loadBankAccounts, loadBankAccountsSynced, saveBankAccountsSynced, newBankAccountId,
   EMPTY_BANK_ACCOUNT, MAX_BANK_ACCOUNTS_ON_INVOICE, type BankAccount,
 } from '../../utils/bankAccount';
 import { ImageDropZone } from './ImageDropZone';
@@ -302,7 +302,10 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       .then(s => { if (!cancelled) setDraft(s); })
       .catch(e => toast.error(e instanceof Error ? e.message : 'Failed to load settings'))
       .finally(() => { if (!cancelled) setLoading(false); });
+    // This browser's copy at once; then, for POS, the server's
+    // (v-shop-khqr-proof), which every till and the shop page share.
     setBanks(loadBankAccounts(scope));
+    void loadBankAccountsSynced(scope).then(b => { if (!cancelled) setBanks(b); });
     return () => { cancelled = true; };
   }, [open, scope]);
 
@@ -311,9 +314,9 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     try {
       const saved = await settingsApi.update(scope, draft);
       setDraft(saved); // pick up server-stamped updatedAt + updatedByEmail
-      // Bank info is browser-local for now — save alongside the
-      // server-persisted settings so a single Save click commits both.
-      saveBankAccounts(scope, banks);
+      // Bank cards save with the same click: to the server for POS
+      // (v-shop-khqr-proof), this browser only for the other scopes.
+      await saveBankAccountsSynced(scope, banks);
       toast.success(`${sideLabel} settings saved`);
       onSaved?.(saved);
       onOpenChange(false);

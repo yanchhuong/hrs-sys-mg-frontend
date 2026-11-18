@@ -11,6 +11,7 @@
  * read, so users don't lose their setup when the dialog upgrades.
  */
 import type { AccountingScope } from '../api/accountingSettings';
+import { apiJson, ApiError } from '../api/client';
 
 export interface BankAccount {
   id: string;
@@ -105,4 +106,84 @@ export function loadBankAccounts(scope: Scope): BankAccount[] {
 export function saveBankAccounts(scope: Scope, accounts: BankAccount[]): void {
   if (typeof localStorage === 'undefined') return;
   localStorage.setItem(storageKey(scope), JSON.stringify(accounts));
+}
+
+/* ------------------------------------------------------------------ */
+/* v-shop-khqr-proof — scope 'pos' lives on the server.                */
+/* ------------------------------------------------------------------ */
+//
+// POS Setup → Bank Account is one list for every till (web and mobile),
+// the customer Display and the public shop page: GET / PUT
+// /api/v1/bank-accounts/pos. This browser keeps its copy in localStorage
+// for when the server cannot be reached. Every other scope is still
+// browser-only, as above.
+
+const SERVER_SCOPE: Scope = 'pos';
+
+/** The server's answer: the list, and whether it was ever saved. */
+interface StoredAccounts { accounts: Partial<BankAccount>[]; saved: boolean }
+
+/** Server rows carry null where this type carries ''. */
+function fromServer(rows: Partial<BankAccount>[] | null | undefined): BankAccount[] {
+  return (rows ?? []).map(r => ({
+    ...EMPTY_BANK_ACCOUNT,
+    ...r,
+    id: r.id ?? newBankAccountId(),
+    bankName: r.bankName ?? '',
+    accountName: r.accountName ?? '',
+    accountNumber: r.accountNumber ?? '',
+    notes: r.notes ?? '',
+    qrDataUrl: r.qrDataUrl ?? '',
+    showOnInvoice: r.showOnInvoice ?? false,
+    mode: r.mode ?? 'manual',
+  }));
+}
+
+async function putServer(accounts: BankAccount[]): Promise<BankAccount[]> {
+  const r = await apiJson<StoredAccounts>(`/api/v1/bank-accounts/${SERVER_SCOPE}`, { method: 'PUT', json: accounts });
+  return fromServer(r.accounts);
+}
+
+/**
+ * The cards for `scope`, from the server for 'pos'. Cards this browser
+ * held from before the server kept them are moved up once — only while
+ * nothing was ever saved there, so a list emptied on purpose stays empty.
+ */
+export async function loadBankAccountsSynced(scope: Scope): Promise<BankAccount[]> {
+  const local = loadBankAccounts(scope);
+  if (scope !== SERVER_SCOPE) return local;
+  let server: StoredAccounts;
+  try {
+    server = await apiJson<StoredAccounts>(`/api/v1/bank-accounts/${SERVER_SCOPE}`);
+  } catch {
+    return local;   // offline, or this user may not read POS
+  }
+  if (!server.saved && local.length > 0) {
+    try {
+      const moved = await putServer(local);
+      saveBankAccounts(scope, moved);
+      return moved;
+    } catch {
+      return local; // no pos:update here — keep showing this browser's copy
+    }
+  }
+  const accounts = fromServer(server.accounts);
+  saveBankAccounts(scope, accounts);
+  return accounts;
+}
+
+/** Save `scope`'s cards: to the server for 'pos' (throws when it
+ *  refuses, so Save can say so), this browser only otherwise. */
+export async function saveBankAccountsSynced(scope: Scope, accounts: BankAccount[]): Promise<void> {
+  if (scope !== SERVER_SCOPE) { saveBankAccounts(scope, accounts); return; }
+  try {
+    saveBankAccounts(scope, await putServer(accounts));
+  } catch (e) {
+    // An API from before V418 has no /bank-accounts endpoint (the web app
+    // deploys on push, the API by hand): keep this browser's copy, as
+    // before, rather than fail the whole Save. Anything else — a refused
+    // image, no permission — still reaches Save's error toast.
+    if (e instanceof ApiError && e.status === 404) { saveBankAccounts(scope, accounts); return; }
+    throw e;
+  }
 }

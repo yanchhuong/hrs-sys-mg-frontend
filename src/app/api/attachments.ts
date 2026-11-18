@@ -1,6 +1,8 @@
-import { apiJson, apiFetch, apiVoid, API_BASE, getToken } from './client';
+import { apiJson, apiFetch, apiVoid, apiOrigin, apiPath, getToken } from './client';
 
-export type AttachmentDocType = 'invoice' | 'bill' | 'receipt' | 'encounter' | 'hospital_logo' | 'employee_records';
+/** 'pos' — a POS order's files: the payment screenshot a shop-page customer
+ *  attaches (v-shop-khqr-proof). Guarded by the pos module. */
+export type AttachmentDocType = 'invoice' | 'bill' | 'receipt' | 'encounter' | 'hospital_logo' | 'employee_records' | 'pos';
 
 export interface Attachment {
   id: string;
@@ -14,6 +16,13 @@ export interface Attachment {
 
 export async function list(docType: AttachmentDocType, docId: string): Promise<Attachment[]> {
   return apiJson('/api/v1/attachments', { query: { docType, docId } });
+}
+
+/** docId → file count for the given documents. Documents with none are
+ *  absent. `docIds` travels comma-joined; Spring binds it to the list. */
+export async function counts(docType: AttachmentDocType, docIds: string[]): Promise<Record<string, number>> {
+  if (docIds.length === 0) return {};
+  return apiJson('/api/v1/attachments/counts', { query: { docType, docIds: docIds.join(',') } });
 }
 
 /** Multipart upload. Builds a FormData manually because the
@@ -41,19 +50,25 @@ export async function upload(
   return res.json();
 }
 
-/** Download URL — the browser opens it directly so the bearer token
- *  needs to be on the request. We return a fetch promise that yields
- *  a blob URL; the caller is responsible for revoking it. */
-export async function download(id: string, filename: string): Promise<void> {
+/** The file's bytes. The bearer token has to ride the request, so this
+ *  is a fetch, not a bare URL. Composed with apiOrigin() + apiPath()
+ *  like every other call: production's base ends in /api-02, and a
+ *  plain API_BASE + '/api/v1/…' became /api-02/api/v1/… and 404'd —
+ *  every attachment download on the deployed web app failed. */
+export async function fetchBlob(id: string): Promise<Blob> {
   const tok = getToken();
   const res = await fetch(
-    `${API_BASE.replace(/\/$/, '')}/api/v1/attachments/${id}/download`,
-    {
-      headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-    },
+    `${apiOrigin()}${apiPath(`/api/v1/attachments/${id}/download`)}`,
+    { headers: tok ? { Authorization: `Bearer ${tok}` } : {} },
   );
   if (!res.ok) throw new Error(`Download failed (${res.status})`);
-  const blob = await res.blob();
+  return res.blob();
+}
+
+/** Save the file: fetched with the token, handed to the browser as a
+ *  download. */
+export async function download(id: string, filename: string): Promise<void> {
+  const blob = await fetchBlob(id);
   const url = URL.createObjectURL(blob);
   // Trigger an <a download> click — the simplest cross-browser
   // way to surface the bytes as a Save-As dialog.

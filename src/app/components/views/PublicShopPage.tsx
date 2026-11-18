@@ -4,7 +4,7 @@ import {
   Loader2, Search, MapPin, AlertCircle, Store, Package,
   ShoppingCart, Plus, Minus, X, CheckCircle2, StickyNote,
   Navigation, ExternalLink, Info, Truck, Hand, QrCode, Banknote,
-  Phone, Mail, ChevronLeft, ChevronRight, ArrowUp,
+  Phone, Mail, ChevronLeft, ChevronRight, ArrowUp, Paperclip,
 } from 'lucide-react';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -298,6 +298,10 @@ export function PublicShopPage() {
    *  gateway on every state flip. Reset when (cart total, method,
    *  mode) changes. Pattern mirrors the POS checkout dialog. */
   const paywayAttemptKeyRef = useRef<string | null>(null);
+  /** v-shop-khqr-proof — the screenshot of a payment to the shop's
+   *  uploaded KHQR, sent with the order. Optional: the cashier can still
+   *  check the bank app. PayWay needs none — it confirms by itself. */
+  const [proofFile, setProofFile] = useState<File | null>(null);
 
   /** One-tap geolocation → composed Google Maps URL. Soft-fails on
    *  permission denied / unsupported / timeout so the customer can
@@ -624,6 +628,9 @@ export function PublicShopPage() {
   useEffect(() => {
     if (!checkoutOpen) return;
     if (orderMode !== 'delivery' || paymentMethod !== 'khrqr') return;
+    // v-shop-khqr-proof — only PayWay mints; the shop's uploaded KHQR is
+    // a fixed image the page already has.
+    if (data?.khqrEnabled !== true) return;
     if (cartTotal <= 0) return;
     const key = `${cartTotal.toFixed(2)}|${orderMode}|${paymentMethod}`;
     if (paywayAttemptKeyRef.current === key) return;
@@ -789,6 +796,11 @@ export function PublicShopPage() {
         if (paymentMethod === 'khrqr' && paywaySession) {
           const tag = paywaySession.status === 'paid' ? 'paid' : 'pending';
           noteParts.push(`Payment: KHQR (${tag} · ${paywaySession.tranId})`);
+        } else if (paymentMethod === 'khrqr' && data?.khqrEnabled !== true) {
+          // The shop's uploaded KHQR: nothing confirms it but the cashier.
+          noteParts.push(proofFile
+            ? 'Payment: KHQR (shop QR · proof attached)'
+            : 'Payment: KHQR (shop QR · check the bank app)');
         } else {
           noteParts.push(`Payment: ${paymentMethod === 'khrqr' ? 'KHQR' : 'Cash on hand'}`);
         }
@@ -831,6 +843,18 @@ export function PublicShopPage() {
       const result = isTableMode
         ? await shopApi.submitPublicOrderByTable(tableCode, orderBody)
         : await shopApi.submitPublicOrder(code, orderBody);
+      // v-shop-khqr-proof — the payment screenshot, onto the order just
+      // made. The order stands either way; only the proof can fail here.
+      if (proofFile && paymentMethod === 'khrqr' && data?.khqrEnabled !== true && result.proofToken) {
+        try {
+          await shopApi.uploadPaymentProof(data?.code ?? code, result.id, result.proofToken, proofFile);
+          toast.success('Payment proof sent');
+        } catch (e) {
+          const why = e instanceof Error && e.message ? ': ' + e.message : '';
+          toast.error('Order placed, but the proof did not upload' + why + '. Show it at the counter.');
+        }
+      }
+      setProofFile(null);
       setConfirmed(result);
       setCheckoutOpen(false);
       clearCart();
@@ -934,6 +958,10 @@ export function PublicShopPage() {
   // treated as false to be safe (better to hide than to show a
   // button whose mint would 500).
   const khqrEnabled = data.khqrEnabled === true;
+  /** v-shop-khqr-proof — PayWay off but the shop uploaded its own KHQR:
+   *  that one is offered instead (never both), with an optional proof. */
+  const manualKhqr = khqrEnabled ? [] : (data.manualKhqr ?? []);
+  const khqrOffered = khqrEnabled || manualKhqr.length > 0;
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -1585,12 +1613,12 @@ export function PublicShopPage() {
                 <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                   Payment method
                 </p>
-                <div className={khqrEnabled ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'}>
+                <div className={khqrOffered ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'}>
                   {/* V303 — KHQR hidden entirely when the tenant
                       hasn't uploaded PayWay credentials. Only the
                       Cash option shows in that case (single-col
                       layout). */}
-                  {khqrEnabled && (
+                  {khqrOffered && (
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('khrqr')}
@@ -1624,7 +1652,47 @@ export function PublicShopPage() {
                     QR image when the session is live, green "Paid"
                     pill once PayWay's push confirms the customer's
                     payment. */}
-                {paymentMethod === 'khrqr' && (
+                {/* v-shop-khqr-proof — the shop's own KHQR (PayWay off).
+                    A fixed image: the customer pays the amount shown
+                    and can attach the confirmation screen, which the
+                    cashier opens from the order. */}
+                {paymentMethod === 'khrqr' && !khqrEnabled && manualKhqr.length > 0 && (
+                  <div className="rounded-md border bg-white p-3 space-y-3">
+                    <div className="text-xs text-gray-500 text-center">
+                      Scan with your bank app to pay <span className="font-semibold tabular-nums">${cartTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto hover-scroll-x justify-center">
+                      {manualKhqr.map((b, i) => (
+                        <div key={i} className="shrink-0 flex flex-col items-center gap-1">
+                          <img src={b.qrDataUrl} alt={b.bankName || 'KHQR'}
+                            className="w-44 h-44 object-contain bg-gray-50 rounded-md border" />
+                          {b.bankName && <div className="text-xs font-semibold text-gray-800">{b.bankName}</div>}
+                          {b.accountName && <div className="text-[11px] text-gray-500">{b.accountName}</div>}
+                          {b.accountNumber && <div className="text-[11px] text-gray-500 tabular-nums">{b.accountNumber}</div>}
+                        </div>
+                      ))}
+                    </div>
+                    {proofFile ? (
+                      <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        <span className="flex-1 min-w-0 truncate">{proofFile.name}</span>
+                        <button type="button" onClick={() => setProofFile(null)} aria-label="Remove attachment"
+                          className="text-emerald-700 hover:text-emerald-900">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm font-medium text-gray-700 hover:border-blue-400 hover:text-blue-700 cursor-pointer">
+                        <Paperclip className="h-4 w-4" />
+                        Attach payment screenshot
+                        <input type="file" accept="image/*,application/pdf" className="sr-only"
+                          onChange={e => { const file = e.target.files?.[0]; if (file) setProofFile(file); e.target.value = ''; }} />
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                {paymentMethod === 'khrqr' && khqrEnabled && (
                   <div className="rounded-md border bg-white p-3">
                     {paywayBusy && !paywaySession && (
                       <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-6">

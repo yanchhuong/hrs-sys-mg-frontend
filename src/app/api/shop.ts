@@ -6,7 +6,7 @@
  * The browse page calls {@link getPublicMenu} with no auth header — the
  * code is the entire secret, so anyone with /shop/{code} can read.
  */
-import { apiJson } from './client';
+import { apiFetch, apiJson } from './client';
 
 export interface ShopLinkInfo {
   code: string;
@@ -99,10 +99,14 @@ export interface PublicShopPayload {
    *  the FE hides add-to-cart / cart / checkout so the page reads as
    *  a menu preview only. Absent (undefined) treated as true. */
   orderingEnabled?: boolean;
-  /** V303 — true when the tenant has PayWay (KHQR) credentials on
-   *  file. When false the FE hides the KHQR payment button because
-   *  the mint call would fail. */
+  /** V303 — true when the tenant's PayWay is configured AND switched
+   *  on (v-shop-khqr-proof; it used to be "credentials on file"). When
+   *  false the PayWay KHQR is hidden. */
   khqrEnabled?: boolean;
+  /** v-shop-khqr-proof — the shop's uploaded KHQRs, offered when PayWay
+   *  is off (one KHQR, never both). The customer scans one and may
+   *  attach a screenshot of the payment. Empty / absent otherwise. */
+  manualKhqr?: PublicManualKhqr[];
   /** V315 — populated only when the customer arrived via a per-table
    *  QR ({@code /shop/table/{tableCode}}). Null / absent on the
    *  tenant-wide shop code path so the FE header can conditionally
@@ -110,6 +114,14 @@ export interface PublicShopPayload {
   tableId?: string | null;
   tableLabel?: string | null;
   tableSeats?: number | null;
+}
+
+export interface PublicManualKhqr {
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  /** data:image/…;base64,… — render straight into an <img>. */
+  qrDataUrl: string;
 }
 
 export async function getMyShopLink(): Promise<ShopLinkInfo> {
@@ -168,6 +180,32 @@ export interface PublicOrderResult {
   id: string;
   queueNo: string;
   total: number;
+  /** v-shop-khqr-proof — lets this customer attach a payment proof to
+   *  this order for a couple of hours. */
+  proofToken?: string;
+}
+
+/** v-shop-khqr-proof — attach a screenshot (or PDF) of the payment to
+ *  the order just placed. Anonymous; `proofToken` from the submit is
+ *  what says it is the customer's own order. */
+export async function uploadPaymentProof(
+  code: string,
+  orderId: string,
+  proofToken: string,
+  file: File,
+): Promise<{ id: string; filename: string }> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await apiFetch(
+    `/api/v1/public/shop/${encodeURIComponent(code)}/order/${encodeURIComponent(orderId)}/payment-proof`,
+    { method: 'POST', body: fd, auth: false, query: { token: proofToken } },
+  );
+  if (!res.ok) {
+    let message = `Upload failed (${res.status})`;
+    try { const body = await res.json(); message = body?.message ?? message; } catch { /* no body */ }
+    throw new Error(message);
+  }
+  return res.json();
 }
 
 export async function submitPublicOrder(

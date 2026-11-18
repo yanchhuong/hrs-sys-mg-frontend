@@ -6,8 +6,10 @@ import {
   Package, Settings as SettingsIcon, StickyNote, Check, MonitorPlay, Share2,
   ClipboardList, Gift, Star, Stamp as StampIcon, Trash2, ChefHat,
   Maximize2, Minimize2, Warehouse as WarehouseIcon,
-  ChevronRight, ScanBarcode, Ticket,
+  ChevronRight, ScanBarcode, Ticket, Paperclip,
 } from 'lucide-react';
+import * as attachmentsApi from '../../api/attachments';
+import { AttachmentsPanel } from '../common/AttachmentsPanel';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -63,7 +65,7 @@ import { printPosReceipt } from '../../utils/posReceipt';
 import { invoiceTemplates } from '../../api/invoiceTemplates';
 import type { TemplateConfig } from '../../api/invoiceTemplates';
 import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryChips';
-import { loadBankAccounts, type BankAccount } from '../../utils/bankAccount';
+import { loadBankAccounts, loadBankAccountsSynced, type BankAccount } from '../../utils/bankAccount';
 import {
   POS_DISPLAY_CHANNEL, POS_DISPLAY_PATH,
   type DisplayItem, type DisplayMessage, type DisplayState,
@@ -328,6 +330,13 @@ export function POS() {
   // section). Loaded once on mount + re-read when the settings dialog
   // closes so a newly-uploaded QR shows up on the next checkout.
   const [banks, setBanks] = useState<BankAccount[]>(() => loadBankAccounts('pos'));
+  // v-shop-khqr-proof — then the server's list, which every till shares:
+  // a KHQR uploaded on another device shows up here too.
+  useEffect(() => {
+    let live = true;
+    void loadBankAccountsSynced('pos').then(b => { if (live) setBanks(b); });
+    return () => { live = false; };
+  }, []);
 
   // Dialog state.
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -3354,6 +3363,20 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
     if (!open) { setDroppingId(null); setExpanded(false); }
   }, [open]);
 
+  // v-shop-khqr-proof — payment proofs online customers attached (they
+  // paid the shop's uploaded KHQR), by order id, and the one on screen.
+  const [proofCounts, setProofCounts] = useState<Record<string, number>>({});
+  const [proofOf, setProofOf] = useState<PosOrder | null>(null);
+  const orderIds = orders.map(o => o.id).join(',');
+  useEffect(() => {
+    if (!open || !orderIds) return;
+    let live = true;
+    attachmentsApi.counts('pos', orderIds.split(','))
+      .then(c => { if (live) setProofCounts(c); })
+      .catch(() => { /* no paperclips is the safe reading */ });
+    return () => { live = false; };
+  }, [open, orderIds]);
+
   const handleResume = (o: PosOrder) => {
     if (droppingId) return;
     setDroppingId(o.id);
@@ -3413,6 +3436,21 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
                   <div className="text-sm font-semibold shrink-0">${o.total.toFixed(2)}</div>
                   <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />
                 </button>
+                {/* The customer's payment proof — outside the resume
+                    button, like the trash, so opening it doesn't also
+                    resume the cart. */}
+                {!!proofCounts[o.id] && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setProofOf(o); }}
+                    className="px-2.5 text-primary hover:bg-primary/10 flex items-center justify-center gap-0.5 shrink-0"
+                    title="Payment proof"
+                    aria-label={`Payment proof for ${o.queueNo}`}
+                  >
+                    <Paperclip className="h-4 w-4" />
+                    {proofCounts[o.id] > 1 && <span className="text-[11px] font-semibold tabular-nums">{proofCounts[o.id]}</span>}
+                  </button>
+                )}
                 {/* Discard the parked ticket. Void-only — the row stays
                     in the DB for audit but drops off Open Sale. Kept
                     outside the resume button so a click on the trash
@@ -3449,7 +3487,56 @@ function PosOpenOrdersDrawer({ open, onOpenChange, orders, onResume, onDiscard }
           );
         })()}
       </DialogContent>
+      {/* The proof itself: the shared attachments panel, read-only —
+          it is the customer's, the till only looks. */}
+      <Dialog open={!!proofOf} onOpenChange={v => { if (!v) setProofOf(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Paperclip className="h-4 w-4" /> Payment proof · {proofOf?.queueNo}
+            </DialogTitle>
+            <DialogDescription>{proofOf?.customerName ?? 'Walk-in'} · ${proofOf?.total.toFixed(2)}</DialogDescription>
+          </DialogHeader>
+          {proofOf && <ProofImages orderId={proofOf.id} />}
+          {proofOf && <AttachmentsPanel docType="pos" docId={proofOf.id} readOnly />}
+        </DialogContent>
+      </Dialog>
     </Dialog>
+  );
+}
+
+/** v-shop-khqr-proof — the customer's payment screenshots, shown rather
+ *  than only listed: the cashier checks the amount and the shop's name
+ *  at a glance. Fetched with the token (the download needs it) and
+ *  dropped when the dialog closes. Anything not an image stays in the
+ *  file list below. */
+function ProofImages({ orderId }: { orderId: string }) {
+  const [shots, setShots] = useState<{ id: string; url: string; name: string }[]>([]);
+  useEffect(() => {
+    let live = true;
+    const made: string[] = [];
+    (async () => {
+      try {
+        const rows = await attachmentsApi.list('pos', orderId);
+        const out: { id: string; url: string; name: string }[] = [];
+        for (const r of rows.filter(a => a.contentType?.startsWith('image/'))) {
+          const url = URL.createObjectURL(await attachmentsApi.fetchBlob(r.id));
+          made.push(url);
+          out.push({ id: r.id, url, name: r.filename });
+        }
+        if (live) setShots(out);
+      } catch { /* the file list below still offers each one */ }
+    })();
+    return () => { live = false; made.forEach(u => URL.revokeObjectURL(u)); };
+  }, [orderId]);
+  if (shots.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {shots.map(s => (
+        <img key={s.id} src={s.url} alt={s.name}
+          className="w-full max-h-[55vh] object-contain rounded-lg border bg-gray-50" />
+      ))}
+    </div>
   );
 }
 
