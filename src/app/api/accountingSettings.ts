@@ -20,6 +20,12 @@ export interface AccountingSettings {
   showPurpose: boolean;
   showDiscount: boolean;
   showTax: boolean;
+  /** V421 / v-invoice-kinds-toggle — whether the Sale side offers Credit
+   *  Notes / Debit Notes: the New menu, an invoice row's + menu and the
+   *  kind filter. Optional because an older server sends neither — read
+   *  them as `!== false` (absent = on, the server default). */
+  showCreditNote?: boolean;
+  showDebitNote?: boolean;
   /** When true, the Invoice form auto-fires a Telegram send after a
    *  successful save. Surfaced as a toggle in the Sale-scope
    *  Accountant Settings popup only — other scopes carry the column
@@ -234,6 +240,9 @@ export function defaultsFor(scope: AccountingScope): AccountingSettings {
     showPurpose: true,
     showDiscount: true,
     showTax: true,
+    // V421 — on by default, like every show_* toggle.
+    showCreditNote: true,
+    showDebitNote: true,
     // Opt-in: a fresh tenant doesn't auto-send anything until the
     // operator explicitly turns the toggle on.
     autoSendTelegram: false,

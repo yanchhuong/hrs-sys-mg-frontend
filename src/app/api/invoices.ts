@@ -7,6 +7,31 @@ export type InvoiceKind = 'commercial' | 'tax' | 'credit_note' | 'debit_note' | 
  *  the field at 'other' — the flat table on Sale > Invoice ignores
  *  it. */
 export type InvoiceItemCategory = 'medicine' | 'service' | 'lab' | 'imaging' | 'other';
+
+/** v-recurring-items — how often one invoice LINE bills again. Only
+ *  repeating lines on commercial / tax invoices ever do; a server job
+ *  bills each period as a new, independent invoice. */
+export type InvoiceItemFrequency = 'ONE_TIME' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+export type RecurringFrequency = Exclude<InvoiceItemFrequency, 'ONE_TIME'>;
+
+export const INVOICE_ITEM_FREQUENCIES: readonly InvoiceItemFrequency[] = ['ONE_TIME', 'WEEKLY', 'MONTHLY', 'YEARLY'];
+
+/** English labels — one word each. Screens pass them through t() with
+ *  the `invoice.recurring.freq.<KEY>` keys for km / zh. */
+export const INVOICE_ITEM_FREQUENCY_LABELS: Record<InvoiceItemFrequency, string> = {
+  ONE_TIME: 'One-time',
+  WEEKLY:   'Weekly',
+  MONTHLY:  'Monthly',
+  YEARLY:   'Yearly',
+};
+
+/** The placeholders a repeating line's title may carry, exactly as the
+ *  server accepts them (anything else between double braces is a 400). */
+export const RECURRING_TITLE_PLACEHOLDERS = [
+  'MONTH_NAME', 'MONTH', 'YEAR', 'PERIOD', 'DATE', 'WEEK_START', 'WEEK_END',
+] as const;
+export type RecurringTitlePlaceholder = typeof RECURRING_TITLE_PLACEHOLDERS[number];
+
 /** Stored statuses are draft/progress/partially/paid/void. `overdue`
  *  is derived server-side — a progress row whose due_date has elapsed
  *  and isn't fully paid is reported as overdue at read time.
@@ -30,6 +55,17 @@ export interface InvoiceItem {
   /** Encounter form section (Prescription / Services / Lab / Imaging).
    *  Defaults to 'other' for non-encounter invoices. */
   category: InvoiceItemCategory;
+  /** v-recurring-items — always sent by the server; optional here so a
+   *  payload from an older build still reads as ONE_TIME. */
+  frequencyType?: InvoiceItemFrequency;
+  /** The title AS TYPED on a repeating line (placeholders and all);
+   *  `name` is that title resolved for this invoice's period. The edit
+   *  form shows `nameTemplate ?? name`. */
+  nameTemplate?: string | null;
+  /** Last day a repeating line may bill (inclusive), 'YYYY-MM-DD'. */
+  recurringEndDate?: string | null;
+  /** The schedule this line started once the invoice went live. */
+  recurringItemId?: string | null;
 }
 
 /** Slim row used in the parent invoice's Ledger panel. */
@@ -113,8 +149,18 @@ export interface Invoice {
    *  children. Populated on the single-invoice GET; list payloads
    *  fall back to `total − paidAmount`. */
   netBalance?: number;
+  /** v-recurring-items — set only on an invoice a repeating line billed
+   *  (on the slim list payload too); null on every other invoice. */
+  recurringOrigin?: InvoiceRecurringOrigin | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface InvoiceRecurringOrigin {
+  sourceInvoiceId: string;
+  /** 'YYYY-MM-DD', both inclusive. */
+  billingPeriodStart: string;
+  billingPeriodEnd: string;
 }
 
 export interface InvoiceItemRequest {
@@ -129,6 +175,14 @@ export interface InvoiceItemRequest {
   /** Encounter form section (V185). Server defaults to 'other' when
    *  omitted, so Sale > Invoice callers don't need to send anything. */
   category?: InvoiceItemCategory;
+  /** v-recurring-items — the invoice form ALWAYS sends it ('ONE_TIME'
+   *  by default); absent means "a client that predates recurring
+   *  items" to the server, which then keeps what the line had. */
+  frequencyType?: InvoiceItemFrequency;
+  /** Repeating lines only; null for ONE_TIME. */
+  recurringEndDate?: string | null;
+  /** Exactly what the loaded line had; null for new and copied lines. */
+  recurringItemId?: string | null;
 }
 
 export interface InvoiceRequest {
@@ -171,6 +225,10 @@ export interface InvoiceRequest {
    *  "Existing Appointment" toggle on the New Encounter form. */
   linkAppointmentId?: string | null;
   items: InvoiceItemRequest[];
+  /** v-recurring-items — editing a LIVE invoice (not draft) changes its
+   *  schedules only when this is true: the operator's explicit "Apply to
+   *  future invoices" decision. Drafts omit it. */
+  applyRecurringChanges?: boolean | null;
 }
 
 export interface ListParams {
@@ -320,4 +378,94 @@ export async function sendEmail(
     method: 'POST',
     json: body,
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* v-recurring-items — schedules, eligibility, delivery                        */
+/* -------------------------------------------------------------------------- */
+
+export type RecurringScheduleStatus = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'COMPLETED';
+
+/** One repeating line's schedule, as the original invoice shows it. */
+export interface RecurringSchedule {
+  id: string;
+  frequencyType: RecurringFrequency;
+  /** The title as typed, placeholders and all. */
+  itemNameTemplate: string;
+  /** The NEXT invoice's title, resolved — what the customer will see.
+   *  Null once the schedule has finished. */
+  nextTitle: string | null;
+  quantity: number;
+  unitPrice: number;
+  currency: string;
+  startDate: string;
+  endDate: string | null;
+  /** Null once finished. */
+  nextRunDate: string | null;
+  status: RecurringScheduleStatus;
+  /** A plain sentence when the last run could not bill. */
+  lastError: string | null;
+  billedCount: number;
+}
+
+export interface RecurringOrigin extends InvoiceRecurringOrigin {
+  sourceInvoiceNo: string | null;
+}
+
+export type RecurringDeliveryStatus = 'PENDING' | 'SENT' | 'FAILED';
+
+/** Telegram delivery of an invoice a schedule generated. */
+export interface RecurringDelivery {
+  status: RecurringDeliveryStatus;
+  attempts: number;
+  lastResult: 'sent' | 'not_linked' | 'disabled' | 'failed' | null;
+  lastError: string | null;
+  lastAttemptAt: string | null;
+  nextAttemptAt: string | null;
+  sentAt: string | null;
+}
+
+/** Everything recurring about one invoice. An original carries its
+ *  schedules; a generated invoice carries its origin and delivery. */
+export interface RecurringOverview {
+  schedules: RecurringSchedule[];
+  origin: RecurringOrigin | null;
+  delivery: RecurringDelivery | null;
+}
+
+export interface RecurringEligibility {
+  customerId: string;
+  telegramLinked: boolean;
+}
+
+/** Whether the form may offer repeating frequencies for this customer
+ *  (Telegram linked). The server checks again on save. Needs invoice
+ *  create OR update — not telegram:view. */
+export async function recurringEligibility(customerId: string): Promise<RecurringEligibility> {
+  return apiJson('/api/v1/invoices/recurring/eligibility', { query: { customerId } });
+}
+
+export async function recurringOverview(invoiceId: string): Promise<RecurringOverview> {
+  return apiJson(`/api/v1/invoices/${invoiceId}/recurring`);
+}
+
+/** ACTIVE → PAUSED. */
+export async function pauseRecurring(scheduleId: string): Promise<RecurringSchedule> {
+  return apiJson(`/api/v1/invoices/recurring/${scheduleId}/pause`, { method: 'POST' });
+}
+
+/** PAUSED → ACTIVE, picking up at the next date from today (paused
+ *  periods are not back-billed). Needs the customer still linked. */
+export async function resumeRecurring(scheduleId: string): Promise<RecurringSchedule> {
+  return apiJson(`/api/v1/invoices/recurring/${scheduleId}/resume`, { method: 'POST' });
+}
+
+/** ACTIVE / PAUSED → CANCELLED. Stops future invoices only. */
+export async function cancelRecurring(scheduleId: string): Promise<RecurringSchedule> {
+  return apiJson(`/api/v1/invoices/recurring/${scheduleId}/cancel`, { method: 'POST' });
+}
+
+/** Send a generated invoice to the customer's Telegram again, now. */
+export async function retryRecurringDelivery(invoiceId: string): Promise<RecurringDelivery> {
+  return apiJson(`/api/v1/invoices/${invoiceId}/recurring/delivery/retry`, { method: 'POST' });
 }

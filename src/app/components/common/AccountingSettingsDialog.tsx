@@ -633,6 +633,15 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   draft.showDiscount, v => setDraft({ ...draft, showDiscount: v }))}
                 {!isReceipt && scope !== 'hospital' && toggleRow('Show Tax', 'Taxation dropdown + tax line in the totals.',
                   draft.showTax, v => setDraft({ ...draft, showTax: v }))}
+                {/* V421 / v-invoice-kinds-toggle — whether the Sale side
+                    offers Credit / Debit Notes. The New menu, an invoice
+                    row's + menu and the Invoices kind filter follow them;
+                    notes already raised stay listed. Mobile's Setup →
+                    Invoice → Display carries the same two switches. */}
+                {scope === 'sale' && toggleRow('Show Credit Note', 'Offer Credit Notes on an invoice and in the kind filter.',
+                  draft.showCreditNote !== false, v => setDraft({ ...draft, showCreditNote: v }))}
+                {scope === 'sale' && toggleRow('Show Debit Note', 'Offer Debit Notes on an invoice and in the kind filter.',
+                  draft.showDebitNote !== false, v => setDraft({ ...draft, showDebitNote: v }))}
                 {/* V273 — POS-only kitchen pipeline gate. On (default)
                     keeps the Active Orders drawer + requested→done
                     walk. Off collapses the flow to Order → Checkout →

@@ -55,12 +55,13 @@ import { useLogoTint } from '../../utils/useLogoTint';
 import { hexToRgb, toBandTint } from '../../utils/logoColor';
 import type { InvoiceTemplate, TemplateConfig } from '../../api/invoiceTemplates';
 import { formatMoneyForCurrency } from '../../utils/format';
-import { DOC_KIND_CLASS, statusBadgeClass } from '../../utils/statusTones';
+import { DOC_KIND_CLASS, TONE_CLASS, statusBadgeClass } from '../../utils/statusTones';
 import {
   Plus, Trash2, RefreshCw, FileText, Receipt, CornerDownRight, CornerUpRight, Settings,
   Send, Ban, Eye, ChevronDown, Printer, Pencil, Search, Info, Mail, MessageCircle, Loader2, Landmark, Share2,
   Upload, FileSpreadsheet, Copy, ScanBarcode, X as XIcon,
   Wallet, Banknote, QrCode, CreditCard, ScrollText, MoreHorizontal, CheckCircle2,
+  Repeat, Braces, Pause, Play, CircleStop,
 } from 'lucide-react';
 import { CameraBarcodeScanner } from '../common/CameraBarcodeScanner';
 import { BulkUploadInvoicesDialog } from '../common/BulkUploadInvoicesDialog';
@@ -306,6 +307,29 @@ export function Invoices({
     accountingSettingsApi.defaultsFor('sale'));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+
+  /* v-invoice-kinds-toggle — the kinds this tenant issues, per Setup →
+   * Invoice → Display: Commercial always, Tax with Show Tax, the notes
+   * with their own switches (absent on an older server = on). The New
+   * menu, a row's + menu and the kind filter all read this one list, so
+   * they cannot disagree. Mobile applies the same rule. */
+  const showCreditNote = settings.showCreditNote !== false;
+  const showDebitNote = settings.showDebitNote !== false;
+  const kindOptions = useMemo(() => KIND_FILTERS.filter(f =>
+    f.value === 'all' || f.value === 'commercial'
+    || (f.value === 'tax' && settings.showTax)
+    || (f.value === 'credit_note' && showCreditNote)
+    || (f.value === 'debit_note' && showDebitNote)),
+  [settings.showTax, showCreditNote, showDebitNote]);
+  /** 'all' plus one kind is no choice at all — the filter hides. */
+  const showKindFilter = kindOptions.length > 2;
+  // A kind switched off while it was the filter would leave the list
+  // narrowed by a choice the dropdown no longer offers.
+  useEffect(() => {
+    if (!fixedKind && kindFilter !== 'all' && !kindOptions.some(o => o.value === kindFilter)) {
+      setKindFilter('all');
+    }
+  }, [fixedKind, kindFilter, kindOptions]);
 
   // Dialog state
   const [formOpen, setFormOpen] = useState(false);
@@ -688,12 +712,14 @@ export function Invoices({
             </Button>
           )}
           {canAdd && (
-            fixedKind ? (
+            // One kind to make (Encounter lens, or a tenant with Tax and
+            // both notes switched off) → a plain button, not a one-item menu.
+            (fixedKind || kindOptions.length === 2) ? (
               // Encounter lens — single-action button; the kind is
               // already pinned (medical / etc), so no dropdown of
               // sibling kinds. CN/DN are also skipped because
               // Medical Bills have no credit/debit-note siblings.
-              <Button onClick={() => openCreate(fixedKind)}>
+              <Button onClick={() => openCreate(fixedKind ?? 'commercial')}>
                 <Plus className="h-4 w-4 mr-1.5" /> {T.newButton}
               </Button>
             ) : (
@@ -720,12 +746,16 @@ export function Invoices({
                       <Receipt className="h-4 w-4 mr-2 text-violet-600" /> Tax Invoice
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem onClick={() => openCreate('credit_note')}>
-                    <CornerDownRight className="h-4 w-4 mr-2 text-emerald-600" /> Credit Note
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openCreate('debit_note')}>
-                    <CornerUpRight className="h-4 w-4 mr-2 text-amber-600" /> Debit Note
-                  </DropdownMenuItem>
+                  {showCreditNote && (
+                    <DropdownMenuItem onClick={() => openCreate('credit_note')}>
+                      <CornerDownRight className="h-4 w-4 mr-2 text-emerald-600" /> Credit Note
+                    </DropdownMenuItem>
+                  )}
+                  {showDebitNote && (
+                    <DropdownMenuItem onClick={() => openCreate('debit_note')}>
+                      <CornerUpRight className="h-4 w-4 mr-2 text-amber-600" /> Debit Note
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )
@@ -744,14 +774,14 @@ export function Invoices({
               {/* Kind tabs — hidden when a fixedKind is pinned (Encounter
                   lens narrows the list to a single kind, so the switcher
                   would be dead controls). */}
-              {!fixedKind && (
+              {!fixedKind && showKindFilter && (
                 <DropdownSelect
                   value={kindFilter}
                   onChange={e => setKindFilter(e.target.value as typeof kindFilter)}
                   className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
                   aria-label="Filter by kind"
                 >
-                  {KIND_FILTERS.map(f => (
+                  {kindOptions.map(f => (
                     <option key={f.value} value={f.value}>{f.label}</option>
                   ))}
                 </DropdownSelect>
@@ -871,6 +901,17 @@ export function Invoices({
                         ) : (
                           <Badge variant="outline" className={`gap-1 ${KIND_BADGE_CLASS[inv.kind]}`}>
                             {KIND_LABEL[inv.kind]}
+                          </Badge>
+                        )}
+                        {/* v-recurring-items — billed by a repeating line. */}
+                        {inv.recurringOrigin && (
+                          <Badge
+                            variant="outline"
+                            className={`ml-1 px-1.5 align-middle ${TONE_CLASS.neutral}`}
+                            title={t('invoice.recurring.generated', 'Billed by a repeating item')}
+                            aria-label={t('invoice.recurring.generated', 'Billed by a repeating item')}
+                          >
+                            <Repeat className="h-3 w-3" />
                           </Badge>
                         )}
                       </TableCell>
@@ -1037,7 +1078,8 @@ export function Invoices({
                               CHECK constraint restricts adjustment
                               parents to commercial/tax anyway. */}
                           {canAdd && !isAdjustment && inv.status !== 'void'
-                            && (inv.kind === 'commercial' || inv.kind === 'tax') && (
+                            && (inv.kind === 'commercial' || inv.kind === 'tax')
+                            && (showCreditNote || showDebitNote) && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button size="sm" variant="ghost" className="h-7 px-2" title="Add adjustment note">
@@ -1045,12 +1087,16 @@ export function Invoices({
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openAdjustment(inv, 'credit_note')}>
-                                  <CornerDownRight className="h-3.5 w-3.5 mr-2 text-emerald-600" /> Credit Note
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openAdjustment(inv, 'debit_note')}>
-                                  <CornerUpRight className="h-3.5 w-3.5 mr-2 text-amber-600" /> Debit Note
-                                </DropdownMenuItem>
+                                {showCreditNote && (
+                                  <DropdownMenuItem onClick={() => openAdjustment(inv, 'credit_note')}>
+                                    <CornerDownRight className="h-3.5 w-3.5 mr-2 text-emerald-600" /> Credit Note
+                                  </DropdownMenuItem>
+                                )}
+                                {showDebitNote && (
+                                  <DropdownMenuItem onClick={() => openAdjustment(inv, 'debit_note')}>
+                                    <CornerUpRight className="h-3.5 w-3.5 mr-2 text-amber-600" /> Debit Note
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           )}
@@ -1206,6 +1252,7 @@ export function Invoices({
           onClose={() => { setDetailId(null); setAutoSendTelegram(false); }}
           onChanged={() => { void load(); }}
           onEdit={openEdit}
+          onOpenInvoice={id => { setAutoSendTelegram(false); setDetailId(id); }}
         />
       )}
 
@@ -1231,6 +1278,122 @@ export function Invoices({
 }
 
 /* -------------------------------------------------------------------------- */
+/* v-recurring-items — repeating lines                                        */
+/* -------------------------------------------------------------------------- */
+/** Only these kinds may carry repeating lines (the server refuses the rest). */
+const canRepeatKind = (kind: invoicesApi.InvoiceKind): boolean => kind === 'commercial' || kind === 'tax';
+
+const freqLabel = (t: (key: string, fallback?: string) => string, f: invoicesApi.InvoiceItemFrequency): string =>
+  t(`invoice.recurring.freq.${f}`, invoicesApi.INVOICE_ITEM_FREQUENCY_LABELS[f]);
+
+/** Line-item grid spans. The plain set is the long-standing 12-column
+ *  layout. When the Frequency column shows, a 1/12 column is too narrow
+ *  for "One-time" plus the chevron, so the row switches to 24 tracks with
+ *  the same proportions (Item 6/24 = 3/12 …) and Frequency takes half a
+ *  column from Specification and one from Total. Header and rows read the
+ *  same map, so they cannot drift apart. */
+const LINE_COLS_PLAIN = {
+  grid: 'grid-cols-12', name: 'col-span-3', freq: '', spec: 'col-span-2',
+  qty: 'col-span-1', uom: 'col-span-1', price: 'col-span-2', total: 'col-span-3', under: 'col-span-9',
+} as const;
+const LINE_COLS_RECURRING = {
+  grid: 'grid-cols-24', name: 'col-span-6', freq: 'col-span-3', spec: 'col-span-3',
+  qty: 'col-span-2', uom: 'col-span-2', price: 'col-span-4', total: 'col-span-4', under: 'col-span-18',
+} as const;
+
+const isoOfUtc = (d: Date): string => d.toISOString().slice(0, 10);
+const parseIso = (iso: string): [number, number, number] | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? [Number(m[1]), Number(m[2]) - 1, Number(m[3])] : null;
+};
+const localTodayIso = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** `iso` plus n periods, the server's way (java.time plusWeeks / plusMonths
+ *  / plusYears from the anchor): a month or year step that lands past the
+ *  end of a shorter month clamps to its last day (Jan 31 → Feb 28). */
+function addRecurringPeriods(iso: string, freq: invoicesApi.RecurringFrequency, n: number): string {
+  const p = parseIso(iso);
+  if (!p) return iso;
+  const [y, mo, d] = p;
+  if (freq === 'WEEKLY') return isoOfUtc(new Date(Date.UTC(y, mo, d + 7 * n)));
+  const target = new Date(Date.UTC(y, mo + (freq === 'MONTHLY' ? n : 12 * n), 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, lastDay));
+  return isoOfUtc(target);
+}
+const addDaysIso = (iso: string, days: number): string => {
+  const p = parseIso(iso);
+  return p ? isoOfUtc(new Date(Date.UTC(p[0], p[1], p[2] + days))) : iso;
+};
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December'];
+
+/** Each placeholder with the value it takes on THIS invoice (the period
+ *  that starts on its issue date) — the same values the server writes
+ *  (English month name, ISO dates). */
+function placeholderExamples(freq: invoicesApi.RecurringFrequency, issueIso: string): Array<{ token: string; example: string }> {
+  const start = parseIso(issueIso) ? issueIso.slice(0, 10) : localTodayIso();
+  const end = addDaysIso(addRecurringPeriods(start, freq, 1), -1);
+  const [y, mo, d] = start.split('-');
+  const values: Record<invoicesApi.RecurringTitlePlaceholder, string> = {
+    MONTH_NAME: MONTH_NAMES[Number(mo) - 1] ?? '',
+    MONTH:      mo,
+    YEAR:       y,
+    PERIOD:     `${y}-${mo}`,
+    DATE:       d,
+    WEEK_START: start,
+    WEEK_END:   end,
+  };
+  return invoicesApi.RECURRING_TITLE_PLACEHOLDERS.map(p => ({ token: `{{${p}}}`, example: values[p] }));
+}
+
+/** Mirrors the server's title check for a repeating line: names are
+ *  case-insensitive and may carry inner spaces; anything else between
+ *  double braces, or an unclosed pair, is refused. */
+const TITLE_TOKEN = /\{\{\s*([A-Za-z_]*)\s*\}\}/g;
+const KNOWN_PLACEHOLDERS = new Set<string>(invoicesApi.RECURRING_TITLE_PLACEHOLDERS);
+function titleProblem(name: string): { unknown: string } | { unclosed: true } | null {
+  const unknown: string[] = [];
+  const rest = name.replace(TITLE_TOKEN, (tok: string, key: string) => {
+    if (!KNOWN_PLACEHOLDERS.has(key.toUpperCase())) unknown.push(tok.replace(/\s+/g, ''));
+    return '';
+  });
+  if (unknown.length > 0) return { unknown: unknown[0] };
+  if (rest.includes('{{') || rest.includes('}}')) return { unclosed: true };
+  return null;
+}
+
+/** Schedule state colours (statusTones): Active green, Paused amber,
+ *  Cancelled / Completed slate. */
+const SCHEDULE_STATUS_CLASS: Record<invoicesApi.RecurringScheduleStatus, string> = {
+  ACTIVE:    TONE_CLASS.success,
+  PAUSED:    TONE_CLASS.attention,
+  CANCELLED: TONE_CLASS.neutral,
+  COMPLETED: TONE_CLASS.neutral,
+};
+const SCHEDULE_STATUS_LABEL: Record<invoicesApi.RecurringScheduleStatus, string> = {
+  ACTIVE: 'Active', PAUSED: 'Paused', CANCELLED: 'Cancelled', COMPLETED: 'Completed',
+};
+const DELIVERY_STATUS_LABEL: Record<invoicesApi.RecurringDeliveryStatus, string> = {
+  SENT: 'Sent', PENDING: 'Pending', FAILED: 'Failed',
+};
+
+/** Small "↻ Monthly" chip beside a repeating line. */
+function FrequencyBadge({ frequency, className = '' }: { frequency: invoicesApi.InvoiceItemFrequency; className?: string }) {
+  const { t } = useI18n();
+  return (
+    <Badge variant="outline" className={`gap-1 font-normal ${TONE_CLASS.neutral} ${className}`}>
+      <Repeat className="h-3 w-3" />
+      {freqLabel(t, frequency)}
+    </Badge>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Create-invoice dialog                                                      */
 /* -------------------------------------------------------------------------- */
 interface FormItem {
@@ -1251,9 +1414,19 @@ interface FormItem {
    *  state is still {@link #unitPrice}; we back-compute it on every
    *  total keystroke). Cleared on blur. */
   totalEditing?: string;
+  /** v-recurring-items — how often this line bills again. */
+  frequency: invoicesApi.InvoiceItemFrequency;
+  /** Last day a repeating line may bill (inclusive); null = no end. */
+  recurringEndDate: string | null;
+  /** The schedule the loaded line belongs to — sent back unchanged;
+   *  null for new and copied lines. */
+  recurringItemId: string | null;
 }
 
-const blankItem: FormItem = { name: '', description: '', unit: '', quantity: '1', unitPrice: '0', stockItemId: null };
+const blankItem: FormItem = {
+  name: '', description: '', unit: '', quantity: '1', unitPrice: '0', stockItemId: null,
+  frequency: 'ONE_TIME', recurringEndDate: null, recurringItemId: null,
+};
 
 // StockItemPicker moved to ../common/StockItemPicker so Quotations
 // and Vouchers can mount the same picker without duplicating the
@@ -1298,8 +1471,51 @@ function InvoiceFormDialog({
 }) {
   const isAdjustment = kind === 'credit_note' || kind === 'debit_note';
   const isEdit = !!editing;
+  const { t } = useI18n();
+  const { formatDate } = useDateFormat();
+  /** v-recurring-items — the Frequency column shows on commercial / tax
+   *  invoices only, and never on an invoice a repeating line billed (the
+   *  server refuses repeating lines there). */
+  const showFrequency = canRepeatKind(kind) && !editing?.recurringOrigin;
+  /** An issued invoice being edited: its schedules change only on the
+   *  operator's explicit "Apply" (see askApplyRecurring). */
+  const isLive = isEdit && editing?.status !== 'draft';
+  const LINE = showFrequency ? LINE_COLS_RECURRING : LINE_COLS_PLAIN;
 
   const [customerId, setCustomerId] = useState('');
+  /** Whether the picked customer has linked Telegram, which repeating
+   *  lines need. null = not known (no customer, still loading, or the
+   *  check failed) — unknown never blocks; the server decides on save. */
+  const [telegramLinked, setTelegramLinked] = useState<boolean | null>(null);
+  useEffect(() => {
+    setTelegramLinked(null);
+    if (!open || !showFrequency || !customerId) return;
+    let live = true;
+    invoicesApi.recurringEligibility(customerId)
+      .then(r => { if (live) setTelegramLinked(r.telegramLinked); })
+      .catch(() => { /* soft-fail — stays unknown */ });
+    return () => { live = false; };
+  }, [open, showFrequency, customerId]);
+  /** Why WEEKLY / MONTHLY / YEARLY are off for this invoice, or null. */
+  const repeatBlockedReason = !customerId
+    ? t('invoice.recurring.state.no_customer', 'Needs a customer')
+    : telegramLinked === false
+      ? t('invoice.recurring.state.not_linked', 'Telegram not linked')
+      : null;
+  /** The explicit decision when saving a live invoice with repeating
+   *  items: true = Apply, false = Keep as is, null = dismissed (no save). */
+  const applyAskRef = useRef<((choice: boolean | null) => void) | null>(null);
+  const [applyAskOpen, setApplyAskOpen] = useState(false);
+  const askApplyRecurring = () => new Promise<boolean | null>(resolve => {
+    applyAskRef.current = resolve;
+    setApplyAskOpen(true);
+  });
+  const settleApplyAsk = (choice: boolean | null) => {
+    const resolve = applyAskRef.current;
+    applyAskRef.current = null;
+    setApplyAskOpen(false);
+    resolve?.(choice);
+  };
   // v-customer-quickadd — inline "Add customer" flow for the picker,
   // same shape POS uses.
   const quickAdd = useCustomerQuickAdd({
@@ -1415,12 +1631,17 @@ function InvoiceFormDialog({
       setItems(editing.items.length === 0
         ? [{ ...blankItem }]
         : editing.items.map(it => ({
-            name: it.name,
+            // The title as typed (placeholders and all), not this
+            // period's resolved one — or a save would bake it in.
+            name: it.nameTemplate ?? it.name,
             description: it.description ?? '',
             unit: it.unit ?? '',
             quantity: String(it.quantity),
             unitPrice: String(it.unitPrice),
             stockItemId: it.stockItemId ?? null,
+            frequency: it.frequencyType ?? 'ONE_TIME',
+            recurringEndDate: it.recurringEndDate ?? null,
+            recurringItemId: it.recurringItemId ?? null,
           })));
       setTaxType((editing.taxType ?? '') as invoicesApi.InvoiceTaxType | '');
       setTaxAmount(String(editing.taxAmount));
@@ -1451,6 +1672,12 @@ function InvoiceFormDialog({
             quantity: String(it.quantity),
             unitPrice: String(it.unitPrice),
             stockItemId: it.stockItemId ?? null,
+            // A copy never starts a second schedule for the same work:
+            // resolved title, one-time. The operator can set a
+            // frequency again on purpose.
+            frequency: 'ONE_TIME' as const,
+            recurringEndDate: null,
+            recurringItemId: null,
           })));
       setTaxType((copyFrom.taxType ?? '') as invoicesApi.InvoiceTaxType | '');
       setTaxAmount(String(copyFrom.taxAmount));
@@ -1575,6 +1802,50 @@ function InvoiceFormDialog({
   const addItem = () => setItems(prev => [...prev, { ...blankItem }]);
   const removeItem = (idx: number) => setItems(prev => prev.length === 1 ? prev : prev.filter((_, i) => i !== idx));
 
+  /** v-recurring-items — the {} button on a repeating line drops a
+   *  placeholder into its item name at the caret the name field had when
+   *  it last lost focus (or at the end), then puts the caret back after
+   *  the inserted token. */
+  const linesRef = useRef<HTMLDivElement>(null);
+  const nameCaretRef = useRef<Record<number, { start: number; end: number; name: string }>>({});
+  const pendingNameFocusRef = useRef<{ idx: number; caret: number } | null>(null);
+  const rememberNameCaret = (idx: number, el: HTMLInputElement) => {
+    nameCaretRef.current[idx] = {
+      start: el.selectionStart ?? el.value.length,
+      end: el.selectionEnd ?? el.value.length,
+      name: el.value,
+    };
+  };
+  const insertPlaceholder = (idx: number, token: string) => {
+    const cur = items[idx]?.name ?? '';
+    const saved = nameCaretRef.current[idx];
+    const at = saved && saved.name === cur ? saved : { start: cur.length, end: cur.length };
+    const before = cur.slice(0, at.start);
+    const after = cur.slice(at.end);
+    const pad = before && !/\s$/.test(before) && !after ? ' ' : '';
+    const next = `${before}${pad}${token}${after}`;
+    if (next.length > LEN.name) {
+      toast.error(t('invoice.recurring.err.too_long', 'The item name would be too long.'));
+      return;
+    }
+    const caret = before.length + pad.length + token.length;
+    // Same rule as typing: a hand-edited name unlinks the catalog item.
+    updateItem(idx, { name: next, stockItemId: null });
+    nameCaretRef.current[idx] = { start: caret, end: caret, name: next };
+    pendingNameFocusRef.current = { idx, caret };
+  };
+  const focusPendingName = () => {
+    const p = pendingNameFocusRef.current;
+    pendingNameFocusRef.current = null;
+    if (!p) return;
+    setTimeout(() => {
+      const el = linesRef.current?.querySelector<HTMLInputElement>(`input[data-line-name="${p.idx}"]`);
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(p.caret, p.caret);
+    }, 0);
+  };
+
   /** Row index whose scan icon opened the camera. On decode we look
    *  the code up and fill THIS row, not a fresh one — mirrors the
    *  per-row barcode UX on Quotation for consistency. */
@@ -1598,8 +1869,11 @@ function InvoiceFormDialog({
   };
 
   /** Build the request payload from the current form state. Used by
-   *  every save flow (create / update / save & add new). */
-  const buildPayload = (): invoicesApi.InvoiceRequest => ({
+   *  every save flow (create / update / save & add new).
+   *  `applyRecurringChanges` is the Apply / Keep-as-is decision on a live
+   *  invoice; every other save leaves it out. */
+  const buildPayload = (applyRecurringChanges?: boolean): invoicesApi.InvoiceRequest => ({
+    ...(applyRecurringChanges !== undefined ? { applyRecurringChanges } : {}),
     kind,
     parentInvoiceId: isAdjustment ? parentInvoiceId : undefined,
     invoiceNo: invoiceNo.trim() || undefined,
@@ -1621,15 +1895,49 @@ function InvoiceFormDialog({
     // V-invoice-purpose — blank-to-undefined keeps the backend's
     // `blank → null` normalisation from having to run on the wire.
     purpose: purpose.trim() || undefined,
-    items: items.map(it => ({
-      name: it.name.trim(),
-      description: it.description?.trim() || undefined,
-      unit: it.unit?.trim() || undefined,
-      quantity: Number(it.quantity) || 0,
-      unitPrice: Number(it.unitPrice) || 0,
-      stockItemId: it.stockItemId || undefined,
-    })),
+    items: items.map(it => {
+      // v-recurring-items — always sent, so the server never mistakes this
+      // form for a client that predates repeating lines. Kinds without the
+      // Frequency column are one-time throughout.
+      const frequencyType: invoicesApi.InvoiceItemFrequency = showFrequency ? it.frequency : 'ONE_TIME';
+      return {
+        name: it.name.trim(),
+        description: it.description?.trim() || undefined,
+        unit: it.unit?.trim() || undefined,
+        quantity: Number(it.quantity) || 0,
+        unitPrice: Number(it.unitPrice) || 0,
+        stockItemId: it.stockItemId || undefined,
+        frequencyType,
+        recurringEndDate: frequencyType === 'ONE_TIME' ? null : it.recurringEndDate,
+        recurringItemId: it.recurringItemId,
+      };
+    }),
   });
+
+  /** Repeating lines as the server will see them on save. */
+  const repeatingLines = (): Array<{ it: FormItem; idx: number; freq: invoicesApi.RecurringFrequency }> =>
+    showFrequency
+      ? items.flatMap((it, idx) => it.frequency === 'ONE_TIME' ? [] : [{ it, idx, freq: it.frequency }])
+      : [];
+
+  /** A repeating line bills a customer whose Telegram is linked. The
+   *  server holds a new or draft invoice to this on every save, but a
+   *  live one only when the edit is applied to its schedules — "Keep as
+   *  is" leaves them as they are. Unknown eligibility (null) never
+   *  blocks. Says why and returns false when the rule is not met. */
+  const repeatCustomerOk = (): boolean => {
+    if (repeatingLines().length === 0) return true;
+    if (!customerId) {
+      toast.error(t('invoice.recurring.err.no_customer', 'A repeating item needs a customer to bill.'));
+      return false;
+    }
+    if (telegramLinked === false) {
+      toast.error(t('invoice.recurring.err.not_linked',
+        'This customer has not linked Telegram, so items can only be billed once.'));
+      return false;
+    }
+    return true;
+  };
 
   /** v-invoice-stock-cap — how many units line idx may still take: the
    *  picked item's on hand less what other lines of the same item hold.
@@ -1669,6 +1977,41 @@ function InvoiceFormDialog({
       toast.error(`Line ${over + 1}: only ${stockLimit(over).remaining} left of "${items[over].name || 'this item'}"`);
       return false;
     }
+    // v-recurring-items — the server's refusals, caught before the round
+    // trip. An eligibility check that failed (null) does not block.
+    const repeating = repeatingLines();
+    if (repeating.length > 0) {
+      // A live invoice is checked in submit, once "Apply" is chosen.
+      if (!isLive && !repeatCustomerOk()) return false;
+      for (const { it, idx, freq } of repeating) {
+        const line = String(idx + 1);
+        const problem = titleProblem(it.name);
+        if (problem && 'unknown' in problem) {
+          toast.error(t('invoice.recurring.err.unknown_placeholder', 'Line {n}: unknown placeholder {token}.')
+            .replace('{n}', line).replace('{token}', problem.unknown));
+          return false;
+        }
+        if (problem) {
+          toast.error(t('invoice.recurring.err.unclosed_placeholder', 'Line {n}: a placeholder is not closed.')
+            .replace('{n}', line));
+          return false;
+        }
+        // A live invoice's schedules start from their own dates — the
+        // server checks those; a new or draft one first repeats one
+        // period after its issue date.
+        if (!isLive && it.recurringEndDate && issueDate) {
+          const first = addRecurringPeriods(issueDate, freq, 1);
+          if (it.recurringEndDate < first) {
+            toast.error(t('invoice.recurring.err.ends_too_soon',
+              'Line {n}: ends on {end}, before it would first repeat on {first}.')
+              .replace('{n}', line)
+              .replace('{end}', formatDate(it.recurringEndDate))
+              .replace('{first}', formatDate(first)));
+            return false;
+          }
+        }
+      }
+    }
     if (discountType === 'percent' && discountValue.trim() !== '' && !isValidPercent(discountValue)) {
       toast.error('Discount % must be between 0 and 100');
       return false;
@@ -1678,11 +2021,24 @@ function InvoiceFormDialog({
 
   const submit = async () => {
     if (!validate()) return;
+    // v-recurring-items — editing a live invoice never touches its
+    // schedules unless the operator says so. Asked when it already has
+    // schedules or now has a repeating line; a draft has none yet.
+    let applyRecurringChanges: boolean | undefined;
+    if (isLive && editing
+        && (editing.items.some(i => i.recurringItemId != null) || repeatingLines().length > 0)) {
+      const choice = await askApplyRecurring();
+      if (choice === null) return;
+      // Only an applied edit moves the schedules, so only then must the
+      // customer qualify — the server's rule.
+      if (choice && !repeatCustomerOk()) return;
+      applyRecurringChanges = choice;
+    }
     setSaving(true);
     try {
       let saved: invoicesApi.Invoice;
       if (isEdit && editing) {
-        saved = await invoicesApi.update(editing.id, buildPayload());
+        saved = await invoicesApi.update(editing.id, buildPayload(applyRecurringChanges));
         toast.success(`${editing.invoiceNo} updated`);
       } else {
         saved = await invoicesApi.create(buildPayload());
@@ -1690,7 +2046,9 @@ function InvoiceFormDialog({
       }
       // Push the just-saved names into the cross-doc "recent items"
       // cache so the typeahead surfaces them on the next form open.
-      addRecentLineItems(items.map(it => ({
+      // A repeating line's title template ("… {{MONTH_NAME}}") is not a
+      // name to suggest on other documents, so it stays out.
+      addRecentLineItems(items.filter(it => !(showFrequency && it.frequency !== 'ONE_TIME' && it.name.includes('{{'))).map(it => ({
         name: it.name,
         unit: it.unit,
         unitPrice: Number(it.unitPrice) || undefined,
@@ -2030,7 +2388,7 @@ function InvoiceFormDialog({
               detail ("Coke 330ml can" / "WD-40 1L spray", etc.); UOM
               is the unit it's sold in. Both feed the printed invoice
               line and stay snapshotted on the row at issue time. */}
-          <div className="space-y-2 border rounded-md p-3">
+          <div ref={linesRef} className="space-y-2 border rounded-md p-3">
             <div className="flex items-center justify-between gap-3">
               <Label className="text-xs font-semibold shrink-0">Line items</Label>
               <Button size="sm" variant="outline" onClick={addItem} className="shrink-0 text-blue-600 hover:text-blue-700">
@@ -2040,16 +2398,19 @@ function InvoiceFormDialog({
             {/* Column widths mirror Quotation's Total column so the
                 line-total number has room to breathe (was col-span-1
                 which clipped 4-digit thousands). Specification gives
-                up one slot to Total. */}
-            <div className="grid grid-cols-12 gap-2 text-[11px] font-medium text-gray-500 px-1">
-              <div className="col-span-3">Item Name</div>
-              <div className="col-span-2">Specification</div>
-              <div className="col-span-1 text-right">Qty</div>
-              <div className="col-span-1">UOM</div>
-              <div className="col-span-2 text-right">Unit price</div>
+                up one slot to Total. Spans come from LINE so the
+                header and the rows always agree — with or without the
+                Frequency column. */}
+            <div className={`grid ${LINE.grid} gap-2 text-[11px] font-medium text-gray-500 px-1`}>
+              <div className={LINE.name}>Item Name</div>
+              {showFrequency && <div className={LINE.freq}>{t('invoice.recurring.frequency', 'Frequency')}</div>}
+              <div className={LINE.spec}>Specification</div>
+              <div className={`${LINE.qty} text-right`}>Qty</div>
+              <div className={LINE.uom}>UOM</div>
+              <div className={`${LINE.price} text-right`}>Unit price</div>
               {/* Total header + empty trash header collapsed into one
-                  col-span-3 slot so it lines up with the row below. */}
-              <div className="col-span-3 text-right pr-8">Total</div>
+                  slot so it lines up with the row below. */}
+              <div className={`${LINE.total} text-right pr-8`}>Total</div>
             </div>
             {items.map((it, idx) => {
               const lineTotal = (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
@@ -2064,9 +2425,11 @@ function InvoiceFormDialog({
               const { cap: stockCap, remaining: stockRemaining } = stockLimit(idx);
               const overStock = Number.isFinite(stockRemaining)
                 && (Number(it.quantity) || 0) > stockRemaining;
+              const repeats = showFrequency && it.frequency !== 'ONE_TIME';
               return (
-                <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-3 flex items-center gap-1">
+                <React.Fragment key={idx}>
+                <div className={`grid ${LINE.grid} gap-2 items-center`}>
+                  <div className={`${LINE.name} flex items-center gap-1`}>
                     {/* Stock-catalog picker (V118 Phase-2). Gated by
                         the per-tenant Items → Settings toggle (V120) —
                         hidden when the tenant hasn't opted in for
@@ -2103,7 +2466,12 @@ function InvoiceFormDialog({
                         // dropdown. mousedown handler also calls
                         // preventDefault, but the timeout is the safety
                         // net for keyboard / touch focus transitions.
-                        onBlur={() => setTimeout(() => setFocusedItemIdx(p => p === idx ? null : p), 120)}
+                        // The caret is kept for the {} placeholder button.
+                        onBlur={e => {
+                          rememberNameCaret(idx, e.currentTarget);
+                          setTimeout(() => setFocusedItemIdx(p => p === idx ? null : p), 120);
+                        }}
+                        data-line-name={idx}
                         placeholder="Item or service name"
                         maxLength={LEN.name}
                       />
@@ -2166,14 +2534,52 @@ function InvoiceFormDialog({
                       </Button>
                     )}
                   </div>
+                  {/* v-recurring-items — Frequency, right after the item
+                      name. Repeating choices switch off (with one line
+                      saying why) when there is no customer or the
+                      customer's Telegram is not linked; a line already
+                      repeating then shows red until it is fixed. */}
+                  {showFrequency && (
+                    <div className={LINE.freq}>
+                      <Select
+                        value={it.frequency}
+                        onValueChange={v => updateItem(idx, { frequency: v as invoicesApi.InvoiceItemFrequency })}
+                      >
+                        <SelectTrigger
+                          size="sm"
+                          className="h-8 text-sm px-2.5 gap-1"
+                          aria-invalid={repeats && repeatBlockedReason ? true : undefined}
+                          title={repeats && repeatBlockedReason ? repeatBlockedReason : undefined}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {invoicesApi.INVOICE_ITEM_FREQUENCIES.map(f => (
+                            <SelectItem
+                              key={f}
+                              value={f}
+                              disabled={f !== 'ONE_TIME' && !!repeatBlockedReason}
+                            >
+                              {freqLabel(t, f)}
+                            </SelectItem>
+                          ))}
+                          {repeatBlockedReason && (
+                            <div className="px-2 pt-1.5 pb-1 mt-1 border-t text-[11px] text-muted-foreground">
+                              {repeatBlockedReason}
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <Input
-                    className="col-span-2 h-8 text-sm"
+                    className={`${LINE.spec} h-8 text-sm`}
                     value={it.description ?? ''}
                     onChange={e => updateItem(idx, { description: e.target.value })}
                     placeholder="Model, size, variant…"
                     maxLength={LEN.longText}
                   />
-                  <div className="col-span-1 flex flex-col gap-0.5">
+                  <div className={`${LINE.qty} flex flex-col gap-0.5`}>
                     {/* v-numeric-input-common — NumericInput handles
                         masking + focus-toggle format; the stock-cap
                         side effect lives in onChange as before. */}
@@ -2204,14 +2610,14 @@ function InvoiceFormDialog({
                     )}
                   </div>
                   <Input
-                    className="col-span-1 h-8 text-sm"
+                    className={`${LINE.uom} h-8 text-sm`}
                     value={it.unit ?? ''}
                     onChange={e => updateItem(idx, { unit: e.target.value })}
                     placeholder="pcs"
                     maxLength={LEN.unit}
                   />
                   <NumericInput
-                    className="col-span-2 h-8 text-sm"
+                    className={`${LINE.price} h-8 text-sm`}
                     value={it.unitPrice}
                     // Unit price allows up to 4 fractional digits
                     // (#,###.0000) for tariff / bulk-rate pricing —
@@ -2224,10 +2630,10 @@ function InvoiceFormDialog({
                       totalEditing: undefined,
                     })}
                   />
-                  {/* Total input + Trash share one col-span-3 slot with
+                  {/* Total input + Trash share one slot with
                       a tight inner gap so the trash sits close to the
                       amount, matching the Item cell's icon spacing. */}
-                  <div className="col-span-3 flex items-center gap-1">
+                  <div className={`${LINE.total} flex items-center gap-1`}>
                     <NumericInput
                       className="flex-1 h-8 text-sm"
                       value={it.totalEditing !== undefined
@@ -2274,6 +2680,63 @@ function InvoiceFormDialog({
                     </Button>
                   </div>
                 </div>
+                {/* v-recurring-items — a repeating line's own second row:
+                    the {} placeholder button under the end of its name,
+                    and "Until" (blank = no end) under Frequency. */}
+                {repeats && (
+                  <div className={`grid ${LINE.grid} gap-2 items-center -mt-1`}>
+                    <div className={`${LINE.name} flex justify-end`}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-gray-500 hover:text-gray-700"
+                            title={t('invoice.recurring.insert_placeholder', 'Insert placeholder')}
+                            aria-label={t('invoice.recurring.insert_placeholder', 'Insert placeholder')}
+                          >
+                            <Braces className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="w-64"
+                          onCloseAutoFocus={e => {
+                            if (!pendingNameFocusRef.current) return;
+                            e.preventDefault();
+                            focusPendingName();
+                          }}
+                        >
+                          {placeholderExamples(it.frequency as invoicesApi.RecurringFrequency, issueDate).map(p => (
+                            <DropdownMenuItem
+                              key={p.token}
+                              className="justify-between gap-4"
+                              onSelect={() => insertPlaceholder(idx, p.token)}
+                            >
+                              <span className="font-mono text-xs">{p.token}</span>
+                              <span className="text-xs text-muted-foreground tabular-nums">{p.example}</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    <div className={`${LINE.under} flex items-center gap-2`}>
+                      <span className="text-[11px] text-gray-500">{t('invoice.recurring.until', 'Until')}</span>
+                      <DateInput
+                        value={it.recurringEndDate}
+                        onChange={v => updateItem(idx, { recurringEndDate: v })}
+                        min={!isLive && issueDate
+                          ? addRecurringPeriods(issueDate, it.frequency as invoicesApi.RecurringFrequency, 1)
+                          : undefined}
+                        placeholder={t('invoice.recurring.no_end', 'No end')}
+                        clearable
+                        className="h-8 w-36"
+                      />
+                    </div>
+                  </div>
+                )}
+                </React.Fragment>
               );
             })}
           </div>
@@ -2558,6 +3021,28 @@ function InvoiceFormDialog({
         )}
       </DialogContent>
       {quickAdd.dialog}
+      {/* v-recurring-items — the explicit decision when saving a live
+          invoice with repeating items: Apply / Keep as is, and Cancel
+          (or Esc) saves nothing. */}
+      <AlertDialog open={applyAskOpen} onOpenChange={o => { if (!o) settleApplyAsk(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('invoice.recurring.apply.title', 'Apply to future invoices?')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('invoice.recurring.apply.body', 'Repeating items will bill with these changes.')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => settleApplyAsk(null)}>{t('action.cancel', 'Cancel')}</AlertDialogCancel>
+            <Button variant="outline" onClick={() => settleApplyAsk(false)}>
+              {t('invoice.recurring.apply.keep', 'Keep as is')}
+            </Button>
+            <Button onClick={() => settleApplyAsk(true)}>
+              {t('invoice.recurring.apply.apply', 'Apply')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* Per-row barcode scanner — mounted once at the form level.
           Fills whichever row set scanTargetIdx and self-closes. */}
       <CameraBarcodeScanner
@@ -2578,7 +3063,7 @@ function InvoiceFormDialog({
 /* -------------------------------------------------------------------------- */
 function InvoiceDetailDialog({
   invoiceId, customers, canEdit, settings, onClose, onChanged, onEdit,
-  autoSendTelegram, onAutoSendConsumed,
+  autoSendTelegram, onAutoSendConsumed, onOpenInvoice,
 }: {
   invoiceId: string;
   customers: customersApi.Customer[];
@@ -2601,6 +3086,9 @@ function InvoiceDetailDialog({
   /** Callback to flip {@code autoSendTelegram} off in the parent so
    *  the send never fires twice (e.g. on a re-render). */
   onAutoSendConsumed?: () => void;
+  /** Show another invoice in this dialog — the source invoice of one a
+   *  repeating line billed. */
+  onOpenInvoice?: (id: string) => void;
 }) {
   const { t } = useI18n();
   // Record payment = POST /payments (invoice:create); delete payment =
@@ -2608,6 +3096,10 @@ function InvoiceDetailDialog({
   const { canCreate, canDelete } = useAuth();
   const [invoice, setInvoice] = useState<invoicesApi.Invoice | null>(null);
   const [parentInvoice, setParentInvoice] = useState<invoicesApi.Invoice | null>(null);
+  /** v-recurring-items — this invoice's schedules (an original) or its
+   *  origin + Telegram delivery (a generated one). Null when the read
+   *  failed or the kind cannot repeat; the rest of the dialog stands. */
+  const [recurring, setRecurring] = useState<invoicesApi.RecurringOverview | null>(null);
   const { formatDate } = useDateFormat();
   // Tenant-wide currency settings — drives the secondary-total row's
   // visibility + label on the totals block below. The invoice itself
@@ -2849,6 +3341,10 @@ function InvoiceDetailDialog({
     try {
       const inv = await invoicesApi.get(invoiceId);
       setInvoice(inv);
+      // v-recurring-items — read alongside the payments; soft-fail.
+      const recurringRead = canRepeatKind(inv.kind)
+        ? invoicesApi.recurringOverview(inv.id).catch(() => null)
+        : Promise.resolve(null);
       // Build the list of documents that contribute payments to this
       // dialog: the invoice itself + each non-void adjustment if this
       // is a root invoice. For an adjustment view (CN/DN) we just
@@ -2880,6 +3376,7 @@ function InvoiceDetailDialog({
       // Sort chronological so the table reads like a ledger.
       combined.sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
       setPayments(combined);
+      setRecurring(await recurringRead);
       // If this is an adjustment, follow the parent edge so the
       // "Adjusts invoice" row can show the human-readable number
       // instead of a raw UUID. Soft-fail — a deleted parent
@@ -3020,6 +3517,48 @@ function InvoiceDetailDialog({
       onChanged();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : `${label} failed`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* v-recurring-items — Pause / Resume / Cancel one schedule. Cancel
+   * confirms first (it cannot be undone); the server's 4xx message is
+   * shown as is by doAction. */
+  const pauseSchedule = (s: invoicesApi.RecurringSchedule) =>
+    doAction(t('invoice.recurring.status.PAUSED', 'Paused'), () => invoicesApi.pauseRecurring(s.id));
+  const resumeSchedule = (s: invoicesApi.RecurringSchedule) =>
+    doAction(t('invoice.recurring.resumed', 'Resumed'), () => invoicesApi.resumeRecurring(s.id));
+  const cancelSchedule = async (s: invoicesApi.RecurringSchedule) => {
+    if (!(await confirm({
+      title: t('invoice.recurring.cancel_title', 'Cancel this schedule?'),
+      message: t('invoice.recurring.cancel_msg', 'Invoices already billed stay as they are.'),
+      confirmLabel: t('invoice.recurring.cancel_confirm', 'Cancel schedule'),
+      cancelLabel: t('invoice.recurring.keep', 'Keep'),
+      variant: 'destructive',
+    }))) return;
+    void doAction(t('invoice.recurring.status.CANCELLED', 'Cancelled'), () => invoicesApi.cancelRecurring(s.id));
+  };
+
+  /** Send a generated invoice to the customer's Telegram again. The call
+   *  makes one real attempt and returns how it went. */
+  const resendRecurring = async () => {
+    if (!invoice) return;
+    setBusy(true);
+    try {
+      const d = await invoicesApi.retryRecurringDelivery(invoice.id);
+      setRecurring(r => (r ? { ...r, delivery: d } : r));
+      if (d.status === 'SENT') {
+        toast.success(t('invoice.recurring.sent', 'Sent via Telegram'));
+      } else if (d.lastResult === 'not_linked') {
+        toast.error(t('invoice.recurring.not_linked_toast', "Customer hasn't connected their Telegram yet."));
+      } else if (d.lastResult === 'disabled') {
+        toast.error(t('invoice.recurring.disabled_toast', "Telegram delivery isn't configured on this server."));
+      } else {
+        toast.error(d.lastError ?? t('invoice.recurring.send_failed', 'Telegram send failed'));
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('invoice.recurring.send_failed', 'Telegram send failed'));
     } finally {
       setBusy(false);
     }
@@ -3291,6 +3830,63 @@ function InvoiceDetailDialog({
                   </div>
                 </>
               )}
+              {/* v-recurring-items — an invoice a repeating line billed:
+                  where it came from, the period it bills, and whether
+                  it reached the customer's Telegram. */}
+              {(() => {
+                const origin = recurring?.origin ?? invoice.recurringOrigin ?? null;
+                if (!origin) return null;
+                const sourceNo = recurring?.origin?.sourceInvoiceNo ?? null;
+                return (
+                  <>
+                    <div className="text-gray-500">{t('invoice.recurring.billed_from', 'Billed from')}</div>
+                    <div className="tabular-nums flex items-center gap-1.5">
+                      <Repeat className="h-3.5 w-3.5 text-gray-400" />
+                      {sourceNo && onOpenInvoice ? (
+                        <button
+                          type="button"
+                          className="text-blue-600 hover:underline"
+                          onClick={() => onOpenInvoice(origin.sourceInvoiceId)}
+                        >
+                          {sourceNo}
+                        </button>
+                      ) : (sourceNo ?? '—')}
+                    </div>
+                    <div className="text-gray-500">{t('invoice.recurring.period', 'Period')}</div>
+                    <div className="tabular-nums">
+                      {formatDate(origin.billingPeriodStart)} – {formatDate(origin.billingPeriodEnd)}
+                    </div>
+                  </>
+                );
+              })()}
+              {recurring?.delivery && (() => {
+                const d = recurring.delivery;
+                return (
+                  <>
+                    <div className="text-gray-500">{t('invoice.recurring.telegram', 'Telegram')}</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Badge variant="outline" className={statusBadgeClass(d.status)}>
+                        {t(`invoice.recurring.delivery.${d.status}`, DELIVERY_STATUS_LABEL[d.status])}
+                      </Badge>
+                      {d.status !== 'SENT' && d.lastError && (
+                        <span className="text-xs text-gray-500 truncate" title={d.lastError}>{d.lastError}</span>
+                      )}
+                      {canEdit && d.status !== 'SENT' && invoice.status !== 'void' && (
+                        <Button
+                          size="icon" variant="ghost"
+                          className="h-7 w-7 shrink-0 text-sky-600 hover:text-sky-700 print:hidden"
+                          disabled={busy}
+                          onClick={() => void resendRecurring()}
+                          title={t('invoice.recurring.send_again', 'Send again')}
+                          aria-label={t('invoice.recurring.send_again', 'Send again')}
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
               </div>
               {/* AR callout — top-right corner under the action buttons.
                   mr-8 reserves the same gutter the action-button row
@@ -3330,7 +3926,12 @@ function InvoiceDetailDialog({
                 <TableBody>
                   {itemsPagination.paginatedItems.map(it => (
                     <TableRow key={it.id}>
-                      <TableCell className="text-sm">{it.name}</TableCell>
+                      <TableCell className="text-sm">
+                        {it.name}
+                        {it.frequencyType && it.frequencyType !== 'ONE_TIME' && (
+                          <FrequencyBadge frequency={it.frequencyType} className="ml-2 align-middle" />
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm text-gray-600">{it.description || '—'}</TableCell>
                       <TableCell className="text-right text-sm whitespace-nowrap">
                         {it.quantity}{it.unit ? <span className="text-gray-600"> {it.unit}</span> : null}
@@ -3352,6 +3953,89 @@ function InvoiceDetailDialog({
                 />
               )}
             </div>
+
+            {/* v-recurring-items — this invoice's schedules, one row each:
+                frequency, the NEXT invoice's title, one line of state,
+                status, and the Pause / Resume / Cancel icons in the same
+                place on every row (only for those who may update). */}
+            {recurring && recurring.schedules.length > 0 && (
+              <div className="border rounded-md print:hidden">
+                <div className="px-3 py-2 text-xs font-medium text-gray-500 flex items-center gap-1.5">
+                  <Repeat className="h-3.5 w-3.5" />
+                  {t('invoice.recurring.repeating', 'Repeating')}
+                </div>
+                {recurring.schedules.map(s => {
+                  const isOpen = s.status === 'ACTIVE' || s.status === 'PAUSED';
+                  const state = [
+                    isOpen && s.nextRunDate
+                      ? t('invoice.recurring.next', 'Next {date}').replace('{date}', formatDate(s.nextRunDate))
+                      : null,
+                    s.endDate
+                      ? t('invoice.recurring.until_date', 'Until {date}').replace('{date}', formatDate(s.endDate))
+                      : null,
+                    t('invoice.recurring.billed', 'Billed {n}').replace('{n}', String(s.billedCount)),
+                  ].filter((v): v is string => !!v).join(' · ');
+                  return (
+                    <div key={s.id} className="flex items-center gap-3 px-3 py-2 border-t text-sm">
+                      <FrequencyBadge frequency={s.frequencyType} className="shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate" title={s.itemNameTemplate}>{s.nextTitle ?? s.itemNameTemplate}</div>
+                        <div className="text-[11px] text-gray-500 truncate" title={s.lastError ?? undefined}>
+                          {state}
+                          {s.lastError && <span className="text-red-600"> · {s.lastError}</span>}
+                        </div>
+                      </div>
+                      <div className="tabular-nums whitespace-nowrap text-right">
+                        {fmtMoney(s.quantity * s.unitPrice, s.currency)}
+                      </div>
+                      <Badge variant="outline" className={`shrink-0 ${SCHEDULE_STATUS_CLASS[s.status]}`}>
+                        {t(`invoice.recurring.status.${s.status}`, SCHEDULE_STATUS_LABEL[s.status])}
+                      </Badge>
+                      {canEdit && (
+                        <div className="flex items-center justify-end gap-0.5 w-[60px] shrink-0">
+                          {s.status === 'ACTIVE' && (
+                            <Button
+                              size="icon" variant="ghost"
+                              className="h-7 w-7 text-amber-600 hover:text-amber-700"
+                              disabled={busy}
+                              onClick={() => void pauseSchedule(s)}
+                              title={t('invoice.recurring.pause', 'Pause')}
+                              aria-label={t('invoice.recurring.pause', 'Pause')}
+                            >
+                              <Pause className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {s.status === 'PAUSED' && (
+                            <Button
+                              size="icon" variant="ghost"
+                              className="h-7 w-7 text-emerald-600 hover:text-emerald-700"
+                              disabled={busy}
+                              onClick={() => void resumeSchedule(s)}
+                              title={t('invoice.recurring.resume', 'Resume')}
+                              aria-label={t('invoice.recurring.resume', 'Resume')}
+                            >
+                              <Play className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {isOpen && (
+                            <Button
+                              size="icon" variant="ghost"
+                              className="h-7 w-7 text-red-600 hover:text-red-700"
+                              disabled={busy}
+                              onClick={() => void cancelSchedule(s)}
+                              title={t('invoice.recurring.cancel', 'Cancel')}
+                              aria-label={t('invoice.recurring.cancel', 'Cancel')}
+                            >
+                              <CircleStop className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Notes stays fixed-left; the right column carries the
                 Terms & Conditions card (when on) + the summary. So:
