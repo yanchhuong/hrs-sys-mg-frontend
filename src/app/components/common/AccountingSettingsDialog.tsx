@@ -356,6 +356,12 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
         toast.error(SWITCHED_TENANT);
         return;
       }
+      // One KHQR type (a list from before the rule can hold both): the
+      // server would refuse it after the settings had gone out.
+      if (scope === 'pos' && banksReady && banksDirty && canEditBanks && posPayWay && posManual) {
+        toast.error('Use one KHQR type: keep Manual or ABA PayWay, delete the other.');
+        return;
+      }
       const saved = await settingsApi.update(scope, draft);
       setDraft(saved); // pick up server-stamped updatedAt + updatedByEmail
       // Bank cards save with the same click: to the server for POS
@@ -382,13 +388,21 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     setBanksDirty(true);
     setBanks(prev => prev.map(b => (b.id === id ? { ...b, ...patch } : b)));
   };
+  /** POS keeps one KHQR type (v-khqr-setup-decides): uploaded QRs or ABA
+   *  PayWay, never both — the server refuses a list with both. */
+  const posPayWay = scope === 'pos' && banks.some(b => b.mode === 'auto');
+  const posManual = scope === 'pos' && banks.some(b => (b.mode ?? 'manual') === 'manual');
   const addBank = () => {
     // Seed the new card's mode from whichever Bank Account tab the
     // operator is on — manual cards live in the Manual tab, auto in
     // the ABA PayWay tab. Without this, "Add" from the ABA tab would
     // create a card in the wrong list.
+    if (scope === 'pos' && (bankTab === 'manual' ? posPayWay : posPayWay || posManual)) return;
     setBanksDirty(true);
-    setBanks(prev => [...prev, { ...EMPTY_BANK_ACCOUNT, id: newBankAccountId(), mode: bankTab }]);
+    setBanks(prev => [...prev, {
+      ...EMPTY_BANK_ACCOUNT, id: newBankAccountId(), mode: bankTab,
+      ...(bankTab === 'auto' ? { bankName: 'ABA' } : {}),
+    }]);
   };
   const removeBank = (id: string) => {
     setBanksDirty(true);
@@ -1099,13 +1113,18 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                       ({shownCount}/{MAX_BANK_ACCOUNTS_ON_INVOICE} selected)
                     </span>
                   </h3>
-                  {/* Add button only on the Manual tab — the ABA PayWay
-                      tab needs no card at all (credentials live in
-                      Settings → PayWay), so the button would just
-                      misdirect the operator. */}
-                  {bankTab === 'manual' && (
+                  {/* Manual: any number of uploaded QRs. ABA PayWay (POS
+                      only): one entry — what puts PayWay KHQR at the tills
+                      and on the shop page, with PayWay switched on in
+                      Settings → PayWay. One KHQR type at a time (POS). */}
+                  {bankTab === 'manual' && !posPayWay && (
                     <Button size="sm" onClick={addBank} disabled={banksLocked} className="shrink-0">
                       <Plus className="h-3.5 w-3.5 mr-1" /> Add Manual Bank
+                    </Button>
+                  )}
+                  {bankTab === 'auto' && scope === 'pos' && !posPayWay && !posManual && (
+                    <Button size="sm" onClick={addBank} disabled={banksLocked} className="shrink-0">
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Add ABA PayWay
                     </Button>
                   )}
                 </div>
@@ -1168,8 +1187,10 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                       <p>
                         ABA PayWay mints a fresh KHQR per transaction with the cart amount baked in — no image
                         upload needed. Set Merchant ID + API key + toggle <strong>Enabled</strong> in the PayWay
-                        settings dialog; the card below is just for the account name / number that appears next
-                        to the QR on the checkout screen.
+                        settings dialog{scope === 'pos'
+                          ? <>, then add the ABA PayWay entry here: the tills offer PayWay KHQR only with it.</>
+                          : <>; the card below is just for the account name / number that appears next to the
+                            QR on the checkout screen.</>}
                       </p>
                     </div>
                   );
@@ -1181,7 +1202,14 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                     happens here. */}
                 {bankTab === 'manual' && visibleBanks.length === 0 && (
                   <div className="border-2 border-dashed rounded-md py-10 text-center text-sm text-gray-500">
-                    No manual bank accounts yet — click <strong>Add Manual Bank</strong> to start.
+                    {posPayWay
+                      ? <>Using ABA PayWay. Delete it to use your own KHQR.</>
+                      : <>No manual bank accounts yet — click <strong>Add Manual Bank</strong> to start.</>}
+                  </div>
+                )}
+                {bankTab === 'auto' && posManual && !posPayWay && (
+                  <div className="border-2 border-dashed rounded-md py-10 text-center text-sm text-gray-500">
+                    Using manual KHQR. Delete those to use ABA PayWay.
                   </div>
                 )}
 

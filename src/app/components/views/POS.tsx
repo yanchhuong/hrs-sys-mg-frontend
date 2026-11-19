@@ -350,6 +350,15 @@ export function POS() {
   // Reset to cash whenever the dialog reopens so a previous KHQR
   // pick doesn't carry over (and surprise the next customer).
   useEffect(() => { if (checkoutOpen) setCheckoutMethod('cash'); }, [checkoutOpen]);
+  // v-khqr-setup-decides — the cards decide which KHQR checkout offers (or
+  // none), so read them again each time it opens: an owner may have
+  // changed them on another device since this page loaded.
+  useEffect(() => {
+    if (!checkoutOpen) return;
+    let live = true;
+    void loadBankAccountsSynced('pos').then(b => { if (live) setBanks(b); });
+    return () => { live = false; };
+  }, [checkoutOpen]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [receipt, setReceipt] = useState<PosOrder | null>(null);
 
@@ -2756,12 +2765,19 @@ function PosCheckoutDialog({
   // sale paid) otherwise. Only ONE button ever renders, so the
   // cashier never has to reason about "which QR do I pick".
   const [paywayReady, setPaywayReady] = useState<boolean>(false);
+  /** False until the probe below answers: the KHQR choice is not drawn
+   *  (and a KHQR pick not undone) on a guess. */
+  const [paywayKnown, setPaywayKnown] = useState(false);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    paywayApi.getCredentials()
-      .then(c => { if (!cancelled) setPaywayReady(!!c.configured && !!c.enabled); })
-      .catch(() => { if (!cancelled) setPaywayReady(false); });
+    setPaywayKnown(false);
+    // pos:view, like the purchase — getCredentials needs settings:view and
+    // hid PayWay from every cashier.
+    paywayApi.posAvailability()
+      .then(ok => { if (!cancelled) setPaywayReady(ok); })
+      .catch(() => { if (!cancelled) setPaywayReady(false); })
+      .finally(() => { if (!cancelled) setPaywayKnown(true); });
     return () => { cancelled = true; };
   }, [open]);
 
@@ -2878,6 +2894,19 @@ function PosCheckoutDialog({
   // (manual) cards only: an ABA PayWay card's image is never shown for
   // review in POS Settings, so it must not reach customers.
   const qrCards = banks.filter(b => (b.mode ?? 'manual') === 'manual' && b.qrDataUrl && b.qrDataUrl.length > 0);
+  /** v-khqr-setup-decides — POS Settings → Bank Account decides which KHQR
+   *  this till offers: PayWay only with its ABA PayWay entry there (and
+   *  PayWay switched on), the uploaded QR with a manual card, and none —
+   *  no KHQR button at all — when neither is set up. */
+  const khqrKind: 'auto' | 'manual' | null =
+    paywayReady && banks.some(b => b.mode === 'auto') ? 'auto'
+      : qrCards.length > 0 ? 'manual'
+      : null;
+  // A KHQR pick that is no longer offered goes back to Cash.
+  useEffect(() => {
+    if (!open || !paywayKnown) return;
+    if ((method === 'khqr' && khqrKind !== 'auto') || (method === 'khqr_mark' && khqrKind !== 'manual')) setMethod('cash');
+  }, [open, paywayKnown, khqrKind, method, setMethod]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2908,9 +2937,8 @@ function PosCheckoutDialog({
                   Inline colour on the icon (emerald for auto, gray
                   for manual) survives the button's own text-color
                   swap on active/inactive. */}
-              {paywayReady
-                ? methodButton('khqr',      <QrCode className="h-5 w-5" style={{ color: '#059669' }} />, 'KHQR')
-                : methodButton('khqr_mark', <QrCode className="h-5 w-5" style={{ color: '#9CA3AF' }} />, 'KHQR')}
+              {paywayKnown && khqrKind === 'auto' && methodButton('khqr',      <QrCode className="h-5 w-5" style={{ color: '#059669' }} />, 'KHQR')}
+              {paywayKnown && khqrKind === 'manual' && methodButton('khqr_mark', <QrCode className="h-5 w-5" style={{ color: '#9CA3AF' }} />, 'KHQR')}
               {methodButton('card',      <CreditCard className="h-5 w-5" />, 'Credit')}
               {methodButton('cheque',    <ScrollText className="h-5 w-5" />, 'Cheque')}
             </div>

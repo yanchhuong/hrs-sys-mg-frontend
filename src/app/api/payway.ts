@@ -42,6 +42,18 @@ export async function getCredentials(): Promise<PayWayCredentials> {
   return apiJson('/api/v1/payway/credentials');
 }
 
+/**
+ * Whether the tills can take a PayWay KHQR — on the same pos:view gate as
+ * the purchase itself. Not {@link getCredentials}: that needs
+ * settings:view, which a cashier does not hold, so every cashier read
+ * "not configured" and never got PayWay. From the API with
+ * v-khqr-setup-decides it also needs the ABA PayWay entry in POS Setup.
+ */
+export async function posAvailability(): Promise<boolean> {
+  const r = await apiJson<{ available: boolean }>('/api/v1/payway/pos/availability');
+  return !!r.available;
+}
+
 export async function saveCredentials(req: PayWayCredentialsRequest): Promise<PayWayCredentials> {
   return apiJson('/api/v1/payway/credentials', { method: 'PUT', json: req });
 }
