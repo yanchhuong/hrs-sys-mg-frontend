@@ -363,7 +363,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       // POS: only when edited, from the server's list, by an owner — an
       // unrelated settings Save must never write the payment cards.
       if (scope !== 'pos' || (banksReady && banksDirty && canEditBanks)) {
-        await saveBankAccountsSynced(scope, banks, scope === 'pos' ? openedFor : null);
+        await saveBankAccountsSynced(scope, banks, scope === 'pos' ? openedFor : null, scope === 'pos' ? pendingBanks : []);
         setBanksDirty(false);
       }
       toast.success(`${sideLabel} settings saved`);

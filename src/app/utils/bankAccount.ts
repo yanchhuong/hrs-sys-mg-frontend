@@ -342,7 +342,12 @@ export const SWITCHED_TENANT = 'Signed in to another company since this opened. 
  * the list was LOADED for: if another is signed in by now (another tab),
  * nothing is sent, rather than one company's cards replacing another's.
  */
-export async function saveBankAccountsSynced(scope: Scope, accounts: BankAccount[], tenant?: string | null): Promise<void> {
+export async function saveBankAccountsSynced(
+  scope: Scope, accounts: BankAccount[], tenant?: string | null,
+  /** Set-aside cards the owner has not been shown yet (the other Manual /
+   *  ABA PayWay tab's): they stay set aside. The rest were reviewed. */
+  unreviewed: BankAccount[] = [],
+): Promise<void> {
   if (scope !== SERVER_SCOPE) { saveBankAccounts(scope, accounts); return; }
   const session = sessionNow();
   if (tenant && tenant !== session.tenant) throw new Error(SWITCHED_TENANT);
@@ -351,8 +356,9 @@ export async function saveBankAccountsSynced(scope: Scope, accounts: BankAccount
     if (!sameSession(session)) return;
     writeCache(session.tenant, saved);
     markSynced(session.tenant);
-    // The owner has reviewed this list: what they kept is now stored.
-    writePending(session.tenant, []);
+    // The owner reviewed what they were shown: kept cards are stored now,
+    // dropped ones are gone. Only cards never shown stay set aside.
+    writePending(session.tenant, cardsOnlyHere(unreviewed, saved));
   } catch (e) {
     // An API from before V418 has no /bank-accounts endpoint (the web app
     // deploys on push, the API by hand): keep this browser's copy, as
