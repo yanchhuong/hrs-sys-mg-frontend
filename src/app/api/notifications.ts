@@ -64,30 +64,72 @@ export async function markAllRead(): Promise<void> {
  * EventSource can't set an Authorization header, so we first mint a
  * single-use 60s ticket over the authenticated client and pass that.
  *
- * Returns a disposer. Resolves to null when the ticket can't be minted
- * (older backend, offline) — the caller then just keeps polling.
+ * v-bell-quiet-poll — two things this used to get wrong, which together
+ * left the bell polling unread-count every minute for the whole session:
+ *   • Health was only noticed on a `notification` event. An idle stream
+ *     carries nothing but SSE comments ("connected", the 25s "ping"),
+ *     which EventSource never surfaces, so a quiet account looked
+ *     disconnected forever. `onOpen` now fires on every (re)connect.
+ *   • EventSource's own retry re-sends the SAME url, and the ticket was
+ *     consumed on first use — after any drop (deploy, Wi-Fi blip, laptop
+ *     sleep) the retry got a 401 and the browser gave up for good. On
+ *     error we now close it ourselves and reconnect with a fresh ticket,
+ *     backing off 5s → 10s → … → 5 min.
+ *
+ * Returns a disposer synchronously, so an unmount that lands before the
+ * ticket comes back still closes the stream.
  */
-export async function subscribeToChanges(
+export function subscribeToChanges(
   onChange: () => void,
-  onError?: () => void,
-): Promise<(() => void) | null> {
-  let ticket: string;
-  try {
-    const res = await apiJson<{ ticket: string }>(
-      '/api/v1/notifications/stream-ticket', { method: 'POST' },
-    );
-    ticket = res.ticket;
-  } catch {
-    return null;
-  }
+  onDown?: () => void,
+  onOpen?: () => void,
+): () => void {
+  let source: EventSource | null = null;
+  let retryTimer = 0;
+  let attempt = 0;
+  let disposed = false;
 
-  const path = apiPath(`/api/v1/notifications/stream?ticket=${encodeURIComponent(ticket)}`);
-  const es = new EventSource(`${apiOrigin()}${path}`);
-  es.addEventListener('notification', () => onChange());
-  es.onerror = () => {
-    // EventSource retries on its own; tell the caller so it can lean
-    // back on polling while the connection is down.
-    onError?.();
+  const reconnectLater = () => {
+    if (disposed) return;
+    const delay = Math.min(5_000 * 2 ** attempt, 5 * 60_000);
+    attempt += 1;
+    retryTimer = window.setTimeout(() => { void connect(); }, delay);
   };
-  return () => es.close();
+
+  const connect = async () => {
+    let ticket: string;
+    try {
+      const res = await apiJson<{ ticket: string }>(
+        '/api/v1/notifications/stream-ticket', { method: 'POST' },
+      );
+      ticket = res.ticket;
+    } catch {
+      reconnectLater();
+      return;
+    }
+    if (disposed) return;
+
+    const path = apiPath(`/api/v1/notifications/stream?ticket=${encodeURIComponent(ticket)}`);
+    const es = new EventSource(`${apiOrigin()}${path}`);
+    source = es;
+    let openedAt = 0;
+    es.onopen = () => { openedAt = Date.now(); onOpen?.(); };
+    es.addEventListener('notification', () => onChange());
+    es.onerror = () => {
+      es.close();
+      if (source === es) source = null;
+      // Only a connection that held for a while earns a fast retry —
+      // one that drops straight after opening keeps backing off.
+      if (openedAt && Date.now() - openedAt > 60_000) attempt = 0;
+      onDown?.();
+      reconnectLater();
+    };
+  };
+
+  void connect();
+  return () => {
+    disposed = true;
+    window.clearTimeout(retryTimer);
+    source?.close();
+  };
 }

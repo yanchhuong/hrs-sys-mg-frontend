@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { lazyWithReload } from '../../utils/lazyWithReload';
 import { Bell, CheckCheck, Loader2, Megaphone, PartyPopper, Newspaper, CalendarHeart, Inbox, Stethoscope, CalendarClock, MessageCircle, ClipboardCheck, CircleCheck, CircleX, Send, ShoppingBag, Gift, Check, X, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
@@ -109,26 +109,39 @@ export function NotificationsBell({ onNavigate }: {
     // The stream only pokes; refreshCount() re-reads the authoritative
     // number, so devices can never drift the way a local ++ would let
     // them. Polling stays on but drops to a slow heartbeat while the
-    // stream is healthy, and returns to 60s if it drops — one timer
-    // either way, never two.
-    let disposeStream: (() => void) | null = null;
+    // stream is connected, and returns to 60s if it drops — one timer
+    // either way, never two. A hidden tab skips the poll (the stream
+    // still pokes it) and catches up when it is shown again.
     let live = false;
+    let missed = false;
     let timer = 0;
 
     const arm = (ms: number) => {
       window.clearInterval(timer);
-      timer = window.setInterval(() => { void refreshCount(); }, ms);
+      timer = window.setInterval(() => {
+        if (document.hidden) { missed = true; return; }
+        void refreshCount();
+      }, ms);
     };
     arm(60_000);
 
-    void api.subscribeToChanges(
-      () => { live = true; arm(5 * 60_000); void refreshCount(); },
-      () => { if (live) { live = false; arm(60_000); } },
-    ).then(dispose => { disposeStream = dispose; });
+    const onVisible = () => {
+      if (!document.hidden && missed) { missed = false; void refreshCount(); }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    let wasDown = false;
+    const disposeStream = api.subscribeToChanges(
+      () => { void refreshCount(); },
+      () => { wasDown = true; if (live) { live = false; arm(60_000); } },
+      // Back after a drop: anything sent meanwhile was missed, re-read.
+      () => { live = true; arm(5 * 60_000); if (wasDown) { wasDown = false; void refreshCount(); } },
+    );
 
     return () => {
       window.clearInterval(timer);
-      disposeStream?.();
+      document.removeEventListener('visibilitychange', onVisible);
+      disposeStream();
     };
   }, []);
 
@@ -165,9 +178,13 @@ export function NotificationsBell({ onNavigate }: {
   };
 
   // Fetch the dropdown content on open; counts can re-sync on close.
+  // Only on a real close — on mount `open` starts false, and the mount
+  // effect above has already fetched the count (it used to go twice).
+  const wasOpen = useRef(false);
   useEffect(() => {
     if (open) void loadList();
-    else      void refreshCount();
+    else if (wasOpen.current) void refreshCount();
+    wasOpen.current = open;
   }, [open]);
 
   const onItemClick = async (n: api.Notification) => {
