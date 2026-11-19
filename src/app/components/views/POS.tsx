@@ -641,8 +641,11 @@ export function POS() {
       // needs) so the broadcast stays small.
       checkout: checkoutOpen ? {
         method: checkoutMethod,
+        // Uploaded-QR (manual) cards only, as the shop page and the mobile
+        // till show them: an ABA PayWay card's image is never shown for
+        // review in POS Settings, so it must not reach customers either.
         banks: banks
-          .filter(b => b.qrDataUrl && b.qrDataUrl.length > 0)
+          .filter(b => (b.mode ?? 'manual') === 'manual' && b.qrDataUrl && b.qrDataUrl.length > 0)
           .map(b => ({
             id: b.id,
             bankName: b.bankName,
@@ -2871,8 +2874,10 @@ function PosCheckoutDialog({
   );
 
   // KHQR cards that actually have a QR image — empty rows are
-  // ignored so the cashier doesn't see a blank "QR" placeholder.
-  const qrCards = banks.filter(b => b.qrDataUrl && b.qrDataUrl.length > 0);
+  // ignored so the cashier doesn't see a blank "QR" placeholder. Uploaded
+  // (manual) cards only: an ABA PayWay card's image is never shown for
+  // review in POS Settings, so it must not reach customers.
+  const qrCards = banks.filter(b => (b.mode ?? 'manual') === 'manual' && b.qrDataUrl && b.qrDataUrl.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

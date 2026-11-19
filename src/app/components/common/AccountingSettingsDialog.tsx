@@ -17,6 +17,7 @@ import * as currencyApi from '../../api/currencySettings';
 import { resolveVideoEmbed } from '../../utils/posCustomerDisplay';
 import {
   loadBankAccounts, loadBankAccountsForEdit, saveBankAccountsSynced, newBankAccountId,
+  currentTenant, SWITCHED_TENANT,
   EMPTY_BANK_ACCOUNT, MAX_BANK_ACCOUNTS_ON_INVOICE, type BankAccount,
 } from '../../utils/bankAccount';
 import { ImageDropZone } from './ImageDropZone';
@@ -155,6 +156,9 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   const [pendingBanks, setPendingBanks] = useState<BankAccount[]>([]);
   /** Which listed cards those are: marked "Not saved" until Save. */
   const [pendingIds, setPendingIds] = useState<string[]>([]);
+  /** The tenant this dialog opened for (POS): Save is refused once another
+   *  is signed in — another tab shares this browser's storage. */
+  const [openedFor, setOpenedFor] = useState<string | null>(null);
   const canEditBanks = scope !== 'pos' || canUpdate('settings');
   /** Tab inside the Bank Account section — Manual (uploaded KHQR PNG)
    *  vs ABA PayWay (dynamic KHQR minted per transaction). Filters the
@@ -326,12 +330,17 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     setBanks(loadBankAccounts(scope));
     setBanksDirty(false);
     setBanksReady(scope !== 'pos');
+    // Nothing set aside from an earlier opening survives into this one.
+    setPendingBanks([]);
+    setPendingIds([]);
+    setOpenedFor(currentTenant());
     if (scope === 'pos') {
       void loadBankAccountsForEdit(scope).then(r => {
         if (cancelled || r === null) return;
         setBanks(r.accounts);
         setPendingIds([]);
         setPendingBanks(r.pending);
+        setOpenedFor(r.tenant);
         setBanksReady(true);
       });
     }
@@ -341,6 +350,12 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Opened for one company, another signed in since (another tab):
+      // saving would write this company's settings and cards into that one.
+      if (scope === 'pos' && openedFor && currentTenant() !== openedFor) {
+        toast.error(SWITCHED_TENANT);
+        return;
+      }
       const saved = await settingsApi.update(scope, draft);
       setDraft(saved); // pick up server-stamped updatedAt + updatedByEmail
       // Bank cards save with the same click: to the server for POS
@@ -348,7 +363,7 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
       // POS: only when edited, from the server's list, by an owner — an
       // unrelated settings Save must never write the payment cards.
       if (scope !== 'pos' || (banksReady && banksDirty && canEditBanks)) {
-        await saveBankAccountsSynced(scope, banks);
+        await saveBankAccountsSynced(scope, banks, scope === 'pos' ? openedFor : null);
         setBanksDirty(false);
       }
       toast.success(`${sideLabel} settings saved`);
@@ -385,17 +400,21 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   // An owner sees this browser's set-aside cards added to the list,
   // unsaved: Save keeps them for every till and the shop page, deleting
   // one drops it. Nobody else sees them, and they never reach customers
-  // unreviewed. Only once the Bank Account section is open: merged on
-  // load, a Save made for the receipt or the numbering would upload a
-  // card the owner never saw.
+  // unreviewed. Only in the Bank Account section, and only the cards its
+  // open tab (Manual / ABA PayWay) draws: a card merged out of sight would
+  // be uploaded by a Save nobody reviewed.
   useEffect(() => {
     if (section !== 'bank' || !banksReady || !canEditBanks || pendingBanks.length === 0) return;
-    const add = pendingBanks;
-    setBanks(prev => [...prev, ...add.filter(p => !prev.some(b => b.id === p.id))]);
+    const shownHere = pendingBanks.filter(p => (p.mode ?? 'manual') === bankTab);
+    if (shownHere.length === 0) return;
+    setPendingBanks(pendingBanks.filter(p => !shownHere.includes(p)));
+    // A set-aside card the list already has is not "Not saved".
+    const added = shownHere.filter(p => !banks.some(b => b.id === p.id));
+    if (added.length === 0) return;
+    setBanks(prev => [...prev, ...added.filter(p => !prev.some(b => b.id === p.id))]);
     setBanksDirty(true);
-    setPendingIds(add.map(p => p.id));
-    setPendingBanks([]);
-  }, [section, banksReady, canEditBanks, pendingBanks]);
+    setPendingIds(prev => [...prev, ...added.map(p => p.id)]);
+  }, [section, bankTab, banksReady, canEditBanks, pendingBanks, banks]);
 
   /** Read a file as a base64 data URL so the KHQR survives a page
    *  reload (localStorage can't hold a blob). Caps at 1 MB — QR PNGs are

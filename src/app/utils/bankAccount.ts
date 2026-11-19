@@ -61,9 +61,17 @@ const TENANT_KEY = 'hrms:tenantSlug';
 // receipt trio.
 type Scope = AccountingScope;
 
-function storageKey(scope: Scope): string {
-  const tenant = (typeof localStorage !== 'undefined' && localStorage.getItem(TENANT_KEY)) || 'default';
+/** The signed-in tenant's slug, as this browser's keys use it. */
+export function currentTenant(): string {
+  return (typeof localStorage !== 'undefined' && localStorage.getItem(TENANT_KEY)) || 'default';
+}
+
+function keyFor(tenant: string, scope: Scope): string {
   return `hrms:bankInfo:${tenant}:${scope}`;
+}
+
+function storageKey(scope: Scope): string {
+  return keyFor(currentTenant(), scope);
 }
 
 /** Cheap unique id — only used as a React key + delete handle. */
@@ -80,9 +88,13 @@ function normalize(raw: Partial<BankAccount>): BankAccount {
 }
 
 export function loadBankAccounts(scope: Scope): BankAccount[] {
+  return readCards(storageKey(scope));
+}
+
+function readCards(key: string): BankAccount[] {
   if (typeof localStorage === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(storageKey(scope));
+    const raw = localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     // Backward-compat: the v1 dialog wrote a single object. If we see
@@ -154,30 +166,54 @@ function fromServer(rows: Partial<BankAccount>[] | null | undefined): BankAccoun
   }));
 }
 
+// Every key below belongs to ONE tenant, fixed when a sync or a save
+// starts (v-shop-khqr-proof-round3). Signing out and in as another tenant
+// — in this tab, or another: tabs share localStorage — while a request is
+// out must never land one tenant's cards in another's keys, or on its
+// server list.
+const posKey = (tenant: string): string => keyFor(tenant, SERVER_SCOPE);
 /** Set once this browser's cards are reconciled with the server's list;
- *  from then on the server's list wins. Per tenant, like the cards. */
-const syncedKey = (): string => `${storageKey(SERVER_SCOPE)}:synced`;
+ *  from then on the server's list wins. */
+const syncedKey = (tenant: string): string => `${posKey(tenant)}:synced`;
 /** Cards set aside for an owner's review (see above). */
-const pendingKey = (): string => `${storageKey(SERVER_SCOPE)}:pending`;
-function isSynced(): boolean {
-  try { return localStorage.getItem(syncedKey()) === '1'; } catch { return false; }
+const pendingKey = (tenant: string): string => `${posKey(tenant)}:pending`;
+function isSynced(tenant: string): boolean {
+  try { return localStorage.getItem(syncedKey(tenant)) === '1'; } catch { return false; }
 }
-function markSynced(): void {
-  try { localStorage.setItem(syncedKey(), '1'); } catch { /* best effort */ }
+function markSynced(tenant: string): void {
+  try { localStorage.setItem(syncedKey(tenant), '1'); } catch { /* best effort */ }
 }
-function readPending(): BankAccount[] {
+function readPending(tenant: string): BankAccount[] {
   try {
-    const raw = localStorage.getItem(pendingKey());
+    const raw = localStorage.getItem(pendingKey(tenant));
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch { return []; }
 }
-function writePending(list: BankAccount[]): void {
+/** False when the browser refused it (quota). */
+function writePending(tenant: string, list: BankAccount[]): boolean {
   try {
-    if (list.length === 0) localStorage.removeItem(pendingKey());
-    else localStorage.setItem(pendingKey(), JSON.stringify(list));
-  } catch { /* best effort */ }
+    if (list.length === 0) localStorage.removeItem(pendingKey(tenant));
+    else localStorage.setItem(pendingKey(tenant), JSON.stringify(list));
+    return true;
+  } catch { return false; }
 }
+/** The till's copy must never be OLDER than the list just received: when
+ *  the new one does not fit (quota), the copy is removed instead, so an
+ *  offline till shows no KHQR rather than a card the owner removed or one
+ *  set aside for review. */
+function writeCache(tenant: string, list: BankAccount[]): boolean {
+  try { localStorage.setItem(posKey(tenant), JSON.stringify(list)); return true; } catch {
+    try { localStorage.removeItem(posKey(tenant)); } catch { /* nothing more to do */ }
+    return false;
+  }
+}
+
+/** The sign-in a sync or a save started with. */
+interface Session { tenant: string; token: string | null }
+const sessionNow = (): Session => ({ tenant: currentTenant(), token: getToken() });
+const sameSession = (s: Session): boolean => currentTenant() === s.tenant && getToken() === s.token;
+
 /** The sign-in (token) that was refused the upload — no settings:update.
  *  A different sign-in tries again; a page-wide flag blocked the owner
  *  who signs in after a cashier on the same tab. */
@@ -189,54 +225,83 @@ export function cardsOnlyHere(local: BankAccount[], server: BankAccount[]): Bank
   return local.filter(c => !!c.id && !ids.has(c.id));
 }
 
+/** The set-aside list after a load: cards the server's list has by now
+ *  drop out (an owner saved them from elsewhere, or a Save whose reply was
+ *  lost went through) — a live card is never labelled "Not saved" and
+ *  deleted as a leftover; `found` joins. */
+export function nextPending(stored: BankAccount[], server: BankAccount[], found: BankAccount[]): BankAccount[] {
+  const kept = cardsOnlyHere(stored, server);
+  const ids = new Set(kept.map(c => c.id));
+  return [...kept, ...found.filter(c => !ids.has(c.id))];
+}
+
+/** Store the set-aside list after a load and return it. Refused (quota):
+ *  those cards cannot be kept aside here; they go with the old copy,
+ *  never left where an offline till would show them. */
+function settlePending(tenant: string, server: BankAccount[], found: BankAccount[]): BankAccount[] {
+  const before = readPending(tenant);
+  const next = nextPending(before, server, found);
+  const changed = next.length !== before.length || next.some((c, i) => c.id !== before[i].id);
+  if (changed && !writePending(tenant, next)) return cardsOnlyHere(before, server);
+  return next;
+}
+
 async function putServer(accounts: BankAccount[]): Promise<BankAccount[]> {
   const r = await apiJson<StoredAccounts>(`/api/v1/bank-accounts/${SERVER_SCOPE}`, { method: 'PUT', json: accounts });
   return fromServer(r.accounts);
 }
 
+/** A reconciled load: the till's list, the cards set aside for an owner,
+ *  and the tenant it was done for. */
+interface Synced { show: BankAccount[]; pending: BankAccount[]; tenant: string }
+
 /** The till's list and the cards set aside for an owner, reconciled with
- *  the server; null when the server could not be asked. */
-async function syncPos(): Promise<{ show: BankAccount[]; pending: BankAccount[] } | null> {
-  const local = loadBankAccounts(SERVER_SCOPE);
+ *  the server; null when the server could not be asked, or the sign-in
+ *  changed while it was. */
+async function syncPos(): Promise<Synced | null> {
+  const session = sessionNow();
+  const { tenant } = session;
+  const local = readCards(posKey(tenant));
   let stored: StoredAccounts;
   try {
     stored = await apiJson<StoredAccounts>(`/api/v1/bank-accounts/${SERVER_SCOPE}`);
   } catch {
     return null;   // offline, an API from before V418, or no pos:view
   }
+  // Signed out, or in as someone else, while the server answered: this
+  // answer is not the current tenant's. Touch nothing.
+  if (!sameSession(session)) return null;
   const server = fromServer(stored.accounts);
-  if (isSynced()) {
-    saveBankAccounts(SERVER_SCOPE, server);
-    return { show: server, pending: readPending() };
+  if (isSynced(tenant)) {
+    writeCache(tenant, server);
+    return { show: server, pending: settlePending(tenant, server, []), tenant };
   }
   if (!stored.saved) {
     // Nothing stored yet: this browser's cards are the shop's.
-    if (local.length === 0) { markSynced(); return { show: server, pending: readPending() }; }
-    const token = getToken();
-    if (refusedFor !== token) {
+    if (local.length === 0) { markSynced(tenant); return { show: server, pending: readPending(tenant), tenant }; }
+    if (refusedFor !== session.token) {
       try {
         const moved = await putServer(local.slice(0, MAX_SERVER_CARDS));
-        saveBankAccounts(SERVER_SCOPE, moved);
-        markSynced();
-        return { show: moved, pending: readPending() };
+        if (!sameSession(session)) return null;
+        writeCache(tenant, moved);
+        // Deliberately NOT marked in step: if another till moved its own
+        // cards up at the same moment and won, the next load finds a saved
+        // list without this browser's cards and sets them aside, instead
+        // of the server's list silently replacing them.
+        return { show: moved, pending: readPending(tenant), tenant };
       } catch (e) {
-        if (e instanceof ApiError && e.status === 403) refusedFor = token;
+        if (e instanceof ApiError && e.status === 403) refusedFor = session.token;
         else console.warn('[bank-accounts] could not move this browser\'s cards to the server', e);
       }
     }
     // Not moved up from this sign-in: keep using this browser's cards
     // (the server has none) until someone allowed opens POS here.
-    return { show: local, pending: readPending() };
+    return { show: local, pending: readPending(tenant), tenant };
   }
   // A saved list wins. Cards only here are set aside for an owner.
-  const extra = cardsOnlyHere(local, server);
-  const pending = readPending();
-  const ids = new Set(pending.map(c => c.id));
-  const nextPending = [...pending, ...extra.filter(c => !ids.has(c.id))];
-  writePending(nextPending);
-  saveBankAccounts(SERVER_SCOPE, server);
-  markSynced();
-  return { show: server, pending: nextPending };
+  const pending = settlePending(tenant, server, cardsOnlyHere(local, server));
+  if (writeCache(tenant, server)) markSynced(tenant);
+  return { show: server, pending, tenant };
 }
 
 /** The cards for `scope` as the till should use them, or null when the
@@ -247,31 +312,47 @@ export async function loadBankAccountsFromServer(scope: Scope): Promise<BankAcco
 }
 
 /** POS Settings: the list to edit, plus cards only this browser had (to
- *  be added by an owner's explicit Save, or dropped). Null: the server
- *  list could not be read, so there is nothing trustworthy to edit. */
+ *  be added by an owner's explicit Save, or dropped), and the tenant they
+ *  belong to — pass it back to {@link saveBankAccountsSynced}. Null: the
+ *  server list could not be read, so there is nothing trustworthy to edit. */
 export async function loadBankAccountsForEdit(
   scope: Scope,
-): Promise<{ accounts: BankAccount[]; pending: BankAccount[] } | null> {
-  if (scope !== SERVER_SCOPE) return { accounts: loadBankAccounts(scope), pending: [] };
+): Promise<{ accounts: BankAccount[]; pending: BankAccount[]; tenant: string } | null> {
+  if (scope !== SERVER_SCOPE) return { accounts: loadBankAccounts(scope), pending: [], tenant: currentTenant() };
   const r = await syncPos();
-  return r ? { accounts: r.show, pending: r.pending } : null;
+  return r ? { accounts: r.show, pending: r.pending, tenant: r.tenant } : null;
 }
 
 /** The cards for `scope`: the server's for 'pos' when it answers, this
  *  browser's copy when it does not. For screens that only SHOW cards. */
 export async function loadBankAccountsSynced(scope: Scope): Promise<BankAccount[]> {
-  return (await loadBankAccountsFromServer(scope)) ?? loadBankAccounts(scope);
+  try {
+    return (await loadBankAccountsFromServer(scope)) ?? loadBankAccounts(scope);
+  } catch {
+    return loadBankAccounts(scope);
+  }
 }
 
-/** Save `scope`'s cards: to the server for 'pos' (throws when it
- *  refuses, so Save can say so), this browser only otherwise. */
-export async function saveBankAccountsSynced(scope: Scope, accounts: BankAccount[]): Promise<void> {
+/** What a save refused because another tenant is signed in says. */
+export const SWITCHED_TENANT = 'Signed in to another company since this opened. Reopen it to edit.';
+
+/**
+ * Save `scope`'s cards: to the server for 'pos' (throws when it refuses,
+ * so Save can say so), this browser only otherwise. `tenant` is the one
+ * the list was LOADED for: if another is signed in by now (another tab),
+ * nothing is sent, rather than one company's cards replacing another's.
+ */
+export async function saveBankAccountsSynced(scope: Scope, accounts: BankAccount[], tenant?: string | null): Promise<void> {
   if (scope !== SERVER_SCOPE) { saveBankAccounts(scope, accounts); return; }
+  const session = sessionNow();
+  if (tenant && tenant !== session.tenant) throw new Error(SWITCHED_TENANT);
   try {
-    saveBankAccounts(scope, await putServer(accounts));
-    markSynced();
+    const saved = await putServer(accounts);
+    if (!sameSession(session)) return;
+    writeCache(session.tenant, saved);
+    markSynced(session.tenant);
     // The owner has reviewed this list: what they kept is now stored.
-    writePending([]);
+    writePending(session.tenant, []);
   } catch (e) {
     // An API from before V418 has no /bank-accounts endpoint (the web app
     // deploys on push, the API by hand): keep this browser's copy, as
