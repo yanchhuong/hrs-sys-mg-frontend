@@ -2080,11 +2080,12 @@ export function POS() {
         open={settingsOpen}
         onOpenChange={open => {
           setSettingsOpen(open);
-          // Refresh the locally-cached bank cards when the settings
-          // dialog closes — the dialog persists them to localStorage
-          // alongside the server-side row, so we re-read here so a
-          // newly-uploaded KHQR shows up on the next checkout.
-          if (!open) setBanks(loadBankAccounts('pos'));
+          // Refresh the bank cards when the settings dialog closes, so a
+          // newly-uploaded KHQR shows up on the next checkout — from the
+          // server, as on mount (v-shop-khqr-proof-hardening): the local
+          // copy is not always the list this till shows, and re-reading
+          // it dropped the shop's current KHQR at checkout.
+          if (!open) void loadBankAccountsSynced('pos').then(b => setBanks(b));
         }}
         scope="pos"
         onSaved={s => setPosSettings(s)}

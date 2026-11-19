@@ -11,7 +11,7 @@
  * read, so users don't lose their setup when the dialog upgrades.
  */
 import type { AccountingScope } from '../api/accountingSettings';
-import { apiJson, ApiError } from '../api/client';
+import { apiJson, ApiError, getToken } from '../api/client';
 
 export interface BankAccount {
   id: string;
@@ -118,15 +118,18 @@ export function saveBankAccounts(scope: Scope, accounts: BankAccount[]): void {
 // for when the server cannot be reached. Every other scope is still
 // browser-only, as above.
 //
-// Moving this browser's cards up (v-shop-khqr-proof-hardening). Cards
-// that only this browser held are never discarded unseen: the first time
-// it syncs, any card the server lacks is added to the server's list —
-// whether or not another device saved first — and from then on (a
-// per-tenant marker) the server's list wins, so a card deleted
-// elsewhere stays deleted. Only someone who may change the payment
-// cards (settings:update) can move them up; for anyone else this
-// browser keeps showing its own cards next to the server's until such a
-// person opens POS here.
+// Reconciling with the server (v-shop-khqr-proof-hardening). The cards
+// decide where customers' money goes, so:
+//  - Nothing saved on the server yet: this browser's cards ARE the shop's.
+//    They are used, and moved up by the first session allowed to
+//    (settings:update).
+//  - A saved list exists: it wins, at checkout and on the Display. A card
+//    only this browser holds is never shown to customers and never
+//    uploaded unattended — it could be a stale copy of a card the owner
+//    deleted, or one planted in this browser. It is set aside
+//    ("pending") for an owner to add, or drop, in POS Settings with an
+//    explicit Save.
+//  - Once reconciled (a per-tenant marker), the server's list wins.
 
 const SERVER_SCOPE: Scope = 'pos';
 /** The server's limit on one list. */
@@ -154,15 +157,31 @@ function fromServer(rows: Partial<BankAccount>[] | null | undefined): BankAccoun
 /** Set once this browser's cards are reconciled with the server's list;
  *  from then on the server's list wins. Per tenant, like the cards. */
 const syncedKey = (): string => `${storageKey(SERVER_SCOPE)}:synced`;
+/** Cards set aside for an owner's review (see above). */
+const pendingKey = (): string => `${storageKey(SERVER_SCOPE)}:pending`;
 function isSynced(): boolean {
   try { return localStorage.getItem(syncedKey()) === '1'; } catch { return false; }
 }
 function markSynced(): void {
   try { localStorage.setItem(syncedKey(), '1'); } catch { /* best effort */ }
 }
-/** This session was refused the upload (no settings:update): don't ask
- *  again on every load. */
-let uploadRefused = false;
+function readPending(): BankAccount[] {
+  try {
+    const raw = localStorage.getItem(pendingKey());
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+function writePending(list: BankAccount[]): void {
+  try {
+    if (list.length === 0) localStorage.removeItem(pendingKey());
+    else localStorage.setItem(pendingKey(), JSON.stringify(list));
+  } catch { /* best effort */ }
+}
+/** The sign-in (token) that was refused the upload — no settings:update.
+ *  A different sign-in tries again; a page-wide flag blocked the owner
+ *  who signs in after a cashier on the same tab. */
+let refusedFor: string | null = null;
 
 /** Cards this browser holds that the server's list does not (by id). */
 export function cardsOnlyHere(local: BankAccount[], server: BankAccount[]): BankAccount[] {
@@ -175,47 +194,67 @@ async function putServer(accounts: BankAccount[]): Promise<BankAccount[]> {
   return fromServer(r.accounts);
 }
 
-/**
- * The cards for `scope` as the server has them (reconciling this
- * browser's own cards first, see above), or null when the server could
- * not be asked. Callers that let someone EDIT the list use this: a null
- * means there is no trustworthy list to edit.
- */
-export async function loadBankAccountsFromServer(scope: Scope): Promise<BankAccount[] | null> {
-  if (scope !== SERVER_SCOPE) return loadBankAccounts(scope);
-  const local = loadBankAccounts(scope);
-  let server: BankAccount[];
+/** The till's list and the cards set aside for an owner, reconciled with
+ *  the server; null when the server could not be asked. */
+async function syncPos(): Promise<{ show: BankAccount[]; pending: BankAccount[] } | null> {
+  const local = loadBankAccounts(SERVER_SCOPE);
+  let stored: StoredAccounts;
   try {
-    server = fromServer((await apiJson<StoredAccounts>(`/api/v1/bank-accounts/${SERVER_SCOPE}`)).accounts);
+    stored = await apiJson<StoredAccounts>(`/api/v1/bank-accounts/${SERVER_SCOPE}`);
   } catch {
     return null;   // offline, an API from before V418, or no pos:view
   }
+  const server = fromServer(stored.accounts);
   if (isSynced()) {
-    saveBankAccounts(scope, server);
-    return server;
+    saveBankAccounts(SERVER_SCOPE, server);
+    return { show: server, pending: readPending() };
   }
-  const extra = cardsOnlyHere(local, server);
-  if (extra.length === 0) {
-    saveBankAccounts(scope, server);
-    markSynced();
-    return server;
-  }
-  const merged = [...server, ...extra].slice(0, MAX_SERVER_CARDS);
-  if (!uploadRefused) {
-    try {
-      const stored = await putServer(merged);
-      saveBankAccounts(scope, stored);
-      markSynced();
-      return stored;
-    } catch (e) {
-      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) uploadRefused = true;
-      else console.warn('[bank-accounts] could not move this browser\'s cards to the server', e);
+  if (!stored.saved) {
+    // Nothing stored yet: this browser's cards are the shop's.
+    if (local.length === 0) { markSynced(); return { show: server, pending: readPending() }; }
+    const token = getToken();
+    if (refusedFor !== token) {
+      try {
+        const moved = await putServer(local.slice(0, MAX_SERVER_CARDS));
+        saveBankAccounts(SERVER_SCOPE, moved);
+        markSynced();
+        return { show: moved, pending: readPending() };
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 403) refusedFor = token;
+        else console.warn('[bank-accounts] could not move this browser\'s cards to the server', e);
+      }
     }
+    // Not moved up from this sign-in: keep using this browser's cards
+    // (the server has none) until someone allowed opens POS here.
+    return { show: local, pending: readPending() };
   }
-  // Not moved up from this session: show the server's cards and this
-  // browser's own, and leave the local copy as it is for a session that
-  // can move it.
-  return merged;
+  // A saved list wins. Cards only here are set aside for an owner.
+  const extra = cardsOnlyHere(local, server);
+  const pending = readPending();
+  const ids = new Set(pending.map(c => c.id));
+  const nextPending = [...pending, ...extra.filter(c => !ids.has(c.id))];
+  writePending(nextPending);
+  saveBankAccounts(SERVER_SCOPE, server);
+  markSynced();
+  return { show: server, pending: nextPending };
+}
+
+/** The cards for `scope` as the till should use them, or null when the
+ *  server could not be asked. */
+export async function loadBankAccountsFromServer(scope: Scope): Promise<BankAccount[] | null> {
+  if (scope !== SERVER_SCOPE) return loadBankAccounts(scope);
+  return (await syncPos())?.show ?? null;
+}
+
+/** POS Settings: the list to edit, plus cards only this browser had (to
+ *  be added by an owner's explicit Save, or dropped). Null: the server
+ *  list could not be read, so there is nothing trustworthy to edit. */
+export async function loadBankAccountsForEdit(
+  scope: Scope,
+): Promise<{ accounts: BankAccount[]; pending: BankAccount[] } | null> {
+  if (scope !== SERVER_SCOPE) return { accounts: loadBankAccounts(scope), pending: [] };
+  const r = await syncPos();
+  return r ? { accounts: r.show, pending: r.pending } : null;
 }
 
 /** The cards for `scope`: the server's for 'pos' when it answers, this
@@ -231,6 +270,8 @@ export async function saveBankAccountsSynced(scope: Scope, accounts: BankAccount
   try {
     saveBankAccounts(scope, await putServer(accounts));
     markSynced();
+    // The owner has reviewed this list: what they kept is now stored.
+    writePending([]);
   } catch (e) {
     // An API from before V418 has no /bank-accounts endpoint (the web app
     // deploys on push, the API by hand): keep this browser's copy, as

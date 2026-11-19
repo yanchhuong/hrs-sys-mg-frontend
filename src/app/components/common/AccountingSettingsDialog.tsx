@@ -16,7 +16,7 @@ import * as settingsApi from '../../api/accountingSettings';
 import * as currencyApi from '../../api/currencySettings';
 import { resolveVideoEmbed } from '../../utils/posCustomerDisplay';
 import {
-  loadBankAccounts, loadBankAccountsFromServer, saveBankAccountsSynced, newBankAccountId,
+  loadBankAccounts, loadBankAccountsForEdit, saveBankAccountsSynced, newBankAccountId,
   EMPTY_BANK_ACCOUNT, MAX_BANK_ACCOUNTS_ON_INVOICE, type BankAccount,
 } from '../../utils/bankAccount';
 import { ImageDropZone } from './ImageDropZone';
@@ -150,6 +150,11 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   const { canUpdate } = useAuth();
   const [banksReady, setBanksReady] = useState(true);
   const [banksDirty, setBanksDirty] = useState(false);
+  /** Cards only this browser had while the server already held a list
+   *  (utils/bankAccount.ts): offered to an owner as unsaved additions. */
+  const [pendingBanks, setPendingBanks] = useState<BankAccount[]>([]);
+  /** Which listed cards those are: marked "Not saved" until Save. */
+  const [pendingIds, setPendingIds] = useState<string[]>([]);
   const canEditBanks = scope !== 'pos' || canUpdate('settings');
   /** Tab inside the Bank Account section — Manual (uploaded KHQR PNG)
    *  vs ABA PayWay (dynamic KHQR minted per transaction). Filters the
@@ -322,9 +327,11 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
     setBanksDirty(false);
     setBanksReady(scope !== 'pos');
     if (scope === 'pos') {
-      void loadBankAccountsFromServer(scope).then(b => {
-        if (cancelled || b === null) return;
-        setBanks(b);
+      void loadBankAccountsForEdit(scope).then(r => {
+        if (cancelled || r === null) return;
+        setBanks(r.accounts);
+        setPendingIds([]);
+        setPendingBanks(r.pending);
         setBanksReady(true);
       });
     }
@@ -375,6 +382,20 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
   /** Bank controls: also locked while the server's list is on its way,
    *  and for anyone who may not change where payments go. */
   const banksLocked = loading || saving || !banksReady || !canEditBanks;
+  // An owner sees this browser's set-aside cards added to the list,
+  // unsaved: Save keeps them for every till and the shop page, deleting
+  // one drops it. Nobody else sees them, and they never reach customers
+  // unreviewed. Only once the Bank Account section is open: merged on
+  // load, a Save made for the receipt or the numbering would upload a
+  // card the owner never saw.
+  useEffect(() => {
+    if (section !== 'bank' || !banksReady || !canEditBanks || pendingBanks.length === 0) return;
+    const add = pendingBanks;
+    setBanks(prev => [...prev, ...add.filter(p => !prev.some(b => b.id === p.id))]);
+    setBanksDirty(true);
+    setPendingIds(add.map(p => p.id));
+    setPendingBanks([]);
+  }, [section, banksReady, canEditBanks, pendingBanks]);
 
   /** Read a file as a base64 data URL so the KHQR survives a page
    *  reload (localStorage can't hold a blob). Caps at 1 MB — QR PNGs are
@@ -1154,10 +1175,21 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                     // checked rows stay enabled so the user can
                     // un-check to free up a slot.
                     const disableShowOnInvoice = !checked && atCap;
+                    // Found only on this browser while the server held a
+                    // list: Save keeps it for every till, Delete drops it.
+                    const unsaved = scope === 'pos' && pendingIds.includes(b.id);
                     return (
                     <div key={b.id} className={`border rounded-lg p-2 bg-white space-y-1.5 relative ${
-                      checked ? 'ring-2 ring-blue-200 border-blue-300' : ''
+                      checked ? 'ring-2 ring-blue-200 border-blue-300' : unsaved ? 'border-amber-300' : ''
                     }`}>
+                      {unsaved && (
+                        <span
+                          className="absolute -top-2 left-2 z-10 inline-flex items-center px-1.5 py-px rounded-full border border-amber-300 bg-amber-50 text-[10px] font-semibold text-amber-800"
+                          title="Found only on this browser. Save to keep it for every till, or delete it."
+                        >
+                          Not saved
+                        </span>
+                      )}
                       {/* Image area — only when mode='manual'. In
                        *  'auto' mode we show a "PayWay will mint a
                        *  dynamic QR per sale" hint instead so the
@@ -1305,9 +1337,13 @@ export function AccountingSettingsDialog({ open, onOpenChange, scope, onSaved }:
                   })}
                 </div>
 
-                <p className="text-[11px] text-gray-500">
-                  Stored in your browser for now — set them once on the machine that prints invoices.
-                </p>
+                {/* POS cards live on the server (every till, the shop
+                    page); the other scopes' are still this browser's. */}
+                {scope !== 'pos' && (
+                  <p className="text-[11px] text-gray-500">
+                    Stored in your browser for now — set them once on the machine that prints invoices.
+                  </p>
+                )}
               </div>
               );
             })()}
