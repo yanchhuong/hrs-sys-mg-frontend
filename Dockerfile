@@ -24,7 +24,7 @@ ENV VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
 # ----- Stage 2: runtime ------------------------------------------------------
-FROM nginx:1.27-alpine AS runner
+FROM nginx:1.30.7-alpine AS runner
 
 # Replace the default config with our SPA + /api proxy config.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
