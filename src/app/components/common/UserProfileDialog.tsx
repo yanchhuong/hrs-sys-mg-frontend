@@ -34,7 +34,7 @@ import { makeDeptName } from '../../utils/deptName';
 import { EXT_CHIP_CLASS, chipLabelOf, extOf, familyOf } from '../views/documentExtension';
 import { useConfirm } from '../../context/ConfirmContext';
 import { MyClubsPanel } from './ClubPrograms';
-import { MyTelegramCard } from './MyTelegramCard';
+import { TelegramConnectionCard } from '../auth/TelegramConnectionCard';
 import { DropdownSelect } from './DropdownSelect';
 
 interface Props {
@@ -666,8 +666,9 @@ export function UserProfileDialog({ open, onOpenChange }: Props) {
               />
             </div>
 
-            {/* v-hr-bot-users — link your own Telegram to the HR bot. */}
-            <MyTelegramCard />
+            {/* v-telegram-one-connection (spec v1.3 §12.7) — ONE Telegram
+                row: HR notifications and sign-in together (BR-13). */}
+            <TelegramConnectionCard />
 
             <DialogFooter className="pt-2">
               <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

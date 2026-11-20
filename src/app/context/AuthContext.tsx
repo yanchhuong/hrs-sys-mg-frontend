@@ -12,6 +12,7 @@ import { USE_MOCKS } from '../api/client';
 import { unregisterFcmToken } from '../api/fcm';
 import { Employee } from '../types/hrms';
 import { clearAppBadge } from '../utils/appBadge';
+import { clearTelegramPending } from '../api/telegramAuth';
 
 export interface LoginResult {
   success: boolean;
@@ -568,6 +569,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // to sign in must not inherit the previous user's unread count —
     // the icon badge outlives the tab, unlike the in-app bell.
     void clearAppBadge();
+
+    // v-telegram-pending — signing out forgets a Telegram tried in this tab
+    // (spec T-22). Only when someone WAS signed in: a wrong password on the
+    // login screen also lands here (401), and must not wipe it.
+    if (currentUser) clearTelegramPending();
 
     setCurrentUser(null);
     setGrants(new Set());

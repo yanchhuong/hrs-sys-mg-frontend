@@ -63,8 +63,12 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import {
   Users, UserPlus, Edit, Trash2, Shield, UserCheck, UserX, Key, Lock,
-  Save, AlertTriangle, ChevronsUpDown, Check, Info, Mail, KeyRound, RotateCcw,
+  Save, AlertTriangle, ChevronsUpDown, Check, Info, Mail, KeyRound, RotateCcw, Link2, Link2Off,
 } from 'lucide-react';
+// v-user-invites — invite links and the Telegram sign-in column.
+import * as invitesApi from '../../api/invites';
+import { InvitePanel, type InviteSubject } from '../users/InvitePanel';
+import { TelegramIcon, TELEGRAM_BLUE } from '../auth/TelegramIcon';
 import { Textarea } from '../ui/textarea';
 import { toast } from 'sonner';
 import * as hrBotApi from '../../api/hrTelegramBots';
@@ -575,6 +579,12 @@ function adaptApiUser(u: usersApi.User): User {
     name: u.name ?? undefined,
     username: u.username ?? undefined,
     profileImage: u.profileImage ?? null,
+    signInStatus: u.status ?? (u.isActive ? 'active' : 'inactive'),
+    inviteStatus: u.inviteStatus ?? null,
+    inviteExpiresAt: u.inviteExpiresAt ?? null,
+    telegramLinked: !!u.telegramLinked,
+    telegramUsername: u.telegramUsername ?? null,
+    activatedVia: u.activatedVia ?? null,
   };
 }
 
@@ -626,7 +636,8 @@ export function UserManagement() {
   const tgLinkFor = (u: User) => tgLinks.find(l => l.userId === u.id)
     ?? (u.employeeId ? tgLinks.find(l => l.employeeId === u.employeeId) : undefined)
     ?? null;
-  const tgCols = canViewHrTelegram ? 10 : 9;
+  // One Telegram column: HR bot + sign-in together (v-telegram-one-connection).
+  const tgCols = 10;
   // v-hr-bot-gate — Share also needs the company's HR bot to be set up
   // and on (there is no platform fallback for it); without one the link
   // would be refused. An unreadable status keeps Share as before.
@@ -904,6 +915,34 @@ export function UserManagement() {
   // Which of the two Add-User paths the admin is on: link an existing
   // Employee, or create a standalone login with no Employee row.
   const [linkEmployee, setLinkEmployee] = useState(true);
+  // v-user-invites — a new user gets an invite link (they choose Telegram
+  // or their own password), or the admin sets a password as before.
+  const [signInSetup, setSignInSetup] = useState<'invite' | 'password'>('invite');
+  const [invitePanel, setInvitePanel] = useState<{ user: InviteSubject; initial: invitesApi.InviteCreated | null } | null>(null);
+  const inviteSubject = (u: User, employeeName?: string): InviteSubject => ({
+    id: u.id,
+    name: u.name?.trim() || employeeName || u.email,
+    email: u.email,
+    inviteStatus: u.inviteStatus ?? null,
+    inviteExpiresAt: u.inviteExpiresAt ?? null,
+  });
+  /** Invite links are for accounts nobody has signed in to yet. */
+  const canInvite = (u: User) => u.isActive && !u.lastLogin;
+  const handleUnlinkTelegram = async (u: User, label: string) => {
+    if (!(await confirm({
+      title: 'Unlink Telegram sign-in?',
+      message: `${label} can't sign in with ${u.telegramUsername ? '@' + u.telegramUsername : 'Telegram'} until they connect it again. Their password still works.`,
+      confirmLabel: 'Unlink',
+      variant: 'destructive',
+    }))) return;
+    try {
+      await invitesApi.unlinkUserTelegram(u.id);
+      toast.success('Telegram unlinked');
+      await loadUsers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not unlink Telegram');
+    }
+  };
   const [formData, setFormData] = useState({
     email: '',
     username: '',
@@ -985,6 +1024,7 @@ export function UserManagement() {
     } else {
       setEditingUser(null);
       setLinkEmployee(true);
+      setSignInSetup('invite');
       setFormData({
         email: '',
         username: '',
@@ -1006,7 +1046,8 @@ export function UserManagement() {
     // not yet on the Employees table). The backend takes a null
     // employeeId for every role, so the only rule left is "if you
     // chose the linked path, actually pick someone".
-    if (!formData.email || (linkEmployee && !formData.employeeId) || (!editingUser && !formData.password)) {
+    if (!formData.email || (linkEmployee && !formData.employeeId)
+        || (!editingUser && signInSetup === 'password' && !formData.password)) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -1127,7 +1168,9 @@ export function UserManagement() {
           role: formData.role as usersApi.UserRole,
           employeeId: linkEmployee ? (formData.employeeId || undefined) : undefined,
           departmentId: formData.departmentId || undefined,
-          initialPassword: formData.password || undefined,
+          // v-user-invites — an invited user gets no password: they choose
+          // their own (or Telegram) from the link.
+          initialPassword: signInSetup === 'password' ? (formData.password || undefined) : undefined,
           // V146 — optional. Lowercased before send to match the
           // server's normalize step.
           username: formData.username.trim().toLowerCase() || undefined,
@@ -1137,7 +1180,24 @@ export function UserManagement() {
         });
         // New accounts start active; honour an "Inactive" pick.
         if (!formData.isActive && created?.id) await usersApi.suspend(created.id);
-        toast.success('User created successfully');
+        if (signInSetup === 'invite' && formData.isActive && created?.id) {
+          // Spec §12.8 — straight to the invite panel with the new link.
+          const subject: InviteSubject = {
+            id: created.id,
+            name: formData.name.trim() || employees.find(e => e.id === formData.employeeId || (e as Employee).apiId === formData.employeeId)?.name || formData.email,
+            email: formData.email,
+          };
+          try {
+            const link = await invitesApi.createInvite(created.id);
+            setInvitePanel({ user: { ...subject, inviteStatus: 'pending', inviteExpiresAt: link.expiresAt }, initial: link });
+            toast.success('User created — share the invite link');
+          } catch (inviteErr) {
+            setInvitePanel({ user: subject, initial: null });
+            toast.error(inviteErr instanceof Error ? inviteErr.message : 'User created, but the invite link failed');
+          }
+        } else {
+          toast.success('User created successfully');
+        }
       }
       setDialogOpen(false);
       await loadUsers();
@@ -1811,18 +1871,52 @@ export function UserManagement() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      {/* v-user-invites — a new user sets up their own
+                          sign-in from a link (Telegram or a password they
+                          choose), or the admin sets a password as before. */}
+                      {!editingUser && (
                         <div className="space-y-2">
-                          <Label htmlFor="password">Password {!editingUser && '*'}</Label>
-                          <Input
-                            id="password"
-                            type="password"
-                            placeholder={editingUser ? 'Leave blank to keep current' : 'Enter password'}
-                            autoComplete="new-password"
-                            value={formData.password}
-                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                          />
+                          <Label>How will they sign in?</Label>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant={signInSetup === 'invite' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => setSignInSetup('invite')}
+                            >
+                              <Link2 className="mr-1.5 h-3.5 w-3.5" /> Invite link
+                            </Button>
+                            <Button
+                              type="button"
+                              variant={signInSetup === 'password' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => setSignInSetup('password')}
+                            >
+                              <Key className="mr-1.5 h-3.5 w-3.5" /> Set a password
+                            </Button>
+                          </div>
                         </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-4">
+                        {editingUser || signInSetup === 'password' ? (
+                          <div className="space-y-2">
+                            <Label htmlFor="password">Password {!editingUser && '*'}</Label>
+                            <Input
+                              id="password"
+                              type="password"
+                              placeholder={editingUser ? 'Leave blank to keep current' : 'Enter password'}
+                              autoComplete="new-password"
+                              value={formData.password}
+                              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            />
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <Label>Password</Label>
+                            <p className="pt-2 text-xs text-gray-500">They choose it, or Telegram, from the link.</p>
+                          </div>
+                        )}
                         <div className="space-y-2">
                           <Label htmlFor="displayName">Display Name</Label>
                           <Input
@@ -2032,7 +2126,7 @@ export function UserManagement() {
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Last Login</TableHead>
-                    {canViewHrTelegram && <TableHead>Telegram</TableHead>}
+                    <TableHead>Telegram</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -2075,34 +2169,77 @@ export function UserManagement() {
                         <TableCell>{deptName(user.departmentId) || '—'}</TableCell>
                         <TableCell>{getRoleBadge(user.role)}</TableCell>
                         <TableCell>
-                          {user.isActive ? (
-                            <Badge variant="outline" className={statusBadgeClass('active')}>Active</Badge>
-                          ) : (
-                            <Badge variant="outline" className={statusBadgeClass('inactive')}>Inactive</Badge>
-                          )}
+                          {/* v-user-invites — Pending / Expired / Revoked
+                              for invited accounts nobody has signed in to. */}
+                          {(() => {
+                            const s = user.signInStatus ?? (user.isActive ? 'active' : 'inactive');
+                            const label = s.charAt(0).toUpperCase() + s.slice(1);
+                            return (
+                              <Badge
+                                variant="outline"
+                                className={statusBadgeClass(s)}
+                                title={s === 'pending' && user.inviteExpiresAt
+                                  ? `Invite link out until ${formatDateTime(user.inviteExpiresAt)}` : undefined}
+                              >
+                                {label}
+                              </Badge>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="text-sm">{formatDate(user.createdAt)}</TableCell>
                         <TableCell className="text-sm">
                           {user.lastLogin ? formatDateTime(user.lastLogin) : '-'}
                         </TableCell>
-                        {canViewHrTelegram && (
-                          <TableCell className="w-[160px]">
-                            <HrTelegramLinkCell
-                              name={user.name?.trim() || employee?.name || user.email}
-                              noun="user"
-                              linked={tgLinkFor(user)}
-                              canShare={canCreate('hr_telegram') && hrBotReady}
-                              canUnlink={canDelete('hr_telegram')}
-                              generate={() => hrBotApi.generateUserLink(user.id)}
-                              unlink={async () => {
-                                const l = tgLinkFor(user);
-                                if (l?.userId === user.id) await hrBotApi.unlinkUser(user.id);
-                                else if (user.employeeId) await hrBotApi.unlinkEmployee(user.employeeId);
-                              }}
-                              onChanged={() => { void loadTgLinks(); }}
-                            />
-                          </TableCell>
-                        )}
+                        {/* v-telegram-one-connection (spec v1.3, BR-13) — ONE
+                            Telegram column: the HR-bot link (notifications)
+                            and sign-in are one connection. Unlink removes
+                            both. Bot cell when there is a bot link (or none
+                            at all, to share one); sign-in-only otherwise. */}
+                        <TableCell className="w-[180px] whitespace-nowrap">
+                          {canViewHrTelegram && (tgLinkFor(user) || !user.telegramLinked) ? (
+                            <div className="flex items-center gap-1.5">
+                              <HrTelegramLinkCell
+                                name={user.name?.trim() || employee?.name || user.email}
+                                noun="user"
+                                linked={tgLinkFor(user)}
+                                canShare={canCreate('hr_telegram') && hrBotReady}
+                                canUnlink={canDelete('hr_telegram')}
+                                generate={() => hrBotApi.generateUserLink(user.id)}
+                                unlink={() => invitesApi.unlinkUserTelegram(user.id)}
+                                onChanged={() => { void loadTgLinks(); void loadUsers(); }}
+                              />
+                              {user.telegramLinked && (
+                                <span title="Signs in with Telegram" className="text-emerald-600">
+                                  <KeyRound className="h-3.5 w-3.5" />
+                                </span>
+                              )}
+                            </div>
+                          ) : user.telegramLinked ? (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-sm hover:bg-gray-100"
+                                  title="Signs in with Telegram"
+                                >
+                                  <span style={{ color: TELEGRAM_BLUE }}><TelegramIcon className="h-3.5 w-3.5" /></span>
+                                  {user.telegramUsername ? `@${user.telegramUsername}` : 'Connected'}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent align="start" className="w-56 p-1">
+                                <PlainButton
+                                  type="button"
+                                  onClick={() => void handleUnlinkTelegram(user, user.name?.trim() || employee?.name || user.email)}
+                                  className="w-full flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                >
+                                  <Link2Off className="h-4 w-4" /> Unlink Telegram
+                                </PlainButton>
+                              </PopoverContent>
+                            </Popover>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             <Button
@@ -2123,6 +2260,18 @@ export function UserManagement() {
                             >
                               {user.isActive ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
                             </Button>
+                            {/* v-user-invites — for accounts nobody has signed in to yet. */}
+                            {canInvite(user) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-blue-600 hover:text-blue-700"
+                                onClick={() => setInvitePanel({ user: inviteSubject(user, employee?.name), initial: null })}
+                                title="Invite link"
+                              >
+                                <Link2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                             {/* V-admin-reset-picker — click the key icon
                                 to open a small chooser. Two paths:
                                 (a) email a self-service reset link
@@ -2474,6 +2623,15 @@ export function UserManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* v-user-invites — the invite link: copy, share, QR, email. */}
+      <InvitePanel
+        open={!!invitePanel}
+        onOpenChange={(o) => { if (!o) setInvitePanel(null); }}
+        user={invitePanel?.user ?? null}
+        initial={invitePanel?.initial ?? null}
+        onChanged={() => { void loadUsers(); }}
+      />
 
       {/* Delete custom role confirmation */}
       <AlertDialog open={!!deleteRoleTarget} onOpenChange={(o) => !o && setDeleteRoleTarget(null)}>

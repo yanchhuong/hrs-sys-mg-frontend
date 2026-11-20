@@ -21,6 +21,16 @@ export interface User {
    *  for users without a linked employee; a linked user's photo is the
    *  employee's. Load it with useProfileImage(userPhotoKey(id), …). */
   profileImage?: string | null;
+  /* v-user-invites — sign-in columns (spec §12.8). */
+  /** active | pending | expired | revoked | inactive */
+  status?: 'active' | 'pending' | 'expired' | 'revoked' | 'inactive';
+  /** The newest invite: pending | accepted | expired | revoked; null when never invited. */
+  inviteStatus?: 'pending' | 'accepted' | 'expired' | 'revoked' | null;
+  inviteExpiresAt?: string | null;
+  telegramLinked?: boolean;
+  telegramUsername?: string | null;
+  /** How the invite was accepted. */
+  activatedVia?: 'telegram' | 'password' | null;
 }
 
 export interface CreateUserRequest {

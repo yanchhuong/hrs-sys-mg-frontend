@@ -33,6 +33,13 @@ export interface User {
   role: UserRole;
   employeeId: string;
   departmentId?: string;
+  /** v-user-invites — Users list only: active | pending | expired | revoked | inactive. */
+  signInStatus?: string;
+  inviteStatus?: string | null;
+  inviteExpiresAt?: string | null;
+  telegramLinked?: boolean;
+  telegramUsername?: string | null;
+  activatedVia?: string | null;
   /** UUID of the tenant this user belongs to. Populated from
    *  {@code /auth/me}; needed by tenant-scoped surfaces like the
    *  Encounter Settings logo upload (V190). Optional on the type

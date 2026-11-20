@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazyWithReload } from './utils/lazyWithReload';
 import { readLastView, rememberView } from './utils/lastView';
 // Side-effect import — monkey-patches sonner's toast.error to swallow
@@ -16,6 +16,13 @@ import { I18nProvider } from './i18n/I18nContext';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { Toaster } from './components/ui/sonner';
+// v-telegram-login — where a Telegram round trip lands, and what the app
+// does about Telegram once signed in.
+import { TelegramCallbackPage } from './components/auth/TelegramCallbackPage';
+import { TelegramAuthEffects } from './components/auth/TelegramAuthEffects';
+import { companyHintFromUrl, peekTelegramNote, takeOpenLogin } from './api/telegramAuth';
+// v-user-invites — /invite/<token>, where an invited person sets up sign-in.
+import { InvitePage } from './components/auth/InvitePage';
 import { Card, CardContent } from './components/ui/card';
 import { ShieldOff } from 'lucide-react';
 import { NAV_BY_ID, NAV_LEAVES } from './config/nav';
@@ -68,6 +75,15 @@ const isPosDisplayPath = (): boolean =>
 const isPublicShopPath = (): boolean =>
   typeof window !== 'undefined'
   && window.location.pathname.startsWith('/shop/');
+
+/** v-telegram-login — /auth/telegram, where "Continue with Telegram" and
+ *  "Connect Telegram" come back to. */
+const isTelegramCallbackPath = (): boolean =>
+  typeof window !== 'undefined' && window.location.pathname === '/auth/telegram';
+
+/** v-user-invites — /invite/<token>. */
+const isInvitePath = (): boolean =>
+  typeof window !== 'undefined' && window.location.pathname.startsWith('/invite/');
 
 /** v-booking-public-link — /booking/{code} — the anonymous booking
  *  page. Same posture as /shop: the 5-char code is the whole secret,
@@ -157,7 +173,15 @@ function AppContent() {
   // Unauthenticated UX: marketing landing first, login surfaces when the
   // user clicks Sign In / Get Started. Reset to landing on every logout so
   // the next visitor doesn't drop straight into the login form.
-  const [showLogin, setShowLogin] = useState(false);
+  // A Telegram sign-in that did not go through opens the login screen
+  // straight away, where it says why.
+  // v-telegram-companies — a company login link (?company=code) goes
+  // straight to the sign-in card.
+  const [showLogin, setShowLogin] = useState(() =>
+    peekTelegramNote()?.kind === 'login_error' || takeOpenLogin() || companyHintFromUrl() !== null);
+  // The reset effect below also runs once at mount; that first pass must
+  // not close the login screen a Telegram error just opened.
+  const keepLoginOnce = useRef(showLogin);
   /** Optional credentials to pre-fill on the login form — non-null when
    *  the visitor clicked the landing-page "Try Demo" button. Cleared on
    *  Back so a normal Sign In click doesn't carry the demo values over. */
@@ -190,7 +214,8 @@ function AppContent() {
     // stuck on the login card instead of dropping back to the marketing
     // landing — the comment above `showLogin` already promised this;
     // the effect just wasn't clearing on the null side of the change.
-    setShowLogin(false);
+    setShowLogin(keepLoginOnce.current);
+    keepLoginOnce.current = false;
     setLoginPrefill(null);
   }, [currentUser?.id]);
 
@@ -298,11 +323,20 @@ function AppContent() {
   return (
     <Layout currentView={currentView} onViewChange={goToView}>
       <ViewComponent {...viewProps} />
+      <TelegramAuthEffects />
     </Layout>
   );
 }
 
 export default function App() {
+  // v-telegram-login — the Telegram round trip's landing: no providers, no
+  // /me; it trades its code and reloads into the app.
+  if (isTelegramCallbackPath()) {
+    return <TelegramCallbackPage />;
+  }
+  if (isInvitePath()) {
+    return <InvitePage />;
+  }
   // Public /scan path — bypass the Auth + i18n + DateFormat providers
   // entirely. The scan page is meant to be opened on an employee's
   // phone (no HRMS login expected). Rendering before AuthProvider's

@@ -15,6 +15,11 @@ import { toast } from 'sonner';
 // nav; the CardTitle text below carries the tagline.
 import imgBrandLogo from '../../imports/smrt-web-logo1.png';
 import { isTauri, getDesktopApiMode } from '../utils/runtime';
+import {
+  markPasswordSignIn, onBackForward, takeTelegramNote, telegramErrorMessage, telegramLoginUrl, telegramOptions,
+  type TelegramOptions,
+} from '../api/telegramAuth';
+import { TelegramIcon, TELEGRAM_BLUE } from './auth/TelegramIcon';
 
 /** localStorage keys for the "Remember me" pre-fill. Password is
  *  intentionally obfuscated (base64) rather than encrypted — anyone
@@ -102,6 +107,43 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
   const [forgotBusy, setForgotBusy] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const { login, switchRole } = useAuth();
+  // v-telegram-login — offered only when this server has it set up.
+  const [telegram, setTelegram] = useState<TelegramOptions>({ enabled: false, layout: 'A' });
+  const [telegramBusy, setTelegramBusy] = useState(false);
+  useEffect(() => {
+    // A Telegram round trip that ended here says why (spec §10).
+    const note = takeTelegramNote('login_error');
+    if (note) setError(telegramErrorMessage(note.code));
+    let live = true;
+    void telegramOptions().then(o => { if (live) setTelegram(o); });
+    const off = onBackForward(() => setTelegramBusy(false));
+    return () => { live = false; off(); };
+  }, []);
+  const continueWithTelegram = () => {
+    setError('');
+    setTelegramBusy(true);
+    window.location.assign(telegramLoginUrl());
+  };
+  const telegramFirst = telegram.enabled && telegram.layout === 'B';
+  const telegramButton = (filled: boolean) => (
+    <Button
+      type="button"
+      variant={filled ? 'default' : 'outline'}
+      onClick={continueWithTelegram}
+      disabled={busy || telegramBusy}
+      className={`w-full ${filled ? 'text-white hover:opacity-90' : 'hover:bg-sky-50'}`}
+      style={filled ? { background: TELEGRAM_BLUE } : { borderColor: TELEGRAM_BLUE, color: TELEGRAM_BLUE }}
+    >
+      {telegramBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TelegramIcon className="mr-2 h-4 w-4" />}
+      {telegramBusy ? 'Opening Telegram…' : 'Continue with Telegram'}
+    </Button>
+  );
+  const divider = (label: string) => (
+    <div className="relative">
+      <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+      <div className="relative flex justify-center text-xs"><span className="bg-white px-2 text-gray-500">{label}</span></div>
+    </div>
+  );
 
   // Reflect prefill updates from the parent — covers the case where the
   // user clicks "Demo" after the LoginPage has already mounted (e.g.
@@ -124,6 +166,8 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
         setError(reshapeLoginError(res.error));
         return;
       }
+      // Spec §12.3 — "Sign in faster next time" may follow a password sign-in.
+      markPasswordSignIn();
       // Only persist credentials on a successful sign-in — an invalid
       // attempt shouldn't imprint the typo. Password is base64-encoded
       // (see the key comment); it's obfuscation, not encryption.
@@ -177,6 +221,16 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
           <CardDescription>Human Resource Management System</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Layout B (after adoption): Telegram first. */}
+          {telegramFirst && (
+            <>
+              {/* Spec §12.2 — the reason sits above the buttons. */}
+              {error && <p className="text-sm text-red-600">{error}</p>}
+              {telegramButton(true)}
+              <p className="-mt-2 text-center text-xs text-gray-500">Fastest way if your Telegram is connected</p>
+              {divider('or use your password')}
+            </>
+          )}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email or username</Label>
@@ -231,12 +285,25 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
                 Forgot password?
               </button>
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
-            <Button type="submit" className="w-full" disabled={busy}>
+            {error && !telegramFirst && <p className="text-sm text-red-600">{error}</p>}
+            <Button
+              type="submit"
+              disabled={busy || telegramBusy}
+              variant={telegramFirst ? 'outline' : 'default'}
+              className={`w-full ${telegramFirst ? 'border-blue-600 text-blue-600 hover:bg-blue-50 hover:text-blue-700' : ''}`}
+            >
               {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sign In
             </Button>
           </form>
+
+          {/* Layout A (rollout): password first, Telegram below. */}
+          {telegram.enabled && !telegramFirst && (
+            <>
+              {divider('or')}
+              {telegramButton(false)}
+            </>
+          )}
 
           {USE_MOCKS && (
             <>

@@ -7,6 +7,8 @@ import { UserProfileDialog } from './common/UserProfileDialog';
 import { LanguageSwitcher } from './common/LanguageSwitcher';
 import { AppLauncher } from './common/AppLauncher';
 import { NotificationsBell } from './common/NotificationsBell';
+// v-telegram-companies — header company switcher (2+ companies only).
+import { CompanySwitcher } from './auth/CompanySwitcher';
 import { AttendanceCheckInWidget } from './common/AttendanceCheckInWidget';
 import { useI18n } from '../i18n/I18nContext';
 import {
@@ -466,6 +468,8 @@ export function Layout({ children, currentView, onViewChange }: LayoutProps) {
               )}
               {/* Notification bell (V127). Hidden for super_admin —
                   they don't subscribe to tenant announcements. */}
+              {/* v-telegram-companies — renders nothing below two companies. */}
+              {currentUser?.role !== 'super_admin' && <CompanySwitcher />}
               {currentUser?.role !== 'super_admin' && <NotificationsBell onNavigate={onViewChange} />}
               {isTauri() && <DesktopApiModeBadge />}
               <LanguageSwitcher />
