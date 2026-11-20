@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { useConfirm } from '../../context/ConfirmContext';
 import * as hrBotApi from '../../api/hrTelegramBots';
 import {
-  connectTicket, disconnectTelegram, myTelegram, onBackForward, telegramConnectUrl, telegramErrorMessage,
+  connectTicket, disconnectTelegram, myTelegram, onBackForward, telegramConnectUrl, telegramErrorMessage, telegramSiteOk,
   type TelegramStatus,
 } from '../../api/telegramAuth';
 import { TelegramIcon, TELEGRAM_BLUE } from './TelegramIcon';
@@ -45,7 +45,8 @@ export function TelegramConnectionCard() {
   const notifications = !!status.notifications;
   const signIn = status.linked;
   const botAvailable = !!status.botAvailable;
-  const signInAvailable = !!status.signInAvailable;
+  // Sign-in is a round trip back to the real site — offered there only.
+  const signInAvailable = !!status.signInAvailable && telegramSiteOk();
   if (!notifications && !signIn && !botAvailable && !signInAvailable) return null;
 
   /** The bot's /start link — the one connect flow when the company has an HR bot. */

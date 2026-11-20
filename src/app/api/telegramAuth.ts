@@ -38,6 +38,17 @@ export function telegramAuthOrigin(): string {
   return 'https://api.hr-share.com';
 }
 
+/**
+ * v-telegram-own-sites — "Continue with Telegram" only on the real sites.
+ * Telegram hands the sign-in back to https://hr-share.com or
+ * https://m.hr-share.com, so from localhost or a Vercel preview link the
+ * round trip would end on production instead of the page that started it.
+ */
+const TELEGRAM_SITES = ['hr-share.com', 'www.hr-share.com', 'm.hr-share.com'];
+export const telegramSiteOk = (): boolean =>
+  typeof window !== 'undefined' && window.location.protocol === 'https:'
+  && TELEGRAM_SITES.includes(window.location.hostname.toLowerCase());
+
 /** v-telegram-companies — `?company=<code>` on the page opens that company only (spec §12.2, BR-08). */
 export function companyHintFromUrl(): string | null {
   try {
@@ -65,6 +76,7 @@ export function onBackForward(cb: () => void): () => void {
 
 /** Whether the login screen offers Telegram (and in which layout). Off on any doubt. */
 export async function telegramOptions(): Promise<TelegramOptions> {
+  if (!telegramSiteOk()) return { enabled: false, layout: 'A' };
   try {
     const r = await apiJson<TelegramOptions>('/api/v1/auth/telegram/options', { auth: false });
     return { enabled: !!r?.enabled, layout: r?.layout === 'B' ? 'B' : 'A' };
