@@ -4,18 +4,18 @@
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <!-- Device routing: phones go to the mobile site, served at
-           smrt-hrms-view.vercel.app. Only this site checks the device —
-           the mobile site never redirects anyone, so opening it
-           directly always stays there.
+      <!-- Device routing: phones go to the mobile site, m.hr-share.com.
+           Only this site checks the device — the mobile site never
+           redirects anyone, so opening it directly always stays there.
 
-           The destination used to be m.hr-share.com, and that host is
-           still deployed and still works. Smart (the carrier) started
-           restricting it, so phones on Smart data could not reach the
-           mobile site at all; the Vercel domain is the same deployment
-           under a name Smart does not block. Change MOBILE_SITE below
-           if that stops being true — it is the only place the target
-           is written.
+           v-mobile-site-own-domain — back on m.hr-share.com (2026-11-20).
+           For a while phones went to smrt-hrms-view.vercel.app instead,
+           because Smart (the carrier) was restricting m.hr-share.com; that
+           is stable again. Both names serve the same deployment, but only
+           m.hr-share.com is on the Firebase key's allowed sites, so web
+           push works there and fails (403) on the Vercel name. If Smart
+           blocks it again, smrt-hrms-view.vercel.app is the fallback.
+           MOBILE_SITE below is the only place the target is written.
 
            Runs in the browser, first thing in <head>, so a phone leaves
            before the desktop bundle downloads (no flash, no wasted mobile
@@ -36,7 +36,7 @@
            prefer_desktop cookie (this host only); ?desktop=0 clears it. -->
       <script>
         (function () {
-          var MOBILE_SITE = 'https://smrt-hrms-view.vercel.app/';
+          var MOBILE_SITE = 'https://m.hr-share.com/';
           try {
             if (!/^(www\.)?hr-share\.com$/.test(location.hostname)) return;
             var choice = /[?&]desktop=([01])(&|$)/.exec(location.search);
