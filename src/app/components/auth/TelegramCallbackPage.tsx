@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { ApiError } from '../../api/client';
 import { clearTelegramPending, exchangeAndStore, keepTelegramPending, leaveTelegramNote } from '../../api/telegramAuth';
 import { CompanyPicker } from './CompanyPicker';
+import { TelegramHandoffFinish } from './TelegramHandoffFinish';
 
 /**
  * v-telegram-login — /auth/telegram, where every Telegram round trip lands
@@ -16,9 +17,12 @@ import { CompanyPicker } from './CompanyPicker';
 let handled = false;
 /** The selection read on the first run, for a re-mount of the same page load. */
 let selectionOnce: string | null = null;
+/** v-telegram-handoff — the ticket read on the first run, likewise. */
+let ticketOnce: string | null = null;
 
 export function TelegramCallbackPage() {
   const [selection, setSelection] = useState<string | null>(selectionOnce);
+  const [ticket, setTicket] = useState<string | null>(ticketOnce);
 
   useEffect(() => {
     if (handled) return;
@@ -33,6 +37,12 @@ export function TelegramCallbackPage() {
     const home = () => window.location.replace('/');
 
     void (async () => {
+      if (mode === 'handoff' && p.get('ticket')) {
+        // v-telegram-handoff — an app is waiting for this sign-in.
+        ticketOnce = p.get('ticket');
+        setTicket(ticketOnce);
+        return;
+      }
       if (mode === 'select' && p.get('selection')) {
         // v-telegram-companies — two or more companies: choose one.
         clearTelegramPending();
@@ -64,6 +74,7 @@ export function TelegramCallbackPage() {
     })();
   }, []);
 
+  if (ticket) return <TelegramHandoffFinish ticket={ticket} />;
   if (selection) return <CompanyPicker selection={selection} />;
 
   return (

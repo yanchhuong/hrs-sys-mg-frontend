@@ -57,8 +57,70 @@ export function companyHintFromUrl(): string | null {
   } catch { return null; }
 }
 
-export const telegramLoginUrl = (company: string | null = companyHintFromUrl()): string =>
-  `${telegramAuthOrigin()}/auth/telegram/login?app=web${company ? `&company=${encodeURIComponent(company)}` : ''}`;
+export const telegramLoginUrl = (company: string | null = companyHintFromUrl(), handoff: string | null = null): string =>
+  `${telegramAuthOrigin()}/auth/telegram/login?app=web${company ? `&company=${encodeURIComponent(company)}` : ''}`
+  + (handoff ? `&handoff=${encodeURIComponent(handoff)}` : '');
+
+/* ---------------- v-telegram-handoff ----------------
+ * Telegram's page runs in a pop-up; this page waits and finishes the
+ * sign-in itself. The attempt's secret stays in this browser — only its
+ * SHA-256 goes with the start — and the API hands the outcome over to the
+ * holder of the secret, after the window that finished confirms it
+ * (silently in this same browser, after a tap anywhere else). */
+
+const HANDOFF_KEY = 'hrms:tgHandoff';
+/** As long as the API keeps a parked outcome. */
+export const HANDOFF_TTL_MS = 5 * 60_000;
+
+const b64url = (bytes: Uint8Array): string =>
+  btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+/** Whether this browser can keep a secret for the wait (Web Crypto). */
+export const handoffSupported = (): boolean =>
+  typeof window !== 'undefined' && !!window.crypto?.subtle && typeof window.crypto.getRandomValues === 'function';
+
+/** A fresh attempt: the secret is kept here, the hash goes with the start. */
+export async function newHandoff(): Promise<{ secret: string; hash: string }> {
+  const raw = new Uint8Array(32);
+  window.crypto.getRandomValues(raw);
+  const secret = b64url(raw);
+  const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret));
+  try { localStorage.setItem(HANDOFF_KEY, JSON.stringify({ secret, at: Date.now() })); } catch { /* private mode: the wait still works in this tab */ }
+  return { secret, hash: b64url(new Uint8Array(digest)) };
+}
+
+/** The secret of an attempt still running in this browser, if any. */
+export function handoffSecret(): string | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(HANDOFF_KEY) || 'null') as { secret?: unknown; at?: unknown } | null;
+    return v && typeof v.secret === 'string' && typeof v.at === 'number' && Date.now() - v.at < HANDOFF_TTL_MS ? v.secret : null;
+  } catch { return null; }
+}
+
+export function clearHandoff(): void {
+  try { localStorage.removeItem(HANDOFF_KEY); } catch { /* nothing kept */ }
+}
+
+/** The finishing window hands the outcome over; false = ask the person first, then call again with tapped. */
+export async function confirmHandoff(ticket: string, secret: string | null, tapped = false): Promise<boolean> {
+  const r = await apiJson<{ confirmed: boolean }>('/api/v1/auth/telegram/handoff/confirm', {
+    method: 'POST', json: { ticket, secret, tapped }, auth: false,
+  });
+  return !!r?.confirmed;
+}
+
+/** The waiting page collects: the fragment to follow once it is ready, else null. */
+export async function claimHandoff(secret: string): Promise<string | null> {
+  const r = await apiJson<{ status: string; fragment?: string | null }>('/api/v1/auth/telegram/handoff/claim', {
+    method: 'POST', json: { secret }, auth: false,
+  });
+  return r?.status === 'ready' && r.fragment ? r.fragment : null;
+}
+
+/** Follow a handed-over fragment as if Telegram had landed here (a full load of /auth/telegram). */
+export function followTelegramFragment(fragment: string): void {
+  window.location.replace(`/auth/telegram?h=${Date.now()}#${fragment}`);
+}
 
 export const telegramConnectUrl = (ticket: string): string =>
   `${telegramAuthOrigin()}/auth/telegram/connect?app=web&ticket=${encodeURIComponent(ticket)}`;

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { USE_MOCKS } from '../api/client';
+import { TOKEN_KEY, USE_MOCKS } from '../api/client';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -17,6 +17,7 @@ import imgBrandLogo from '../../imports/smrt-web-logo1.png';
 import { isTauri, getDesktopApiMode } from '../utils/runtime';
 import {
   markPasswordSignIn, onBackForward, takeTelegramNote, telegramErrorMessage, telegramLoginUrl, telegramOptions,
+  claimHandoff, clearHandoff, followTelegramFragment, handoffSupported, newHandoff, HANDOFF_TTL_MS,
   type TelegramOptions,
 } from '../api/telegramAuth';
 import { TelegramIcon, TELEGRAM_BLUE } from './auth/TelegramIcon';
@@ -119,13 +120,105 @@ export function LoginPage({ onBack, prefill }: LoginPageProps = {}) {
     const off = onBackForward(() => setTelegramBusy(false));
     return () => { live = false; off(); };
   }, []);
-  const continueWithTelegram = () => {
-    setError('');
-    setTelegramBusy(true);
-    window.location.assign(telegramLoginUrl());
+  // v-telegram-handoff — Telegram's page runs in a pop-up; this card waits
+  // and finishes the sign-in, so approving in Telegram is the last step.
+  const [waiting, setWaiting] = useState(false);
+  const popup = useRef<Window | null>(null);
+  const attempt = useRef<{ secret: string; hash: string } | null>(null);
+  const openTelegramWindow = (url: string) => {
+    const w = 480, h = 720;
+    const left = Math.max(0, window.screenX + (window.outerWidth - w) / 2);
+    const top = Math.max(0, window.screenY + (window.outerHeight - h) / 2);
+    const target = popup.current && !popup.current.closed ? popup.current
+      : window.open('', 'hrms-telegram', `popup=yes,width=${w},height=${h},left=${left},top=${top}`);
+    if (target) { target.location.href = url; target.focus(); }
+    return target;
   };
+  const continueWithTelegram = async () => {
+    setError('');
+    if (!handoffSupported()) {
+      setTelegramBusy(true);
+      window.location.assign(telegramLoginUrl());
+      return;
+    }
+    // Opened now, inside the click, so no pop-up blocker stops it; the
+    // address follows once the attempt's secret is made.
+    popup.current = window.open('', 'hrms-telegram', 'popup=yes,width=480,height=720');
+    attempt.current = await newHandoff();
+    const url = telegramLoginUrl(undefined, attempt.current.hash);
+    if (!popup.current) {
+      // Pop-ups blocked: go there; the sign-in finishes in this tab.
+      setTelegramBusy(true);
+      window.location.assign(url);
+      return;
+    }
+    openTelegramWindow(url);
+    setWaiting(true);
+  };
+  const openTelegramAgain = () => {
+    if (attempt.current) openTelegramWindow(telegramLoginUrl(undefined, attempt.current.hash));
+  };
+  const cancelWaiting = () => {
+    setWaiting(false);
+    clearHandoff();
+    attempt.current = null;
+    try { popup.current?.close(); } catch { /* already gone */ }
+    popup.current = null;
+  };
+  useEffect(() => {
+    if (!waiting) return;
+    let live = true;
+    let running = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const started = Date.now();
+    const tick = async () => {
+      if (!live || running) return;
+      running = true;
+      try {
+        // Finished in a tab of this browser that signed itself in.
+        if (localStorage.getItem(TOKEN_KEY)) { window.location.replace('/'); return; }
+        const secret = attempt.current?.secret;
+        const fragment = secret ? await claimHandoff(secret).catch(() => null) : null;
+        if (!live) return;
+        if (fragment) {
+          clearHandoff();
+          try { popup.current?.close(); } catch { /* already gone */ }
+          followTelegramFragment(fragment);
+          return;
+        }
+        if (Date.now() - started > HANDOFF_TTL_MS) {
+          cancelWaiting();
+          setError(telegramErrorMessage('selection_expired'));
+          return;
+        }
+      } finally {
+        running = false;
+      }
+      timer = setTimeout(() => void tick(), 2000);
+    };
+    timer = setTimeout(() => void tick(), 1500);
+    // Back from Telegram: check at once.
+    const now = () => { clearTimeout(timer); void tick(); };
+    window.addEventListener('focus', now);
+    return () => { live = false; clearTimeout(timer); window.removeEventListener('focus', now); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waiting]);
   const telegramFirst = telegram.enabled && telegram.layout === 'B';
-  const telegramButton = (filled: boolean) => (
+  const telegramButton = (filled: boolean) => waiting ? (
+    <div className="rounded-md border p-3 space-y-2" style={{ borderColor: TELEGRAM_BLUE }} role="status">
+      <div className="flex items-center gap-2 text-sm font-medium" style={{ color: TELEGRAM_BLUE }}>
+        <Loader2 className="h-4 w-4 animate-spin" /> Waiting for Telegram…
+      </div>
+      <p className="text-xs text-gray-500">Approve in the Telegram window. You'll be signed in here.</p>
+      <div className="flex gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={openTelegramAgain}
+          style={{ borderColor: TELEGRAM_BLUE, color: TELEGRAM_BLUE }}>
+          Open Telegram again
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={cancelWaiting}>Cancel</Button>
+      </div>
+    </div>
+  ) : (
     <Button
       type="button"
       variant={filled ? 'default' : 'outline'}
