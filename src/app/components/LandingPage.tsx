@@ -18,7 +18,7 @@ import {
   CalendarDays, FileText, Baby, Calculator, Scale,
   Bell, Home, Settings, UserRound, Plus, ArrowUp, ChevronRight,
 
-  Stethoscope, ChevronDown, GraduationCap,
+  Stethoscope, ChevronDown, GraduationCap, ExternalLink, Gem,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -37,6 +37,9 @@ import imgPosRetail   from '../../imports/pos-retail.jpg';
 // the taglined version below the mark stays legible on desktop and
 // crunches down cleanly on mobile.
 import imgBrandLogo   from '../../imports/smrt-web-logo1.png';
+// Customer logos for the "Trusted by" row — real businesses, shown with
+// their OK, each linking to the business's own page.
+import imgMadamChnai  from '../../imports/customer-madam-chnai.jpg';
 // The module catalog (70 cards, their drawn screenshots and all three
 // languages of text) is its own chunk: it sits several screens down, so
 // the first paint should not wait to download, parse and lay it out.
@@ -357,6 +360,8 @@ const T = {
     title:   { en: 'HR teams trade spreadsheets for one source of truth',
                km: 'ក្រុមធនធានមនុស្សផ្លាស់ប្តូរពីសៀវភៅគណនេយ្យទៅជាប្រភពទិន្នន័យតែមួយ',
                zh: 'HR 团队用电子表格换来唯一可信的数据来源' },
+    trustedBy: { en: 'Trusted by', km: 'ទុកចិត្តដោយ', zh: '信赖我们的客户' },
+    visit:     { en: 'Facebook page', km: 'ទំព័រ Facebook', zh: 'Facebook 主页' },
   },
   faq: {
     eyebrow: { en: 'Questions, answered',  km: 'សំណួរ និងចម្លើយ', zh: '问题解答' },
@@ -1669,6 +1674,24 @@ export function BenefitCalculatorsShowcase({ lang }: { lang: Lang }) {
   );
 }
 
+/** Real customers in the "Trusted by" row: logo, name, place, and a link to
+ *  their own page. Add a business only with its OK. A customer's quote goes
+ *  in Testimonials' `items`, in the customer's own words — never written
+ *  for them. */
+const CUSTOMERS: Array<{
+  name: string; nameKm?: string; href: string;
+  /** The business's logo; without one, a gem icon stands in. */
+  logo?: string;
+  place: { en: string; km: string; zh: string };
+}> = [
+  { name: 'Madam Chnai', nameKm: 'ម៉ាដាម ឆ្នៃ', logo: imgMadamChnai,
+    href: 'https://www.facebook.com/madamchnai/',
+    place: { en: 'Phnom Penh', km: 'ភ្នំពេញ', zh: '金边' } },
+  { name: 'Srey Khan Jewelry', nameKm: 'ស្រី ឃាន់ គ្រឿងអលង្ការ',
+    href: 'https://www.facebook.com/profile.php?id=100094669163306',
+    place: { en: 'Samraong Thom Market, Kandal', km: 'ផ្សារសំរោងធំ, កណ្តាល', zh: '干丹省 Samraong Thom 市场' } },
+];
+
 /** Testimonials — three short quotes. Stock names; replace with real once available. */
 function Testimonials({ lang }: { lang: Lang }) {
   const items: Array<{
@@ -1704,6 +1727,40 @@ function Testimonials({ lang }: { lang: Lang }) {
             {t(T.testimonials.title, lang)}
           </h2>
         </div>
+        {/* Trusted by — each customer card opens the business's own page. */}
+        {CUSTOMERS.length > 0 && (
+          <div className="mt-10 flex flex-col items-center gap-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              {t(T.testimonials.trustedBy, lang)}
+            </p>
+            <div className="flex flex-wrap justify-center gap-4">
+              {CUSTOMERS.map(c => (
+                <a key={c.href} href={c.href} target="_blank" rel="noopener noreferrer"
+                   aria-label={`${c.name} · ${t(T.testimonials.visit, lang)}`}
+                   className="group flex w-full items-center gap-3 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:w-auto">
+                  {c.logo ? (
+                    <img src={c.logo} alt={`${c.name} logo`} width={56} height={56} loading="lazy"
+                         className="h-14 w-14 rounded-xl object-cover" />
+                  ) : (
+                    <span className="grid h-14 w-14 place-items-center rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600" aria-hidden>
+                      <Gem className="h-7 w-7" />
+                    </span>
+                  )}
+                  <span className="text-left">
+                    <span className="block text-sm font-semibold text-slate-900">
+                      {lang === 'km' && c.nameKm ? c.nameKm : c.name}
+                    </span>
+                    <span className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+                      {t(c.place, lang)} ·
+                      <ExternalLink className="h-3 w-3" aria-hidden />
+                      <span className="group-hover:text-blue-600">{t(T.testimonials.visit, lang)}</span>
+                    </span>
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="mt-14 grid gap-6 lg:grid-cols-3">
           {items.map((q, i) => (
             <Card key={i} className="border-slate-200/70 shadow-sm">
