@@ -89,6 +89,20 @@ function composeLineNotes(mods: SelectedModifier[], note: string): string | unde
 /** Per-item line in the local cart state. The map key is a composite
  *  of {@code item.id} + modifier signature so the same item with two
  *  different modifier sets keeps two separate rows. */
+/** What the receipt shows, captured at submit — the cart is cleared the
+ *  moment the order lands, and the server's answer carries only the
+ *  queue number and total. */
+interface ReceiptSnapshot {
+  lines: Array<{ key: string; name: string; qty: number; unit: number; detail?: string }>;
+  mode: 'pickup' | 'delivery';
+  /** Delivery only: how the customer said they will pay. */
+  payment?: string;
+  name?: string;
+  phone?: string;
+  note?: string;
+  placedAt: Date;
+}
+
 interface CartLine {
   /** Composite key the cart Map is indexed by — also the React key
    *  on each rendered row. Stable for a given (item, modifier set). */
@@ -253,11 +267,8 @@ export function PublicShopPage() {
   const [submitting, setSubmitting] = useState(false);
   /** Set after a successful submit — drives the receipt screen. */
   const [confirmed, setConfirmed] = useState<shopApi.PublicOrderResult | null>(null);
-  // Live countdown for the "Order received" popup — decrements once
-  // per second while the popup is open. When it hits 0 the popup
-  // closes and the customer sees the menu again, ready for another
-  // order.
-  const [confirmedCountdown, setConfirmedCountdown] = useState<number>(0);
+  /** The order as the customer placed it, for the receipt (see ReceiptSnapshot). */
+  const [receipt, setReceipt] = useState<ReceiptSnapshot | null>(null);
 
   // Customer-typed fields. All optional; the server falls back to
   // "Walk-in (Online)" if name is blank.
@@ -519,26 +530,6 @@ export function PublicShopPage() {
       setTurnstileToken('');
     };
   }, [checkoutOpen, data?.turnstile?.enabled, data?.turnstile?.siteKey]);
-
-  // Auto-close the "Order received" popup after 8 s. Countdown ticks
-  // once per second and drives the small "closes in Ns" label so the
-  // customer knows the popup won't linger. Cleared if the customer
-  // dismisses the popup manually before the timer fires.
-  useEffect(() => {
-    if (!confirmed) return;
-    setConfirmedCountdown(8);
-    const iv = window.setInterval(() => {
-      setConfirmedCountdown(n => {
-        if (n <= 1) {
-          window.clearInterval(iv);
-          setConfirmed(null);
-          return 0;
-        }
-        return n - 1;
-      });
-    }, 1000);
-    return () => window.clearInterval(iv);
-  }, [confirmed]);
 
   // Track vertical scroll to toggle the "back to top" floating button.
   // Threshold: 1 viewport height so it stays hidden on short menus
@@ -856,6 +847,22 @@ export function PublicShopPage() {
         }
       }
       setProofFile(null);
+      setReceipt({
+        lines: cartLines.map(l => ({
+          key: l.key, name: l.item.name, qty: l.qty, unit: lineUnitPrice(l),
+          detail: composeLineNotes(l.modifiers, l.notes),
+        })),
+        mode: orderMode,
+        payment: orderMode === 'delivery'
+          ? (paymentMethod === 'khrqr'
+              ? (paywaySession?.status === 'paid' ? 'KHQR · paid' : 'KHQR')
+              : 'Cash on hand')
+          : undefined,
+        name: custName.trim() || undefined,
+        phone: custPhone.trim() || undefined,
+        note: custNote.trim() || undefined,
+        placedAt: new Date(),
+      });
       setConfirmed(result);
       setCheckoutOpen(false);
       clearCart();
@@ -1880,39 +1887,111 @@ export function PublicShopPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Order received — success popup shown after a successful
-          submit. Auto-closes on an 8-second countdown so the menu
-          returns without a manual dismiss. Customers who want to move
-          on faster use the top-right X (v-dialog-close-consistency
-          retired the footer's "OK": it did nothing the X doesn't, and
-          this DialogContent renders the standard always-visible X —
-          unlike ItemDetailDialog's hover-only one). Menu stays mounted
-          behind the popup so a "Place another order" flow feels
-          instant. */}
-      <Dialog open={!!confirmed} onOpenChange={(open) => { if (!open) setConfirmed(null); }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader className="text-center">
-            <div className="flex justify-center mb-2">
-              <CheckCircle2 className="h-12 w-12 text-emerald-500" />
+      {/* Receipt — shown after a successful submit: the shop, the queue
+          number, what was ordered and the total, for the customer to
+          show at the counter. Stays up until they close it (it used to
+          auto-close after 8 s, too soon to be shown to anyone). The
+          menu stays mounted behind it, so "another order" is instant. */}
+      <Dialog open={!!confirmed} onOpenChange={(open) => { if (!open) { setConfirmed(null); setReceipt(null); } }}>
+        <DialogContent className="sm:max-w-sm max-h-[92vh] overflow-y-auto p-0 gap-0">
+          {/* Shop */}
+          <div className="flex items-center gap-3 border-b border-dashed border-slate-200 px-5 pt-5 pb-4">
+            {data?.logoUrl ? (
+              <img src={data.logoUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />
+            ) : (
+              <span className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 text-slate-500">
+                <Store className="h-5 w-5" />
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">{data?.shopName || 'Shop'}</p>
+              {!!data?.phone && <p className="text-xs text-slate-500">{data.phone}</p>}
             </div>
+          </div>
+
+          {/* Order received + queue number */}
+          <DialogHeader className="items-center px-5 pt-4 text-center">
+            <CheckCircle2 className="h-9 w-9 text-emerald-500" />
             <DialogTitle className="text-center">Order received</DialogTitle>
             <DialogDescription className="text-center">
-              Show this to the counter:
+              Show this receipt at the counter
             </DialogDescription>
           </DialogHeader>
-          <div className="text-center py-2">
-            <p className="text-3xl sm:text-4xl tabular-nums font-bold tracking-widest text-slate-900">
-              {confirmed?.queueNo}
-            </p>
-            <p className="mt-2 text-sm text-gray-600">
-              Total: <span className="font-semibold text-emerald-700">${Number(confirmed?.total ?? 0).toFixed(2)}</span>
-            </p>
+          <div className="px-5 pt-3 text-center">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Queue no.</p>
+            <p className="text-4xl font-bold tabular-nums tracking-widest text-slate-900">{confirmed?.queueNo}</p>
+            {receipt && (
+              <p className="mt-1 text-xs text-slate-500">
+                {receipt.placedAt.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}
+                {' · '}
+                {receipt.placedAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
           </div>
-          {/* -mt-2 dropped with the footer above it — that negative margin
-              only existed to tighten the gap under the OK button. */}
-          <p className="text-center text-[11px] text-gray-400 pb-1">
-            Closes in {confirmedCountdown}s
-          </p>
+
+          {/* What was ordered. Line amounts as priced in the cart; the
+              total is the server's, so it always matches the order. */}
+          {receipt && receipt.lines.length > 0 && (
+            <ul className="mx-5 mt-4 divide-y divide-slate-100 border-y border-dashed border-slate-200">
+              {receipt.lines.map(l => (
+                <li key={l.key} className="flex items-start justify-between gap-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm text-slate-900">
+                      <span className="tabular-nums text-slate-500">{l.qty} ×</span> {l.name}
+                    </p>
+                    {!!l.detail && <p className="mt-0.5 text-xs text-slate-500">{l.detail}</p>}
+                  </div>
+                  <p className="shrink-0 text-right text-sm tabular-nums text-slate-900">
+                    {l.unit > 0 ? `$${(l.unit * l.qty).toFixed(2)}` : '—'}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex items-baseline justify-between px-5 pt-3">
+            <span className="text-sm font-semibold text-slate-900">Total</span>
+            <span className="text-xl font-bold tabular-nums text-emerald-700">
+              ${Number(confirmed?.total ?? 0).toFixed(2)}
+            </span>
+          </div>
+
+          {/* How it will be fulfilled, and who ordered it. */}
+          {receipt && (
+            <dl className="mx-5 mt-3 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5 text-xs">
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Order</dt>
+                <dd className="font-medium text-slate-800">{receipt.mode === 'delivery' ? 'Delivery' : 'Pickup'}</dd>
+              </div>
+              {!!receipt.payment && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Payment</dt>
+                  <dd className="font-medium text-slate-800">{receipt.payment}</dd>
+                </div>
+              )}
+              {!!receipt.name && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Name</dt>
+                  <dd className="text-right font-medium text-slate-800">{receipt.name}</dd>
+                </div>
+              )}
+              {!!receipt.phone && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Phone</dt>
+                  <dd className="font-medium tabular-nums text-slate-800">{receipt.phone}</dd>
+                </div>
+              )}
+              {!!receipt.note && (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-slate-500">Note</dt>
+                  <dd className="text-right text-slate-800">{receipt.note}</dd>
+                </div>
+              )}
+            </dl>
+          )}
+
+          {/* No footer button: the dialog's own X closes it
+              (v-dialog-close-consistency). */}
+          <div className="pb-5" />
         </DialogContent>
       </Dialog>
     </div>
