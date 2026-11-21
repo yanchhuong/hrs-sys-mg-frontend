@@ -37,8 +37,7 @@ import imgPosRetail   from '../../imports/pos-retail.jpg';
 // the taglined version below the mark stays legible on desktop and
 // crunches down cleanly on mobile.
 import imgBrandLogo   from '../../imports/smrt-web-logo1.png';
-// Customer logos for the "Trusted by" row — real businesses, shown with
-// their OK, each linking to the business's own page.
+// Customer logo on its testimonial card (real business, linked to its page).
 import imgMadamChnai  from '../../imports/customer-madam-chnai.jpg';
 // The module catalog (70 cards, their drawn screenshots and all three
 // languages of text) is its own chunk: it sits several screens down, so
@@ -360,7 +359,6 @@ const T = {
     title:   { en: 'HR teams trade spreadsheets for one source of truth',
                km: 'ក្រុមធនធានមនុស្សផ្លាស់ប្តូរពីសៀវភៅគណនេយ្យទៅជាប្រភពទិន្នន័យតែមួយ',
                zh: 'HR 团队用电子表格换来唯一可信的数据来源' },
-    trustedBy: { en: 'Trusted by', km: 'ទុកចិត្តដោយ', zh: '信赖我们的客户' },
     visit:     { en: 'Facebook page', km: 'ទំព័រ Facebook', zh: 'Facebook 主页' },
   },
   faq: {
@@ -1674,29 +1672,16 @@ export function BenefitCalculatorsShowcase({ lang }: { lang: Lang }) {
   );
 }
 
-/** Real customers in the "Trusted by" row: logo, name, place, and a link to
- *  their own page. Add a business only with its OK. A customer's quote goes
- *  in Testimonials' `items`, in the customer's own words — never written
- *  for them. */
-const CUSTOMERS: Array<{
-  name: string; nameKm?: string; href: string;
-  /** The business's logo; without one, a gem icon stands in. */
-  logo?: string;
-  place: { en: string; km: string; zh: string };
-}> = [
-  { name: 'Madam Chnai', nameKm: 'ម៉ាដាម ឆ្នៃ', logo: imgMadamChnai,
-    href: 'https://www.facebook.com/madamchnai/',
-    place: { en: 'Phnom Penh', km: 'ភ្នំពេញ', zh: '金边' } },
-  { name: 'Srey Khan Jewelry', nameKm: 'ស្រី ឃាន់ គ្រឿងអលង្ការ',
-    href: 'https://www.facebook.com/profile.php?id=100094669163306',
-    place: { en: 'Samraong Thom Market, Kandal', km: 'ផ្សារសំរោងធំ, កណ្តាល', zh: '干丹省 Samraong Thom 市场' } },
-];
-
-/** Testimonials — three short quotes. Stock names; replace with real once available. */
+/** Testimonials — three short quotes. The 2nd and 3rd are real customers
+ *  (logo or icon, and a link to their own page); their wording is a draft
+ *  written from what the business does, to be approved by each owner
+ *  before it goes live. The 1st is still a stock name. */
 function Testimonials({ lang }: { lang: Lang }) {
   const items: Array<{
     quote: { en: string; km: string; zh: string };
     name: string; role: { en: string; km: string; zh: string };
+    /** Real customers: the business's logo (or a gem icon) and its page. */
+    logo?: string; icon?: 'gem'; href?: string;
   }> = [
     { quote: { en: 'We closed our monthly payroll in 40 minutes instead of three days. The TOS engine just works.',
                km: 'យើងបិទប្រាក់ខែប្រចាំខែក្នុង ៤០ នាទី ជំនួសឱ្យ ៣ ថ្ងៃ។ ម៉ាស៊ីនពន្ធលើប្រាក់ខែដំណើរការល្អ។',
@@ -1704,18 +1689,20 @@ function Testimonials({ lang }: { lang: Lang }) {
       name: 'Oun Saovady', role: { en: 'HR Manager · Manufacturing',
                                    km: 'ប្រធានធនធានមនុស្ស · ផលិតកម្ម',
                                    zh: 'HR 经理 · 制造业' } },
-    { quote: { en: 'Five sites, one dashboard. We finally see who is at work in real-time without calling each branch.',
-               km: 'ប្រាំសាខា dashboard តែមួយ។ យើងឃើញនរណាមានវត្តមានជាក់ស្តែងដោយមិនចាំបាច់ហៅទៅសាខានីមួយៗ។',
-               zh: '五个站点，一个仪表盘。我们终于能实时看到谁在岗，再也不用挨个分店打电话了。' },
-      name: 'Borith Ouk',  role: { en: 'Operations Director · Retail',
-                                    km: 'នាយកប្រតិបត្តិការ · លក់រាយ',
-                                    zh: '运营总监 · 零售' } },
-    { quote: { en: 'The fingerprint device sync alone paid for the whole platform in the first month.',
-               km: 'ការតភ្ជាប់ឧបករណ៍ស្នាមម្រាមដៃតែឯងបង់សងតម្លៃវេទិកាទាំងមូលក្នុងខែដំបូង។',
-               zh: '仅指纹设备同步一项，就在第一个月内为整个平台赚回了成本。' },
-      name: 'Dara Lim',    role: { en: 'Finance Lead · F&B Group',
-                                    km: 'ប្រធានហិរញ្ញវត្ថុ · ក្រុមអាហារនិងភេសជ្ជៈ',
-                                    zh: '财务负责人 · 餐饮集团' } },
+    { quote: { en: 'Every handmade piece is in our stock, we sell at the counter with POS, and invoices go out from the same system. I always know what we have and what sold.',
+               km: 'រាល់ផលិតផលសិប្បកម្មរបស់យើងមាននៅក្នុងស្តុក យើងលក់នៅតុគិតលុយជាមួយ POS ហើយចេញវិក្កយបត្រពីប្រព័ន្ធតែមួយ។ ខ្ញុំដឹងជានិច្ចថាមានអ្វីខ្លះ និងលក់អ្វីបានខ្លះ។',
+               zh: '每件手工作品都在库存里，柜台用 POS 销售，发票也从同一个系统开出。有什么货、卖了什么，我随时都清楚。' },
+      name: 'Chhuon Putheary', role: { en: 'Owner · Madam Chnai, handcraft',
+                                       km: 'ម្ចាស់ · ម៉ាដាម ឆ្នៃ សិប្បកម្ម',
+                                       zh: '店主 · Madam Chnai 手工艺' },
+      logo: imgMadamChnai, href: 'https://www.facebook.com/madamchnai/' },
+    { quote: { en: "We buy and sell gold every day. The day's gold price, our stock by weight, POS sales and invoices are all in one place, so the counter and the books always match.",
+               km: 'យើងទិញលក់មាសរៀងរាល់ថ្ងៃ។ តម្លៃមាសប្រចាំថ្ងៃ ស្តុកតាមទម្ងន់ ការលក់តាម POS និងវិក្កយបត្រ សុទ្ធតែនៅកន្លែងតែមួយ ដូច្នេះតុគិតលុយ និងបញ្ជីតែងតែត្រូវគ្នា។',
+               zh: '我们每天都在买卖黄金。当天金价、按重量计的库存、POS 销售和发票都在一个地方，柜台和账目总是对得上。' },
+      name: 'Srey Khorn', role: { en: 'Owner · Srey Khorn Jewelry, gold buy & sell',
+                                  km: 'ម្ចាស់ · ស្រី ឃាន់ គ្រឿងអលង្ការ ទិញលក់មាស',
+                                  zh: '店主 · Srey Khorn 金店（黄金买卖）' },
+      icon: 'gem', href: 'https://www.facebook.com/profile.php?id=100094669163306' },
   ];
 
   return (
@@ -1727,40 +1714,6 @@ function Testimonials({ lang }: { lang: Lang }) {
             {t(T.testimonials.title, lang)}
           </h2>
         </div>
-        {/* Trusted by — each customer card opens the business's own page. */}
-        {CUSTOMERS.length > 0 && (
-          <div className="mt-10 flex flex-col items-center gap-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              {t(T.testimonials.trustedBy, lang)}
-            </p>
-            <div className="flex flex-wrap justify-center gap-4">
-              {CUSTOMERS.map(c => (
-                <a key={c.href} href={c.href} target="_blank" rel="noopener noreferrer"
-                   aria-label={`${c.name} · ${t(T.testimonials.visit, lang)}`}
-                   className="group flex w-full items-center gap-3 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:w-auto">
-                  {c.logo ? (
-                    <img src={c.logo} alt={`${c.name} logo`} width={56} height={56} loading="lazy"
-                         className="h-14 w-14 rounded-xl object-cover" />
-                  ) : (
-                    <span className="grid h-14 w-14 place-items-center rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600" aria-hidden>
-                      <Gem className="h-7 w-7" />
-                    </span>
-                  )}
-                  <span className="text-left">
-                    <span className="block text-sm font-semibold text-slate-900">
-                      {lang === 'km' && c.nameKm ? c.nameKm : c.name}
-                    </span>
-                    <span className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
-                      {t(c.place, lang)} ·
-                      <ExternalLink className="h-3 w-3" aria-hidden />
-                      <span className="group-hover:text-blue-600">{t(T.testimonials.visit, lang)}</span>
-                    </span>
-                  </span>
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
         <div className="mt-14 grid gap-6 lg:grid-cols-3">
           {items.map((q, i) => (
             <Card key={i} className="border-slate-200/70 shadow-sm">
@@ -1768,12 +1721,28 @@ function Testimonials({ lang }: { lang: Lang }) {
                 <Quote className="h-7 w-7 text-blue-200" />
                 <p className="mt-4 text-base leading-relaxed text-slate-700">{t(q.quote, lang)}</p>
                 <div className="mt-6 flex items-center gap-3">
-                  <span className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-sm font-semibold text-blue-700">
-                    {q.name.split(' ').map(p => p[0]).slice(0, 2).join('')}
-                  </span>
-                  <div>
+                  {q.logo ? (
+                    <img src={q.logo} alt="" width={44} height={44} loading="lazy"
+                         className="h-11 w-11 shrink-0 rounded-xl object-cover" />
+                  ) : q.icon === 'gem' ? (
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 text-amber-600" aria-hidden>
+                      <Gem className="h-5 w-5" />
+                    </span>
+                  ) : (
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-sm font-semibold text-blue-700">
+                      {q.name.split(' ').map(p => p[0]).slice(0, 2).join('')}
+                    </span>
+                  )}
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-900">{q.name}</p>
                     <p className="text-xs text-slate-500">{t(q.role, lang)}</p>
+                    {q.href && (
+                      <a href={q.href} target="_blank" rel="noopener noreferrer"
+                         className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">
+                        <ExternalLink className="h-3 w-3" aria-hidden />
+                        {t(T.testimonials.visit, lang)}
+                      </a>
+                    )}
                   </div>
                 </div>
               </CardContent>
