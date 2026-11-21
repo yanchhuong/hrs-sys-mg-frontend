@@ -4,6 +4,17 @@
   "installCommand": "npm ci",
   "outputDirectory": "dist",
   "framework": "vite",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy-Report-Only",
+          "value": "default-src 'self'; script-src 'self' 'sha256-B26hsRG8+OTU5aMAzD9GhjKj2/P0myjMeuIL6lt1+mg=' https://challenges.cloudflare.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' data: blob: https://nominatim.openstreetmap.org https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com https://challenges.cloudflare.com; frame-src 'self' https://www.youtube.com https://player.vimeo.com https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/api-02/:path*",
