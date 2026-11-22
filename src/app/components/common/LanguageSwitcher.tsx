@@ -11,13 +11,18 @@ import { LANG_LABELS, Lang } from '../../i18n/translations';
  * Compact globe button that opens a language picker. Place anywhere in the
  * header; the choice is global via I18nContext and persists to localStorage.
  */
-export function LanguageSwitcher({ variant = 'ghost', compact = false }: { variant?: 'ghost' | 'outline'; compact?: boolean }) {
+export function LanguageSwitcher({ variant = 'ghost', compact = false, className = '' }: {
+  variant?: 'ghost' | 'outline'; compact?: boolean;
+  /** Extra classes for the button (e.g. white on a coloured header). */
+  className?: string;
+}) {
   const { lang, setLang, t } = useI18n();
   const current = LANG_LABELS[lang];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant={variant} size={compact ? 'icon' : 'sm'} className={compact ? 'h-9 w-9' : 'h-9 gap-1.5'}>
+        <Button variant={variant} size={compact ? 'icon' : 'sm'} className={`${compact ? 'h-9 w-9' : 'h-9 gap-1.5'} ${className}`}
+          title={t('header.language')} aria-label={t('header.language')}>
           <Globe className="h-4 w-4" />
           {!compact && (
             <span className="text-xs">

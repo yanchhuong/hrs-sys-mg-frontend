@@ -365,11 +365,12 @@ export default function App() {
   // Public-shop menu landing — same opt-out as /scan: anonymous, no
   // sidebar, no /me. The 5-char code in the URL IS the only auth.
   if (isPublicShopPath()) {
+    // Customers pick English / ខ្មែរ / 中文 on the shop itself.
     return (
-      <>
+      <I18nProvider>
         <Suspense fallback={null}><PublicShopPage /></Suspense>
         <Toaster />
-      </>
+      </I18nProvider>
     );
   }
   // v-booking-public-link — anonymous booking page. Same opt-out as

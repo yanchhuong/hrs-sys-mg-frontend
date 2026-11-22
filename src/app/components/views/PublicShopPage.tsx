@@ -17,7 +17,9 @@ import { toast } from 'sonner';
 import * as shopApi from '../../api/shop';
 import { PublicShopSpin } from './PublicShopSpin';
 import { parseModifiers, type ItemModifiers } from '../../api/items';
-import { deriveCategoryChips, normalCat, catLabel } from '../../utils/categoryChips';
+import { deriveCategoryChips, normalCat, catLabel, KNOWN_LABELS } from '../../utils/categoryChips';
+import { useI18n } from '../../i18n/I18nContext';
+import { LanguageSwitcher } from '../common/LanguageSwitcher';
 import { DropdownSelect } from '../common/DropdownSelect';
 // v-perf-lazy-map — customer-facing storefront page; most customers
 // never open the delivery-location picker. Deferring leaflet keeps
@@ -187,14 +189,28 @@ function optionPrices(item: shopApi.PublicShopItem): number[] {
  *  Some shops price at the counter (jewellery by weight and the day's
  *  gold rate), so those items stay listed, just unpriced
  *  (v-shop-unpriced). */
-function shopPriceLabel(item: shopApi.PublicShopItem): string {
+function shopPriceLabel(item: shopApi.PublicShopItem, t: Translate): string {
   const base = Number(item.unitPrice) || 0;
   if (base > 0) return `$${base.toFixed(2)}`;
   const adds = optionPrices(item);
-  return adds.length ? `From $${Math.min(...adds).toFixed(2)}` : '';
+  return adds.length ? fill(t('shop.from'), { price: `$${Math.min(...adds).toFixed(2)}` }) : '';
+}
+
+/* v-shop-i18n — the shop speaks English / ខ្មែរ / 中文 (the globe in its
+ * header). What the shop wrote itself — item names, descriptions, its
+ * own categories — stays as written; notes sent to the cashier stay in
+ * English for the staff. */
+type Translate = (key: string, fallback?: string) => string;
+/** `{name}` placeholders filled in. */
+const fill = (text: string, vars: Record<string, string | number>): string =>
+  text.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ''));
+/** A category chip: the built-in ones translated, a shop's own as typed. */
+function shopCatLabel(key: string, t: Translate): string {
+  return key === 'all' || key in KNOWN_LABELS ? t(`shop.cat.${key}`) : catLabel(key);
 }
 
 export function PublicShopPage() {
+  const { t } = useI18n();
   /** V315 — the pathname can now take two shapes:
    *    /shop/{tenantCode}           — tenant-wide QR
    *    /shop/table/{tableCode}      — per-table QR
@@ -319,7 +335,7 @@ export function PublicShopPage() {
    *  fall back to pasting a link manually. */
   const useMyLocation = () => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      toast.error('Geolocation is not available on this device.');
+      toast.error(t('shop.geo_unavailable'));
       return;
     }
     setGeoBusy(true);
@@ -331,13 +347,13 @@ export function PublicShopPage() {
         // both desktop google.com/maps AND the Maps mobile app.
         setPickupLocation(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`);
         setGeoBusy(false);
-        toast.success('Location captured');
+        toast.success(t('shop.location_captured'));
       },
       err => {
         setGeoBusy(false);
         const msg = err.code === err.PERMISSION_DENIED
-          ? 'Location permission denied — paste a Google Maps link instead.'
-          : 'Failed to get your location — paste a Google Maps link instead.';
+          ? t('shop.location_denied')
+          : t('shop.location_failed');
         toast.error(msg);
       },
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 },
@@ -346,7 +362,7 @@ export function PublicShopPage() {
 
   useEffect(() => {
     if (!code && !tableCode) {
-      setError('Missing shop code');
+      setError(t('shop.missing_code'));
       setLoading(false);
       return;
     }
@@ -422,10 +438,10 @@ export function PublicShopPage() {
         // their original message so real bugs still surface.
         const isNetworkError = e instanceof TypeError;
         if (isNetworkError) {
-          toast.error("Sorry, we're on maintenance! We'll be back soon.");
-          setError("We're on maintenance right now. Please come back in a few minutes.");
+          toast.error(t('shop.maintenance_toast'));
+          setError(t('shop.maintenance'));
         } else {
-          setError(e instanceof Error ? e.message : 'Shop not found');
+          setError(e instanceof Error ? e.message : t('shop.not_found'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -638,7 +654,7 @@ export function PublicShopPage() {
         const s = await shopApi.mintShopPayWayPurchase(data?.code ?? code, cartTotal, 'USD');
         setPaywaySession(s);
       } catch (e) {
-        setPaywayError(e instanceof Error ? e.message : 'PayWay session failed');
+        setPaywayError(e instanceof Error ? e.message : t('shop.payway_failed'));
       } finally {
         setPaywayBusy(false);
       }
@@ -720,7 +736,7 @@ export function PublicShopPage() {
       const cur = next.get(key);
       const target = cur ? cur.qty + 1 : 1;
       if (target > cap) {
-        toast.error(`Only ${cap} on hand for "${item.name}".`);
+        toast.error(fill(t('shop.only_on_hand'), { n: cap, item: item.name }));
         if (!cur) return prev;
         return next;
       }
@@ -739,7 +755,7 @@ export function PublicShopPage() {
       const cap = cartCapFor(cur.item);
       const capped = Math.min(99, cap, qty);
       if (capped < qty) {
-        toast.error(`Only ${cap} on hand for "${cur.item.name}".`);
+        toast.error(fill(t('shop.only_on_hand'), { n: cap, item: cur.item.name }));
       }
       next.set(key, { ...cur, qty: capped });
       return next;
@@ -763,10 +779,10 @@ export function PublicShopPage() {
     // with a toast pointing at the first missing field instead of
     // letting an under-populated order land on the cashier's queue.
     if (orderMode === 'delivery') {
-      if (!custName.trim()) { toast.error('Please enter your name for delivery.'); return; }
-      if (!custPhone.trim()) { toast.error('Please enter a phone number — the driver needs to reach you.'); return; }
+      if (!custName.trim()) { toast.error(t('shop.need_name')); return; }
+      if (!custPhone.trim()) { toast.error(t('shop.need_phone')); return; }
       if (!pickupLocation.trim().startsWith('http')) {
-        toast.error('Please share or paste your delivery location.'); return;
+        toast.error(t('shop.need_location')); return;
       }
     }
     setSubmitting(true);
@@ -808,7 +824,7 @@ export function PublicShopPage() {
       // ref-based reset in the checkout sheet) so the same token is
       // never reused. Honeypot ("website") always ships as empty.
       if (data?.turnstile?.enabled && !turnstileToken) {
-        toast.error('Please complete the bot-check challenge before submitting.');
+        toast.error(t('shop.need_botcheck'));
         setSubmitting(false);
         return;
       }
@@ -840,10 +856,10 @@ export function PublicShopPage() {
       if (proofFile && paymentMethod === 'khrqr' && data?.khqrEnabled !== true && result.proofToken) {
         try {
           await shopApi.uploadPaymentProof(data?.code ?? code, result.id, result.proofToken, proofFile);
-          toast.success('Payment proof sent');
+          toast.success(t('shop.proof_sent'));
         } catch (e) {
           const why = e instanceof Error && e.message ? ': ' + e.message : '';
-          toast.error('Order placed, but the proof did not upload' + why + '. Show it at the counter.');
+          toast.error(fill(t('shop.proof_failed'), { why }));
         }
       }
       setProofFile(null);
@@ -855,8 +871,8 @@ export function PublicShopPage() {
         mode: orderMode,
         payment: orderMode === 'delivery'
           ? (paymentMethod === 'khrqr'
-              ? (paywaySession?.status === 'paid' ? 'KHQR · paid' : 'KHQR')
-              : 'Cash on hand')
+              ? (paywaySession?.status === 'paid' ? 'khqr_paid' : 'khqr')
+              : 'cash')
           : undefined,
         name: custName.trim() || undefined,
         phone: custPhone.trim() || undefined,
@@ -871,7 +887,7 @@ export function PublicShopPage() {
       setCustNote('');
       setPickupLocation('');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Order failed');
+      toast.error(e instanceof Error ? e.message : t('shop.order_failed'));
     } finally {
       setSubmitting(false);
     }
@@ -920,9 +936,9 @@ export function PublicShopPage() {
     return (
       <FullPageState>
         <AlertCircle className="h-8 w-8 text-amber-500 mb-2" />
-        <p className="text-base font-medium">Shop unavailable</p>
+        <p className="text-base font-medium">{t('shop.unavailable')}</p>
         <p className="text-sm text-gray-500 mt-1">
-          {error ?? 'This shop link is no longer active.'}
+          {error ?? t('shop.link_inactive')}
         </p>
         <p className="text-xs text-gray-400 mt-3 tabular-nums">
           {isTableMode ? `/shop/table/${tableCode}` : `/shop/${code}`}
@@ -934,7 +950,7 @@ export function PublicShopPage() {
             className="mt-4"
             onClick={() => { setError(null); setLoading(true); setReloadKey(k => k + 1); }}
           >
-            Try again
+            {t('shop.try_again')}
           </Button>
         )}
       </FullPageState>
@@ -983,7 +999,7 @@ export function PublicShopPage() {
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="text-3xl font-bold truncate flex items-center gap-2 flex-wrap">
-              <span className="truncate">{data.shopName || 'Shop'}</span>
+              <span className="truncate">{data.shopName || t('shop.shop')}</span>
               {/* V315 — Table badge, only when the customer scanned a
                   per-table QR. Prominent enough that the operator
                   handing them the phone knows which table it's tied
@@ -992,7 +1008,7 @@ export function PublicShopPage() {
                 <span className="inline-flex items-center gap-1.5 bg-white text-blue-700 rounded-full px-2.5 py-0.5 text-xs font-semibold tracking-wide">
                   {data.tableLabel}
                   {data.tableSeats ? (
-                    <span className="text-blue-500 font-normal">· {data.tableSeats} seats</span>
+                    <span className="text-blue-500 font-normal">· {fill(t('shop.seats'), { n: data.tableSeats })}</span>
                   ) : null}
                 </span>
               )}
@@ -1000,7 +1016,7 @@ export function PublicShopPage() {
             <div className="mt-1 flex items-center gap-3 text-xs sm:text-sm text-white/85 flex-wrap">
               <span className="inline-flex items-center gap-1">
                 <Store className="h-3.5 w-3.5" />
-                {counts.get('all') ?? 0} {counts.get('all') === 1 ? 'Product' : 'Products'}
+                {fill(t(counts.get('all') === 1 ? 'shop.product' : 'shop.products'), { n: counts.get('all') ?? 0 })}
               </span>
               {data.country && (
                 <span className="inline-flex items-center gap-1">
@@ -1048,15 +1064,18 @@ export function PublicShopPage() {
             {/* Powered-by attribution on its own line, left-aligned
                 under the contact row so it never elbows the shop's
                 own metadata. */}
-            <div className="mt-2 text-xs sm:text-sm text-white/85">
+            <div className="mt-2 flex items-center justify-between gap-3 text-xs sm:text-sm text-white/85">
               <a
                 href="https://hr-share.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 hover:text-white"
               >
-                Powered by <b className="text-white">hr-share.com</b>
+                {t('shop.powered_by')} <b className="text-white">hr-share.com</b>
               </a>
+              {/* v-shop-i18n — English / ខ្មែរ / 中文, on the row with room
+                  to spare so the shop's name keeps the full width. */}
+              <LanguageSwitcher className="shrink-0 -my-1 -mr-2 text-white hover:bg-white/15 hover:text-white" />
             </div>
           </div>
         </div>
@@ -1073,9 +1092,9 @@ export function PublicShopPage() {
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" aria-hidden />
             <div className="text-sm text-amber-900">
-              <p className="font-medium">This shop is not accepting orders right now.</p>
+              <p className="font-medium">{t('shop.paused_title')}</p>
               <p className="text-xs text-amber-800/80 mt-0.5">
-                You can still browse the menu. Please check back later.
+                {t('shop.paused_body')}
               </p>
             </div>
           </div>
@@ -1108,8 +1127,8 @@ export function PublicShopPage() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Escape') closePhoneSearch(); }}
-                placeholder="Search the menu…"
-                aria-label="Search the menu"
+                placeholder={t('shop.search')}
+                aria-label={t('shop.search_label')}
                 enterKeyHint="search"
                 // 16px: iOS zooms the page into any smaller field.
                 className="flex-1 min-w-0 bg-transparent text-base outline-none placeholder:text-gray-400"
@@ -1117,8 +1136,8 @@ export function PublicShopPage() {
               <button
                 type="button"
                 onClick={closePhoneSearch}
-                title="Close search"
-                aria-label="Close search"
+                title={t('shop.close_search')}
+                aria-label={t('shop.close_search')}
                 className="shrink-0 -mr-1 p-1 rounded-full text-gray-400 hover:text-gray-600"
               >
                 <X className="h-4 w-4" />
@@ -1169,7 +1188,7 @@ export function PublicShopPage() {
                         : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    {catLabel(key)}
+                    {shopCatLabel(key, t)}
                     <span className="ml-1 text-[11px] opacity-70">({count})</span>
                   </button>
                 );
@@ -1183,14 +1202,14 @@ export function PublicShopPage() {
                         <button
                           type="button"
                           className="px-3 h-8 rounded-full border text-sm font-medium border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition"
-                          title={`Show ${overflowKeys.length} more categor${overflowKeys.length === 1 ? 'y' : 'ies'}`}
+                          title={fill(t('shop.more_categories'), { n: overflowKeys.length })}
                         >
-                          +{overflowKeys.length} more
+                          {fill(t('shop.more'), { n: overflowKeys.length })}
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="start" className="w-56 p-1 max-h-[60vh] overflow-y-auto hover-scroll-y">
                         {overflowKeys.map(key => {
-                          const label = catLabel(key);
+                          const label = shopCatLabel(key, t);
                           const count = counts.get(key) ?? 0;
                           return (
                             <button
@@ -1217,8 +1236,8 @@ export function PublicShopPage() {
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
-              title="Search the menu"
-              aria-label="Search the menu"
+              title={t('shop.search_label')}
+              aria-label={t('shop.search_label')}
               className="sm:hidden h-10 w-10 shrink-0 inline-flex items-center justify-center rounded-xl bg-white shadow-sm border border-gray-200 text-gray-600 hover:text-blue-600 active:scale-95 transition"
             >
               <Search className="h-5 w-5" />
@@ -1231,7 +1250,7 @@ export function PublicShopPage() {
             <Input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search the menu…"
+              placeholder={t('shop.search')}
               className="pl-8 bg-white h-9"
             />
           </div>
@@ -1240,9 +1259,9 @@ export function PublicShopPage() {
               value={warehouse}
               onChange={e => setWarehouse(e.target.value)}
               className="h-9 rounded-md border border-input bg-white px-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-400 shrink-0 max-w-[160px] truncate"
-              aria-label="Filter by warehouse"
+              aria-label={t('shop.filter_warehouse')}
             >
-              <option value="">All warehouses</option>
+              <option value="">{t('shop.all_warehouses')}</option>
               {warehouseOptions.map(w => (
                 <option key={w} value={w}>{w}</option>
               ))}
@@ -1257,8 +1276,8 @@ export function PublicShopPage() {
         {filtered.length === 0 ? (
           <div className="text-center text-sm text-gray-500 py-16">
             {inStockItems.length === 0
-              ? 'This shop has no items available right now.'
-              : 'No items match your search.'}
+              ? t('shop.no_items')
+              : t('shop.no_match')}
           </div>
         ) : (
           <>
@@ -1297,12 +1316,12 @@ export function PublicShopPage() {
                 ref={loadMoreRef}
                 className="mt-6 flex items-center justify-center text-xs text-gray-400 py-4"
               >
-                Loading more…
+                {t('shop.loading_more')}
               </div>
             )}
             {visibleCount >= filtered.length && filtered.length > SHOP_PAGE_SIZE && (
               <div className="mt-6 text-center text-xs text-gray-400 py-3">
-                All {filtered.length} items shown.
+                {fill(t('shop.all_shown'), { n: filtered.length })}
               </div>
             )}
           </>
@@ -1320,7 +1339,7 @@ export function PublicShopPage() {
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
           className={`fixed right-4 sm:right-6 z-30 h-11 w-11 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex items-center justify-center transition-all
             ${cartCount > 0 ? 'bottom-24' : 'bottom-6'}`}
-          aria-label="Back to top"
+          aria-label={t('shop.back_to_top')}
         >
           <ArrowUp className="h-5 w-5" />
         </button>
@@ -1348,16 +1367,16 @@ export function PublicShopPage() {
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium">
-                  {cartCount} {cartCount === 1 ? 'item' : 'items'} · ${cartTotal.toFixed(2)}
+                  {fill(t(cartCount === 1 ? 'shop.item_count' : 'shop.items_count'), { n: cartCount })} · ${cartTotal.toFixed(2)}
                 </p>
-                <p className="text-[11px] text-gray-500">Review &amp; submit your order</p>
+                <p className="text-[11px] text-gray-500">{t('shop.review_submit')}</p>
               </div>
             </div>
             <Button
               onClick={() => setCheckoutOpen(true)}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              View order
+              {t('shop.view_order')}
             </Button>
           </div>
         </div>
@@ -1371,19 +1390,19 @@ export function PublicShopPage() {
         <DialogContent className="sm:max-w-md p-0 gap-0 max-h-[90vh] flex flex-col">
           <DialogHeader className="px-5 py-4 border-b shrink-0">
             <DialogTitle className="flex items-center gap-1.5">
-              Your order
+              {t('shop.your_order')}
               {/* Tooltip-only blurb — keeps the dialog header compact
                   while still surfacing the "what happens next" copy
                   on hover / long-press. */}
               <span
                 className="inline-flex items-center text-gray-400 hover:text-gray-600 cursor-help"
-                title="Submit to the counter — the cashier will prepare and confirm. Payment happens in person."
+                title={t('shop.order_hint')}
               >
                 <Info className="h-4 w-4" />
               </span>
             </DialogTitle>
             <DialogDescription className="sr-only">
-              Submit to the counter — the cashier will prepare and confirm. Payment happens in person.
+              {t('shop.order_hint')}
             </DialogDescription>
           </DialogHeader>
 
@@ -1391,7 +1410,7 @@ export function PublicShopPage() {
             {/* Cart lines */}
             {cartLines.length === 0 ? (
               <p className="text-center text-sm text-gray-500 py-6">
-                Your cart is empty.
+                {t('shop.cart_empty')}
               </p>
             ) : (
               <ul className="divide-y border rounded-md bg-white">
@@ -1441,7 +1460,7 @@ export function PublicShopPage() {
                           type="button"
                           onClick={() => removeLine(line.key)}
                           className="h-7 w-7 rounded text-gray-400 hover:text-red-600 flex items-center justify-center"
-                          title="Remove"
+                          title={t('shop.remove')}
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -1456,7 +1475,7 @@ export function PublicShopPage() {
                       <Input
                         value={line.notes}
                         onChange={e => setLineNote(line.key, e.target.value)}
-                        placeholder="Note for this item (optional)"
+                        placeholder={t('shop.item_note')}
                         maxLength={200}
                         className="h-7 text-xs"
                       />
@@ -1482,7 +1501,7 @@ export function PublicShopPage() {
                   }`}
                 >
                   <Hand className="h-4 w-4" />
-                  Pickup
+                  {t('shop.pickup')}
                 </button>
                 <button
                   type="button"
@@ -1494,7 +1513,7 @@ export function PublicShopPage() {
                   }`}
                 >
                   <Truck className="h-4 w-4" />
-                  Delivery
+                  {t('shop.delivery')}
                 </button>
               </div>
             </div>
@@ -1506,13 +1525,13 @@ export function PublicShopPage() {
             <div className="space-y-2 pt-2">
               <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
                 {orderMode === 'pickup'
-                  ? 'Contact (optional)'
-                  : 'Delivery details (required)'}
+                  ? t('shop.contact_optional')
+                  : t('shop.delivery_details')}
               </p>
               <Input
                 value={custName}
                 onChange={e => setCustName(e.target.value)}
-                placeholder={orderMode === 'delivery' ? 'Your name *' : 'Your name'}
+                placeholder={t('shop.your_name') + (orderMode === 'delivery' ? ' *' : '')}
                 maxLength={120}
                 aria-required={orderMode === 'delivery'}
                 className={orderMode === 'delivery' && !custName.trim() ? 'border-red-300' : ''}
@@ -1520,7 +1539,7 @@ export function PublicShopPage() {
               <Input
                 value={custPhone}
                 onChange={e => setCustPhone(e.target.value)}
-                placeholder={orderMode === 'delivery' ? 'Phone *' : 'Phone'}
+                placeholder={t('shop.phone') + (orderMode === 'delivery' ? ' *' : '')}
                 inputMode="tel"
                 maxLength={32}
                 aria-required={orderMode === 'delivery'}
@@ -1546,7 +1565,7 @@ export function PublicShopPage() {
                     {geoBusy
                       ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                       : <Navigation className="h-3.5 w-3.5 mr-1.5" />}
-                    Use my location
+                    {t('shop.use_my_location')}
                   </Button>
                   <Button
                     type="button"
@@ -1562,14 +1581,12 @@ export function PublicShopPage() {
                     className="h-9 shrink-0"
                   >
                     <MapPin className="h-3.5 w-3.5 mr-1.5" />
-                    Pin on map
+                    {t('shop.pin_on_map')}
                   </Button>
                   <Input
                     value={pickupLocation}
                     onChange={e => setPickupLocation(e.target.value)}
-                    placeholder={orderMode === 'delivery'
-                      ? 'Or paste a map link *'
-                      : 'Or paste a map link'}
+                    placeholder={t('shop.paste_map_link') + (orderMode === 'delivery' ? ' *' : '')}
                     inputMode="url"
                     maxLength={400}
                     aria-required={orderMode === 'delivery'}
@@ -1589,13 +1606,13 @@ export function PublicShopPage() {
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-0.5 underline hover:text-emerald-900"
                     >
-                      Open <ExternalLink className="h-3 w-3" />
+                      {t('shop.open')} <ExternalLink className="h-3 w-3" />
                     </a>
                     <button
                       type="button"
                       onClick={() => setPickupLocation('')}
                       className="text-gray-400 hover:text-red-600"
-                      title="Remove location"
+                      title={t('shop.remove_location')}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -1606,7 +1623,7 @@ export function PublicShopPage() {
               <Input
                 value={custNote}
                 onChange={e => setCustNote(e.target.value)}
-                placeholder="Note"
+                placeholder={t('shop.note')}
                 maxLength={240}
               />
             </div>
@@ -1619,7 +1636,7 @@ export function PublicShopPage() {
             {orderMode === 'delivery' && (
               <div className="space-y-2 pt-2">
                 <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Payment method
+                  {t('shop.payment_method')}
                 </p>
                 <div className={khqrOffered ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1 gap-2'}>
                   {/* V303 — KHQR hidden entirely when the tenant
@@ -1650,7 +1667,7 @@ export function PublicShopPage() {
                     }`}
                   >
                     <Banknote className="h-4 w-4" />
-                    Cash on hand
+                    {t('shop.cash_on_hand')}
                   </button>
                 </div>
 
@@ -1667,7 +1684,7 @@ export function PublicShopPage() {
                 {paymentMethod === 'khrqr' && !khqrEnabled && manualKhqr.length > 0 && (
                   <div className="rounded-md border bg-white p-3 space-y-3">
                     <div className="text-xs text-gray-500 text-center">
-                      Scan with your bank app to pay <span className="font-semibold tabular-nums">${cartTotal.toFixed(2)}</span>
+                      {t('shop.scan_to_pay')} <span className="font-semibold tabular-nums">${cartTotal.toFixed(2)}</span>
                     </div>
                     <div className="flex gap-3 overflow-x-auto hover-scroll-x justify-center">
                       {manualKhqr.map((b, i) => (
@@ -1684,7 +1701,7 @@ export function PublicShopPage() {
                       <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                         <CheckCircle2 className="h-4 w-4 shrink-0" />
                         <span className="flex-1 min-w-0 truncate">{proofFile.name}</span>
-                        <button type="button" onClick={() => setProofFile(null)} aria-label="Remove attachment"
+                        <button type="button" onClick={() => setProofFile(null)} aria-label={t('shop.remove_attachment')}
                           className="text-emerald-700 hover:text-emerald-900">
                           <X className="h-4 w-4" />
                         </button>
@@ -1692,7 +1709,7 @@ export function PublicShopPage() {
                     ) : (
                       <label className="flex items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 px-3 py-2.5 text-sm font-medium text-gray-700 hover:border-blue-400 hover:text-blue-700 cursor-pointer">
                         <Paperclip className="h-4 w-4" />
-                        Attach payment screenshot
+                        {t('shop.attach_proof')}
                         {/* The kinds the server keeps (it checks the bytes);
                             5 MB is its limit for a proof. */}
                         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" className="sr-only"
@@ -1701,7 +1718,7 @@ export function PublicShopPage() {
                             e.target.value = '';
                             if (!file) return;
                             if (file.size > 5 * 1024 * 1024) {
-                              toast.error('That file is too large (5 MB at most). Please attach a screenshot.');
+                              toast.error(t('shop.file_too_large'));
                               return;
                             }
                             setProofFile(file);
@@ -1716,7 +1733,7 @@ export function PublicShopPage() {
                     {paywayBusy && !paywaySession && (
                       <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-6">
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        Minting your KHQR…
+                        {t('shop.making_khqr')}
                       </div>
                     )}
 
@@ -1724,7 +1741,7 @@ export function PublicShopPage() {
                       <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800 leading-relaxed">
                         {paywayError}
                         <div className="mt-1 text-red-700/80">
-                          Switch to <strong>Cash on hand</strong> or try again — the merchant may not have PayWay configured.
+                          {t('shop.payway_fallback')}
                         </div>
                       </div>
                     )}
@@ -1732,7 +1749,7 @@ export function PublicShopPage() {
                     {paywaySession?.qrDataUrl && (
                       <div className="flex flex-col items-center">
                         <div className="text-xs text-gray-500 mb-2">
-                          Scan with your bank app to pay <span className="font-semibold tabular-nums">${cartTotal.toFixed(2)}</span>
+                          {t('shop.scan_to_pay')} <span className="font-semibold tabular-nums">${cartTotal.toFixed(2)}</span>
                         </div>
                         <div className="relative">
                           <img
@@ -1744,18 +1761,18 @@ export function PublicShopPage() {
                             <div className="absolute inset-0 flex items-center justify-center bg-emerald-50/95 rounded-md border-2 border-emerald-500">
                               <div className="flex flex-col items-center text-emerald-700">
                                 <CheckCircle2 className="h-10 w-10" />
-                                <span className="text-sm font-semibold mt-1">Paid</span>
+                                <span className="text-sm font-semibold mt-1">{t('shop.paid')}</span>
                               </div>
                             </div>
                           )}
                         </div>
                         <div className="mt-2 text-[10px] text-gray-400 tabular-nums">
-                          Ref: {paywaySession.tranId}
+                          {t('shop.ref')}: {paywaySession.tranId}
                         </div>
                         {paywaySession.status === 'pending' && (
                           <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] bg-amber-100 text-amber-800 ring-1 ring-amber-200">
                             <Loader2 className="h-3 w-3 animate-spin" />
-                            Waiting for payment…
+                            {t('shop.waiting_payment')}
                           </div>
                         )}
                       </div>
@@ -1789,7 +1806,7 @@ export function PublicShopPage() {
 
           <DialogFooter className="px-5 py-3 border-t shrink-0 gap-2 sm:gap-2">
             <div className="flex-1 text-left">
-              <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
+              <p className="text-[11px] text-gray-500 uppercase tracking-wide">{t('shop.total')}</p>
               <p className="text-lg font-bold text-emerald-700">${cartTotal.toFixed(2)}</p>
             </div>
             <Button
@@ -1797,7 +1814,7 @@ export function PublicShopPage() {
               onClick={() => setCheckoutOpen(false)}
               disabled={submitting}
             >
-              Keep shopping
+              {t('shop.keep_shopping')}
             </Button>
             <Button
               onClick={submit}
@@ -1806,7 +1823,7 @@ export function PublicShopPage() {
               className="bg-blue-600 hover:bg-blue-700"
             >
               {submitting && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-              Submit order
+              {t('shop.submit_order')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1851,17 +1868,16 @@ export function PublicShopPage() {
           <DialogHeader className="px-5 py-3 border-b">
             <DialogTitle className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-blue-600" />
-              Pin your location
+              {t('shop.pin_title')}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Click the map or search a place to drop a pin. The cashier will
-              use this to route the delivery.
+              {t('shop.pin_hint')}
             </DialogDescription>
           </DialogHeader>
           <div className="p-4">
             {/* v-perf-lazy-map — Suspense loads leaflet only when
                 the customer opens this Pin Location dialog. */}
-            <Suspense fallback={<div className="h-64 rounded-md border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-xs text-gray-400">Loading map…</div>}>
+            <Suspense fallback={<div className="h-64 rounded-md border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center text-xs text-gray-400">{t('shop.loading_map')}</div>}>
               <MapPicker
                 lat={pinLatLng?.lat ?? null}
                 lng={pinLatLng?.lng ?? null}
@@ -1870,7 +1886,7 @@ export function PublicShopPage() {
             </Suspense>
           </div>
           <DialogFooter className="px-5 py-3 border-t">
-            <Button variant="outline" onClick={() => setPinOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setPinOpen(false)}>{t('shop.cancel')}</Button>
             <Button
               className="bg-blue-600 hover:bg-blue-700"
               disabled={!pinLatLng}
@@ -1881,7 +1897,7 @@ export function PublicShopPage() {
                 setPinOpen(false);
               }}
             >
-              Use this location
+              {t('shop.use_this_location')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1904,7 +1920,7 @@ export function PublicShopPage() {
               </span>
             )}
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">{data?.shopName || 'Shop'}</p>
+              <p className="truncate text-sm font-semibold text-slate-900">{data?.shopName || t('shop.shop')}</p>
               {!!data?.phone && <p className="text-xs text-slate-500">{data.phone}</p>}
             </div>
           </div>
@@ -1912,13 +1928,13 @@ export function PublicShopPage() {
           {/* Order received + queue number */}
           <DialogHeader className="items-center px-5 pt-4 text-center">
             <CheckCircle2 className="h-9 w-9 text-emerald-500" />
-            <DialogTitle className="text-center">Order received</DialogTitle>
+            <DialogTitle className="text-center">{t('shop.order_received')}</DialogTitle>
             <DialogDescription className="text-center">
-              Show this receipt at the counter
+              {t('shop.show_receipt')}
             </DialogDescription>
           </DialogHeader>
           <div className="px-5 pt-3 text-center">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Queue no.</p>
+            <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{t('shop.queue_no')}</p>
             <p className="text-4xl font-bold tabular-nums tracking-widest text-slate-900">{confirmed?.queueNo}</p>
             {receipt && (
               <p className="mt-1 text-xs text-slate-500">
@@ -1949,7 +1965,7 @@ export function PublicShopPage() {
             </ul>
           )}
           <div className="flex items-baseline justify-between px-5 pt-3">
-            <span className="text-sm font-semibold text-slate-900">Total</span>
+            <span className="text-sm font-semibold text-slate-900">{t('shop.total')}</span>
             <span className="text-xl font-bold tabular-nums text-emerald-700">
               ${Number(confirmed?.total ?? 0).toFixed(2)}
             </span>
@@ -1959,30 +1975,30 @@ export function PublicShopPage() {
           {receipt && (
             <dl className="mx-5 mt-3 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5 text-xs">
               <div className="flex justify-between gap-3">
-                <dt className="text-slate-500">Order</dt>
-                <dd className="font-medium text-slate-800">{receipt.mode === 'delivery' ? 'Delivery' : 'Pickup'}</dd>
+                <dt className="text-slate-500">{t('shop.order')}</dt>
+                <dd className="font-medium text-slate-800">{receipt.mode === 'delivery' ? t('shop.delivery') : t('shop.pickup')}</dd>
               </div>
               {!!receipt.payment && (
                 <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Payment</dt>
-                  <dd className="font-medium text-slate-800">{receipt.payment}</dd>
+                  <dt className="text-slate-500">{t('shop.payment')}</dt>
+                  <dd className="font-medium text-slate-800">{receipt.payment === 'khqr_paid' ? t('shop.khqr_paid') : receipt.payment === 'khqr' ? 'KHQR' : t('shop.cash_on_hand')}</dd>
                 </div>
               )}
               {!!receipt.name && (
                 <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Name</dt>
+                  <dt className="text-slate-500">{t('shop.name')}</dt>
                   <dd className="text-right font-medium text-slate-800">{receipt.name}</dd>
                 </div>
               )}
               {!!receipt.phone && (
                 <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Phone</dt>
+                  <dt className="text-slate-500">{t('shop.phone')}</dt>
                   <dd className="font-medium tabular-nums text-slate-800">{receipt.phone}</dd>
                 </div>
               )}
               {!!receipt.note && (
                 <div className="flex justify-between gap-3">
-                  <dt className="text-slate-500">Note</dt>
+                  <dt className="text-slate-500">{t('shop.note')}</dt>
                   <dd className="text-right text-slate-800">{receipt.note}</dd>
                 </div>
               )}
@@ -2032,6 +2048,7 @@ function PublicShopCard({
    *  refuse. */
   orderingDisabled?: boolean;
 }) {
+  const { t } = useI18n();
   const [broken, setBroken] = useState(false);
   // V280 — prefer the small thumbnail (~15 KB) over the full cover
   // (~200 KB). Legacy items with no thumb fall back to imageUrls[0].
@@ -2085,7 +2102,7 @@ function PublicShopCard({
         </div>
         <div className="mt-1 flex items-center justify-between gap-2">
           <span className="text-sm font-semibold text-emerald-700">
-            {shopPriceLabel(item)}
+            {shopPriceLabel(item, t)}
           </span>
           {/* Quick-add button — stopPropagation so tapping the "+" only
               adds one and doesn't also open the detail dialog. Items with
@@ -2109,9 +2126,9 @@ function PublicShopCard({
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onRemove(); }}
                   aria-label={qtyInCart <= 1
-                    ? `Remove ${item.name} from cart`
-                    : `Remove one ${item.name}`}
-                  title={qtyInCart <= 1 ? 'Remove from cart' : 'Remove one'}
+                    ? fill(t('shop.remove_item_aria'), { item: item.name })
+                    : fill(t('shop.remove_one_aria'), { item: item.name })}
+                  title={qtyInCart <= 1 ? t('shop.remove_from_cart') : t('shop.remove_one')}
                   className="inline-flex items-center justify-center h-6 w-6 rounded-full border border-blue-600 text-blue-600 hover:bg-blue-50 shadow-sm transition"
                 >
                   <Minus className="h-3.5 w-3.5" />
@@ -2123,8 +2140,8 @@ function PublicShopCard({
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onAdd(); }}
                   disabled={!item.inStock}
-                  aria-label={`Add another ${item.name}`}
-                  title="Add one"
+                  aria-label={fill(t('shop.add_another_aria'), { item: item.name })}
+                  title={t('shop.add_one')}
                   className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -2135,8 +2152,8 @@ function PublicShopCard({
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onAdd(); }}
                 disabled={!item.inStock}
-                aria-label={`Add ${item.name} to cart`}
-                title="Add to cart"
+                aria-label={fill(t('shop.add_item_aria'), { item: item.name })}
+                title={t('shop.add_to_cart')}
                 className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -2156,7 +2173,7 @@ function PublicShopCard({
               <span className={`text-[11px] tabular-nums shrink-0 ${
                 item.stockQty <= 0 ? 'text-red-600' : 'text-gray-500'
               }`}>
-                Stock: {item.stockQty}
+                {fill(t('shop.stock'), { n: item.stockQty })}
               </span>
             ) : <span />}
             {item.warehouseName && (
@@ -2205,6 +2222,7 @@ function ItemDetailDialog({
    *  cart line, so "remove one" has a single meaning. */
   onRemove?: () => void;
 }) {
+  const { t } = useI18n();
   const images = item ? shopApi.itemImages(item) : [];
   const [idx, setIdx] = useState(0);
   useEffect(() => { setIdx(0); }, [item?.id]);
@@ -2232,7 +2250,7 @@ function ItemDetailDialog({
           announce which item is open. */}
       <DialogContent className="group sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col [&>button]:top-3 [&>button]:right-3 [&>button]:h-8 [&>button]:w-8 [&>button]:rounded-full [&>button]:bg-white/85 [&>button]:shadow [&>button]:z-10 [&>button]:opacity-0 [&>button]:transition-opacity group-hover:[&>button]:opacity-100 [&>button:focus-visible]:opacity-100">
         <DialogTitle className="sr-only">{item.name}</DialogTitle>
-        <DialogDescription className="sr-only">Item details and images</DialogDescription>
+        <DialogDescription className="sr-only">{t('shop.item_details')}</DialogDescription>
 
         <div className="flex-1 min-h-0 overflow-y-auto">
         {/* Carousel — capped at 55vh so a tall portrait image never
@@ -2284,7 +2302,7 @@ function ItemDetailDialog({
               <button
                 type="button"
                 onClick={prev}
-                aria-label="Previous image"
+                aria-label={t('shop.prev_image')}
                 className="absolute left-0 top-1/2 -translate-y-1/2 h-full w-12 flex items-center justify-center text-white bg-gradient-to-r from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <ChevronLeft className="h-6 w-6 drop-shadow" />
@@ -2292,7 +2310,7 @@ function ItemDetailDialog({
               <button
                 type="button"
                 onClick={next}
-                aria-label="Next image"
+                aria-label={t('shop.next_image')}
                 className="absolute right-0 top-1/2 -translate-y-1/2 h-full w-12 flex items-center justify-center text-white bg-gradient-to-l from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <ChevronRight className="h-6 w-6 drop-shadow" />
@@ -2303,7 +2321,7 @@ function ItemDetailDialog({
                     key={i}
                     type="button"
                     onClick={() => setIdx(i)}
-                    aria-label={`Image ${i + 1}`}
+                    aria-label={fill(t('shop.image_n'), { n: i + 1 })}
                     className={`h-1.5 rounded-full transition-all ${
                       i === idx ? 'bg-white w-4' : 'bg-white/50 w-1.5 hover:bg-white/80'
                     }`}
@@ -2331,11 +2349,11 @@ function ItemDetailDialog({
           </div>
           <div className="flex items-baseline gap-3">
             <span className="text-2xl font-semibold text-emerald-700">
-              {shopPriceLabel(item)}
+              {shopPriceLabel(item, t)}
             </span>
             {/* "per pcs" means nothing without a price beside it. */}
-            {item.unit && !!shopPriceLabel(item) && (
-              <span className="text-xs text-gray-500">per {item.unit}</span>
+            {item.unit && !!shopPriceLabel(item, t) && (
+              <span className="text-xs text-gray-500">{fill(t('shop.per_unit'), { unit: item.unit })}</span>
             )}
           </div>
           {item.description && (
@@ -2352,14 +2370,14 @@ function ItemDetailDialog({
               <ShoppingCart className="h-3.5 w-3.5" />
               {!orderingDisabled && onRemove ? (
                 <>
-                  <span>In cart</span>
+                  <span>{t('shop.in_cart')}</span>
                   <button
                     type="button"
                     onClick={onRemove}
                     aria-label={qtyInCart <= 1
-                      ? `Remove ${item.name} from cart`
-                      : `Remove one ${item.name}`}
-                    title={qtyInCart <= 1 ? 'Remove from cart' : 'Remove one'}
+                      ? fill(t('shop.remove_item_aria'), { item: item.name })
+                      : fill(t('shop.remove_one_aria'), { item: item.name })}
+                    title={qtyInCart <= 1 ? t('shop.remove_from_cart') : t('shop.remove_one')}
                     className="inline-flex items-center justify-center h-5 w-5 rounded-full border border-blue-600 text-blue-600 hover:bg-blue-100 transition"
                   >
                     <Minus className="h-3 w-3" />
@@ -2369,15 +2387,15 @@ function ItemDetailDialog({
                     type="button"
                     onClick={onAdd}
                     disabled={!item.inStock}
-                    aria-label={`Add another ${item.name}`}
-                    title="Add one"
+                    aria-label={fill(t('shop.add_another_aria'), { item: item.name })}
+                    title={t('shop.add_one')}
                     className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
                   >
                     <Plus className="h-3 w-3" />
                   </button>
                 </>
               ) : (
-                <span>Already {qtyInCart} in cart</span>
+                <span>{fill(t('shop.already_in_cart'), { n: qtyInCart })}</span>
               )}
             </div>
           )}
@@ -2385,7 +2403,7 @@ function ItemDetailDialog({
         </div>
 
         <DialogFooter className="px-5 py-3 border-t shrink-0">
-          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button variant="outline" onClick={onClose}>{t('shop.close')}</Button>
           {/* v-shop-ordering-toggle — Add-to-cart hidden entirely
               when ordering is off. The dialog remains useful as a
               menu preview (image + description + price). */}
@@ -2396,7 +2414,7 @@ function ItemDetailDialog({
               onClick={() => { onAdd(); onClose(); }}
             >
               <Plus className="h-4 w-4 mr-1" />
-              {item.inStock ? 'Add to cart' : 'Out of stock'}
+              {item.inStock ? t('shop.add_to_cart') : t('shop.out_of_stock')}
             </Button>
           )}
         </DialogFooter>
@@ -2421,6 +2439,7 @@ function ModifierPickerDialog({
   onCancel: () => void;
   onConfirm: (modifiers: SelectedModifier[]) => void;
 }) {
+  const { t } = useI18n();
   // Track picks as group-name → option-label. Resets every time the
   // dialog reopens for a fresh item (keyed by item?.id below).
   const [picks, setPicks] = useState<Record<string, string>>({});
@@ -2455,7 +2474,7 @@ function ModifierPickerDialog({
         <DialogHeader>
           <DialogTitle>{item.name}</DialogTitle>
           <DialogDescription className="text-xs">
-            Pick your options. Items marked <span className="text-red-600">*</span> are required.
+            {t('shop.pick_options')} <span className="text-red-600">*</span> {t('shop.pick_options_required')}
           </DialogDescription>
         </DialogHeader>
 
@@ -2496,16 +2515,16 @@ function ModifierPickerDialog({
 
         <DialogFooter className="border-t pt-3 gap-2">
           <div className="flex-1 text-left">
-            <p className="text-[11px] text-gray-500 uppercase tracking-wide">Line total</p>
+            <p className="text-[11px] text-gray-500 uppercase tracking-wide">{t('shop.line_total')}</p>
             <p className="text-base font-bold text-emerald-700">${previewPrice.toFixed(2)}</p>
           </div>
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button variant="outline" onClick={onCancel}>{t('shop.cancel')}</Button>
           <Button
             onClick={() => onConfirm(resolved)}
             disabled={missingRequired}
             className="bg-blue-600 hover:bg-blue-700"
           >
-            Add to order
+            {t('shop.add_to_order')}
           </Button>
         </DialogFooter>
       </DialogContent>
