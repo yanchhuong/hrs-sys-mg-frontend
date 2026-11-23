@@ -5,6 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 
 import { cn } from "./utils";
+import { relinkDescription, useDescribedByGuard } from "./describedBy";
 
 function Dialog({
   ...props
@@ -58,11 +59,14 @@ const DialogContent = React.forwardRef<
   // Defaults to false so every existing dialog keeps its X.
   React.ComponentProps<typeof DialogPrimitive.Content> & { hideClose?: boolean }
 >(({ className, children, hideClose = false, ...props }, ref) => {
+  // v-dialog-describedby — no Description inside → no dangling
+  // aria-describedby (and no Radix console warning). See describedBy.ts.
+  const contentRef = useDescribedByGuard(ref);
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
-        ref={ref}
+        ref={contentRef}
         data-slot="dialog-content"
         className={cn(
           // v-dialog-responsive-scroll — added max-h + overflow so
@@ -191,6 +195,7 @@ function DialogDescription({
 }: React.ComponentProps<typeof DialogPrimitive.Description>) {
   return (
     <DialogPrimitive.Description
+      ref={relinkDescription}
       data-slot="dialog-description"
       className={cn("text-muted-foreground text-sm", className)}
       {...props}
