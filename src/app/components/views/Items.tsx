@@ -1039,7 +1039,9 @@ export function Items() {
   const totals = useMemo(() => {
     let cost = 0, price = 0, qty = 0, active = 0, outOfStock = 0;
     for (const r of filtered) {
-      const q = Number(r.stockQty ?? 0);
+      // v-not-tracked — stock figures count tracked items only, as the
+      // server's do: an untracked item's number isn't kept up to date.
+      const q = r.deductionEnabled ? Number(r.stockQty ?? 0) : 0;
       cost  += q * Number(r.unitCost  ?? 0);
       price += q * Number(r.unitPrice ?? 0);
       qty   += q;
