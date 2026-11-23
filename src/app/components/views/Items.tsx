@@ -30,6 +30,7 @@ import { InlineTextCell } from '../common/InlineTextCell';
 import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../common/ListStates';
 import { TONE_CLASS } from '../../utils/statusTones';
+import { useConfirm } from '../../context/ConfirmContext';
 import { DocAuditLine } from '../common/DocAuditLine';
 import * as itemsApi from '../../api/items';
 import * as marketApi from '../../api/marketPrices';
@@ -114,7 +115,9 @@ const EMPTY_FORM: FormState = {
   unitCost: '0',
   stockQty: '0',
   active: true,
-  deductionEnabled: false,
+  // v-not-tracked — new items count their stock, as on mobile; turn it off
+  // for services. An untracked item with a stock number misled a shop.
+  deductionEnabled: true,
   imageUrls: [],
   category: 'other',
   modifierGroups: [],
@@ -238,7 +241,6 @@ function ReceiveStockPopover({
             unit: stocked.unit ?? undefined,
             unitPrice: p,
             unitCost: stocked.unitCost,
-            stockQty: stocked.stockQty,
             active: stocked.active,
             deductionEnabled: stocked.deductionEnabled,
             imageUrls: itemsApi.resolveImages(stocked),
@@ -449,7 +451,7 @@ function RowImageCell({
         unit: base.unit ?? undefined,
         unitPrice: base.unitPrice,
         unitCost: base.unitCost,
-        stockQty: base.stockQty ?? 0,
+        // v-no-stale-stock — no stockQty: a sale since this row loaded would be undone.
         active: base.active,
         deductionEnabled: base.deductionEnabled,
         imageUrls,
@@ -622,7 +624,7 @@ function RowModifiersPopover({
         unit: item.unit ?? undefined,
         unitPrice: item.unitPrice,
         unitCost: item.unitCost,
-        stockQty: item.stockQty,
+        // v-no-stale-stock — no stockQty: a sale since this row loaded would be undone.
         active: item.active,
         deductionEnabled: item.deductionEnabled,
         // imageUrls deliberately omitted: absent means "leave the images
@@ -725,6 +727,20 @@ function RowModifiersPopover({
  * promoted to top-level in V118).
  */
 export function Items() {
+  // v-not-tracked — turning counting off on an item that holds stock is
+  // asked: POS sales would stop reducing it, and the number would mislead.
+  const confirm = useConfirm();
+  // `unit` is 'pcs' for a gold item: its unit is a weight, its stock pieces.
+  const confirmUntrack = (name: string, stock: number, unit?: string | null) =>
+    stock > 0
+      ? confirm({
+          title: `Stop counting stock for ${name}?`,
+          message: `POS sales will no longer reduce its ${stock.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${unit?.trim() || 'pcs'}.`,
+          confirmLabel: 'Stop counting',
+          cancelLabel: 'Keep counting',
+          variant: 'destructive',
+        })
+      : Promise.resolve(true);
   const { t } = useI18n();
   const { canCreate, canUpdate, canDelete } = useAuth();
   const canAdd = canCreate('stock');
@@ -1184,7 +1200,10 @@ export function Items() {
         unit: goldTitle ? marketApi.goldWeightUnit(form.weightUnit).symbol : (form.unit.trim() || undefined),
         unitPrice,
         unitCost,
-        stockQty,
+        // v-no-stale-stock — sent only on create, or when the user changed
+        // the number. The server writes stockQty as given, so resending the
+        // form's copy undid any sale made while the dialog was open.
+        stockQty: !editing || stockQty !== Number(editing.stockQty ?? 0) ? stockQty : undefined,
         active: form.active,
         deductionEnabled: form.deductionEnabled,
         // v-gold-items — '' unlinks; the server prices a linked item from
@@ -1273,7 +1292,7 @@ export function Items() {
       unit: patch.unit ?? it.unit ?? undefined,
       unitPrice: it.unitPrice,
       unitCost: it.unitCost,
-      stockQty: it.stockQty ?? 0,
+      // v-no-stale-stock — no stockQty: a sale since this row loaded would be undone.
       active: patch.active ?? it.active,
       deductionEnabled: patch.deductionEnabled ?? it.deductionEnabled,
       // imageUrls deliberately omitted — absent leaves the images alone
@@ -1899,7 +1918,10 @@ export function Items() {
                     // Derived Status — Out / Low / Normal. "Low" only
                     // triggers when min_stock is set (> 0); without a
                     // threshold every row reads as Normal.
-                    const status = onHand <= 0
+                    // v-not-tracked — no stock status for an untracked item.
+                    const status = !it.deductionEnabled
+                      ? { label: 'Not tracked', cls: TONE_CLASS.neutral }
+                      : onHand <= 0
                       ? { label: 'Out',    cls: TONE_CLASS.danger }
                       : (minStock > 0 && onHand < minStock)
                         ? { label: 'Low',    cls: TONE_CLASS.attention }
@@ -2037,13 +2059,18 @@ export function Items() {
                           )}
                           {Number(it.unitPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
-                        <TableCell className={`text-right tabular-nums ${onHand <= 0 ? 'text-rose-700 font-medium' : ''}`}>
+                        <TableCell className={`text-right tabular-nums ${it.deductionEnabled && onHand <= 0 ? 'text-rose-700 font-medium' : ''}`}>
                           {/* v-items-receive-inline — Receive-stock
                               action now lives here (right of the
                               number) instead of down in the Actions
                               cell. Same permission gate (canReceive =
                               stock:update). Compact size so the
                               column doesn't grow. */}
+                          {/* v-not-tracked — no number for an untracked item:
+                              sales don't change it, so it would mislead. */}
+                          {!it.deductionEnabled ? (
+                            <span className="text-xs text-gray-400">Not tracked</span>
+                          ) : (
                           <span className="inline-flex items-center gap-1.5 justify-end">
                             <span>{onHand.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span>
                             {canReceive && (
@@ -2054,6 +2081,7 @@ export function Items() {
                               />
                             )}
                           </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-gray-500">
                           {minStock > 0 ? minStock.toLocaleString('en-US', { maximumFractionDigits: 2 }) : <span className="text-gray-300">—</span>}
@@ -2145,7 +2173,10 @@ export function Items() {
                               when qty > on-hand. Off = autofill only. */}
                           <Switch
                             checked={it.deductionEnabled}
-                            onCheckedChange={(v) => { void toggleItemFlag(it, { deductionEnabled: v }); }}
+                            onCheckedChange={async (v) => {
+                              if (!v && !(await confirmUntrack(it.name, Number(it.stockQty ?? 0), it.goldTitle ? 'pcs' : it.unit))) return;
+                              void toggleItemFlag(it, { deductionEnabled: v });
+                            }}
                             disabled={!canEdit}
                             aria-label={`Toggle Stock IN/OUT for ${it.name}`}
                           />
@@ -2400,7 +2431,11 @@ export function Items() {
                 <Input
                   type="text" inputMode="decimal"
                   className="tabular-nums text-right"
-                  value={form.stockQty}
+                  // v-not-tracked — no number while counting is off; the stored
+                  // one is kept (and not sent) for when it is turned back on.
+                  value={form.deductionEnabled ? form.stockQty : ''}
+                  placeholder={form.deductionEnabled ? undefined : 'Not tracked'}
+                  disabled={!form.deductionEnabled}
                   onChange={e => setForm({ ...form, stockQty: maskNumber(e.target.value, NUM.signedMoney) })}
                 />
               </div>
@@ -2517,7 +2552,10 @@ export function Items() {
               </div>
               <Switch
                 checked={form.deductionEnabled}
-                onCheckedChange={v => setForm({ ...form, deductionEnabled: v })}
+                onCheckedChange={async v => {
+                  if (!v && editing && !(await confirmUntrack(form.name || editing.name, Number(editing.stockQty ?? 0), form.goldTitle.trim() ? 'pcs' : form.unit))) return;
+                  setForm(f => ({ ...f, deductionEnabled: v }));
+                }}
               />
             </div>
 
