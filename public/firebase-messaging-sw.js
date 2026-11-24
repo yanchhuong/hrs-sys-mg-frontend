@@ -35,10 +35,16 @@ const messaging = firebase.messaging();
  * `notification` key, so we only step in when the payload is
  * `data`-only (used by our backend for deep-link-only pushes).
  */
+// v-push-once — the server sends browsers DATA-ONLY messages (title and
+// body in data). A message with a `notification` block is shown by the
+// Firebase SDK itself before this handler runs, so showing it here too
+// doubled every notification. Should one still arrive, leave it to the SDK.
+// Returned, so the SDK keeps the push alive until the banner is shown.
 messaging.onBackgroundMessage((payload) => {
-  const title = payload?.notification?.title || payload?.data?.title || 'SMRT HRMS';
-  const body  = payload?.notification?.body  || payload?.data?.body  || '';
-  self.registration.showNotification(title, {
+  if (payload?.notification) return undefined;
+  const title = payload?.data?.title || 'SMRT HRMS';
+  const body  = payload?.data?.body  || '';
+  return self.registration.showNotification(title, {
     body,
     icon: '/favicon.svg',
     badge: '/favicon.svg',
