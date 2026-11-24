@@ -37,6 +37,9 @@ export interface LedgerEntry {
    *  the chain math used — matches the Sale Ledger closing
    *  balance to the cent. */
   exchangeRate?: number | null;
+  /** Sale side: summed line quantity of the document (negative on a
+   *  Credit Note). Feeds the Sellers tab's Items column. */
+  itemQty?: number | null;
 }
 
 export interface LedgerGroup {

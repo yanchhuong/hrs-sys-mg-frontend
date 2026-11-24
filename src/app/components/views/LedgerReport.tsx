@@ -226,14 +226,14 @@ export function LedgerReport({ kind }: LedgerReportProps) {
   const sellerGroups = useMemo(() => {
     if (!report) return [] as Array<{
       sellerId: string; sellerName: string;
-      invoiceCount: number;
+      invoiceCount: number; itemCount: number;
       totalAmount: ByCurrency;
       receivedUsd: number; receivedKhr: number;
       totalRefund: ByCurrency;
     }>;
     const acc = new Map<string, {
       sellerId: string; sellerName: string;
-      invoiceCount: number;
+      invoiceCount: number; itemCount: number;
       totalAmount: ByCurrency;
       receivedUsd: number; receivedKhr: number;
       totalRefund: ByCurrency;
@@ -244,18 +244,22 @@ export function LedgerReport({ kind }: LedgerReportProps) {
         // Only count parent docs (balance != null) as invoices
         // toward the "Invoices" count — CN/DN children roll their
         // amount + refund up here but shouldn't inflate the count.
-        const isRoot = e.balance !== null;
+        // != null: the API leaves null fields out, so a child row's
+        // balance arrives as undefined, not null.
+        const isRoot = e.balance != null;
         const key = e.sellerId;
         const cur = acc.get(key) ?? {
           sellerId: e.sellerId,
           sellerName: e.sellerName ?? '(unknown)',
           invoiceCount: 0,
+          itemCount: 0,
           totalAmount: {} as ByCurrency,
           receivedUsd: 0,
           receivedKhr: 0,
           totalRefund: {} as ByCurrency,
         };
         cur.invoiceCount += isRoot ? 1 : 0;
+        cur.itemCount    += e.itemQty ?? 0;
         addTo(cur.totalAmount, e.currency || g.currency, e.amount ?? 0);
         cur.receivedUsd  += e.receivedUsd ?? 0;
         cur.receivedKhr  += e.receivedKhr ?? 0;
@@ -560,6 +564,7 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                       <TableRow>
                         <TableHead>Seller</TableHead>
                         <TableHead className="text-right w-28">Invoices</TableHead>
+                        <TableHead className="text-right w-24">Items</TableHead>
                         <TableHead className="text-right w-28">{labels.amountHeader}</TableHead>
                         {showUsd && (
                           <TableHead className="text-right w-28">{labels.settledHeader} (USD)</TableHead>
@@ -578,6 +583,9 @@ export function LedgerReport({ kind }: LedgerReportProps) {
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-sm">
                             {s.invoiceCount}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">
+                            {s.itemCount.toLocaleString('en-US', { maximumFractionDigits: 2 })}
                           </TableCell>
                           <TableCell className="text-right tabular-nums text-sm">
                             {fmtByCurrency(s.totalAmount)}
