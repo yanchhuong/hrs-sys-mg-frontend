@@ -3,7 +3,7 @@ import { ClipboardList, WifiOff, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import * as kitchenApi from '../../api/kitchen';
 import type { PosOrder, PosFulfillmentStatus } from '../../api/pos';
-import { KdsOrderCard } from '../common/KdsOrderCard';
+import { KdsOrderCard, KdsStepChips, kdsVisible, type KdsFilter } from '../common/KdsOrderCard';
 import { Skeleton } from '../ui/skeleton';
 
 /**
@@ -38,7 +38,7 @@ export function KitchenSharePage(): JSX.Element {
   const [orders, setOrders] = useState<PosOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'cooking' | 'prep'>('all');
+  const [filter, setFilter] = useState<KdsFilter>('all');
   const [nowMs, setNowMs] = useState<number>(Date.now());
 
   // 1s ticker so the elapsed-time counter on every card increments
@@ -85,7 +85,8 @@ export function KitchenSharePage(): JSX.Element {
     // Optimistic-update: flip the card locally so the tap feels
     // instant. On error, next poll (~5s) restores the true state
     // and the toast tells the operator what went wrong.
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, fulfillmentStatus: next } : o));
+    // v-kds-recent-top — stamped now, so the card moves to the top at once.
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, fulfillmentStatus: next, updatedAt: new Date().toISOString() } : o));
     try {
       const updated = await kitchenApi.advancePublicKitchenOrder(code, orderId, next);
       // Merge the fresh row: if it advanced to 'done' the next poll
@@ -104,11 +105,8 @@ export function KitchenSharePage(): JSX.Element {
 
   const inProgressCount = orders.filter(o => o.fulfillmentStatus === 'in_progress' || o.fulfillmentStatus === 'ready').length;
   const pendingCount    = orders.filter(o => o.fulfillmentStatus === 'requested' || o.fulfillmentStatus === 'accepted').length;
-  const filtered = orders.filter(o => {
-    if (filter === 'cooking') return o.fulfillmentStatus === 'in_progress' || o.fulfillmentStatus === 'ready';
-    if (filter === 'prep')    return o.fulfillmentStatus === 'requested' || o.fulfillmentStatus === 'accepted';
-    return true;
-  });
+  // v-kds-steps / v-kds-recent-top — per-step chips, last changed on top.
+  const filtered = kdsVisible(orders, filter);
 
   if (loading && orders.length === 0) {
     return (
@@ -157,33 +155,7 @@ export function KitchenSharePage(): JSX.Element {
               )}
             </p>
           </div>
-          <div className="inline-flex items-center gap-1.5 shrink-0">
-            {([
-              { key: 'all',     label: 'All',     dot: 'bg-gray-400',  count: orders.length },
-              { key: 'cooking', label: 'Cooking', dot: 'bg-amber-500', count: inProgressCount },
-              { key: 'prep',    label: 'Prep',    dot: 'bg-gray-400',  count: pendingCount },
-            ] as const).map(chip => {
-              const active = filter === chip.key;
-              return (
-                <button
-                  key={chip.key}
-                  type="button"
-                  onClick={() => setFilter(chip.key)}
-                  className={`inline-flex items-center gap-1.5 px-3 h-7 rounded-full border text-xs font-medium transition ${
-                    active
-                      ? 'border-gray-800 bg-gray-900 text-white'
-                      : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
-                  {chip.label}
-                  <span className={`text-[10px] tabular-nums ${active ? 'text-gray-200' : 'text-gray-400'}`}>
-                    {chip.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <KdsStepChips orders={orders} filter={filter} onChange={setFilter} />
         </div>
 
         {filtered.length === 0 ? (

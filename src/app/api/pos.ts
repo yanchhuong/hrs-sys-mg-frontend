@@ -29,14 +29,26 @@ export const POS_FULFILLMENT_CHAIN: PosFulfillmentStatus[] = [
   'requested', 'accepted', 'in_progress', 'ready', 'done',
 ];
 
-/** Human label per status — keeps every list / pill / button in sync. */
+/** Human label per status — keeps every list / pill / button in sync.
+ *  v-kds-steps: the four kitchen steps read Order → Accepted → Cooking
+ *  → Ready, on the web, the kitchen board and the mobile POS alike. */
 export const POS_FULFILLMENT_LABELS: Record<PosFulfillmentStatus, string> = {
-  requested:    'Requested',
+  requested:    'Order',
   accepted:     'Accepted',
-  in_progress:  'In Progress',
-  ready:        'Ready for Pickup',
+  in_progress:  'Cooking',
+  ready:        'Ready',
   done:         'Done',
 };
+
+/** v-kds-recent-top — the kitchen board's order: the order that changed
+ *  last comes first, so a newly paid order and one just moved a step
+ *  both land on top. The server stamps updatedAt on every save
+ *  (PosOrder @PreUpdate), so the order holds across refreshes and
+ *  devices. Returns a sorted copy. */
+export function recentFirst<T extends Pick<PosOrder, 'updatedAt' | 'checkedOutAt' | 'createdAt'>>(orders: T[]): T[] {
+  const at = (o: T) => Date.parse(o.updatedAt ?? o.checkedOutAt ?? o.createdAt ?? '') || 0;
+  return [...orders].sort((a, b) => at(b) - at(a));
+}
 
 export interface PosOrderItem {
   /** Server-issued; null on a freshly added line until the next save. */

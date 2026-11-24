@@ -4,11 +4,19 @@
  *   • KitchenSharePage (/kitchen/{code}, anonymous kitchen board)
  * Same visual + interaction contract so a line cook sees the same
  * card whether they open the shared URL or someone at the counter
- * opens the dialog.
+ * opens the dialog. The mobile POS draws the same card
+ * (hrs-pro-appl KitchenQueueSheet) — change both together.
+ *
+ * v-kds-steps — the card shows the four kitchen steps as a strip,
+ *   Order → Accepted → Cooking → Ready
+ * (done steps ticked, the current one in its colour, the rest grey),
+ * and one button that moves the order to the next step: Accept →
+ * Start Cooking → Mark Ready → Clear from Board. The button wears the
+ * colour of the step it leads to.
  *
  * The parent owns:
  *   • Order fetching (POS pulls from posApi, Kitchen page polls the
- *     public endpoint).
+ *     public endpoint), and the list order (posApi.recentFirst).
  *   • The "now" tick (parent runs a 1s setInterval so every mounted
  *     card re-renders with a fresh elapsed value without each card
  *     owning its own timer).
@@ -18,58 +26,77 @@
  * This component is pure presentation + a click callback. No fetch,
  * no polling, no context — reusable in any layout.
  */
-import { CheckCircle, Flame, Hourglass, Trash2 } from 'lucide-react';
+import { Check, CheckCircle, Flame, Hand, Trash2 } from 'lucide-react';
 import * as posApi from '../../api/pos';
 import type { PosOrder } from '../../api/pos';
 
-/** Visual theme keyed by fulfillment status. Mirrored between the
- *  header ribbon, the elapsed-time colour, the action button, and
- *  the item strikethrough on Ready. Mockup-verbatim copy. */
-type KdsTheme = {
-  ribbonLabel: string;
-  ribbonClass: string;
-  elapsedClass: string;
-  actionLabel: string | null;
-  actionClass: string;
-  actionIcon: 'flame' | 'utensils' | 'check' | 'trash' | 'hourglass';
+type Step = Exclude<posApi.PosFulfillmentStatus, 'done'>;
+
+/** The four steps, in order, with the colour each one wears. */
+export const KDS_STEPS: { key: Step; label: string; dot: string; current: string; clock: string }[] = [
+  { key: 'requested',   label: posApi.POS_FULFILLMENT_LABELS.requested,   dot: 'bg-blue-500',    current: 'bg-blue-100 text-blue-700 ring-1 ring-blue-300',          clock: 'text-blue-600' },
+  { key: 'accepted',    label: posApi.POS_FULFILLMENT_LABELS.accepted,    dot: 'bg-indigo-500',  current: 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300',    clock: 'text-indigo-600' },
+  { key: 'in_progress', label: posApi.POS_FULFILLMENT_LABELS.in_progress, dot: 'bg-amber-500',   current: 'bg-amber-100 text-amber-800 ring-1 ring-amber-300',       clock: 'text-amber-600' },
+  { key: 'ready',       label: posApi.POS_FULFILLMENT_LABELS.ready,       dot: 'bg-emerald-500', current: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300', clock: 'text-emerald-600' },
+];
+
+/** The button on a card at each step: what it says, its icon, and the
+ *  colour of the step it moves the order into. */
+const ACTION: Record<Step, { label: string; icon: 'hand' | 'flame' | 'check' | 'trash'; className: string }> = {
+  requested:   { label: 'Accept',           icon: 'hand',  className: 'bg-indigo-600 hover:bg-indigo-700 text-white' },
+  accepted:    { label: 'Start Cooking',    icon: 'flame', className: 'bg-orange-500 hover:bg-orange-600 text-white' },
+  in_progress: { label: 'Mark Ready',       icon: 'check', className: 'bg-emerald-600 hover:bg-emerald-700 text-white' },
+  ready:       { label: 'Clear from Board', icon: 'trash', className: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300' },
 };
-const KDS_THEME: Record<posApi.PosFulfillmentStatus, KdsTheme> = {
-  requested: {
-    ribbonLabel: 'Pending',       ribbonClass: 'bg-gray-100 text-gray-500',
-    elapsedClass: 'text-gray-500',
-    actionLabel: 'Waiting',
-    actionClass: 'bg-white hover:bg-gray-50 text-gray-500 border border-gray-200',
-    actionIcon: 'hourglass',
-  },
-  accepted: {
-    ribbonLabel: 'Prep',          ribbonClass: 'bg-gray-100 text-gray-600',
-    elapsedClass: 'text-gray-700',
-    actionLabel: 'Start Cooking',
-    actionClass: 'bg-orange-500 hover:bg-orange-600 text-white',
-    actionIcon: 'flame',
-  },
-  in_progress: {
-    ribbonLabel: 'Start Cooking', ribbonClass: 'bg-amber-100 text-amber-800',
-    elapsedClass: 'text-amber-600',
-    actionLabel: 'Mark Ready',
-    actionClass: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300',
-    actionIcon: 'check',
-  },
-  ready: {
-    ribbonLabel: 'Food Ready',    ribbonClass: 'bg-emerald-100 text-emerald-700',
-    elapsedClass: 'text-emerald-600',
-    actionLabel: 'Clear from Board',
-    actionClass: 'bg-white hover:bg-gray-50 text-gray-700 border border-gray-300',
-    actionIcon: 'trash',
-  },
-  done: {
-    ribbonLabel: 'Done',          ribbonClass: 'bg-gray-100 text-gray-500',
-    elapsedClass: 'text-gray-500',
-    actionLabel: null,
-    actionClass: '',
-    actionIcon: 'check',
-  },
-};
+
+/** Filter chips over the board: All, then one per step. */
+export type KdsFilter = 'all' | Step;
+
+/** The cards a filter shows, the most recently changed first. A cleared
+ *  (done) order is never drawn, even in the moment before the server's
+ *  list drops it. */
+export function kdsVisible(orders: PosOrder[], filter: KdsFilter): PosOrder[] {
+  const live = orders.filter(o => o.fulfillmentStatus !== 'done');
+  return posApi.recentFirst(filter === 'all' ? live : live.filter(o => o.fulfillmentStatus === filter));
+}
+
+/** All · Order · Accepted · Cooking · Ready, each with its count. */
+export function KdsStepChips({ orders, filter, onChange }: {
+  orders: PosOrder[];
+  filter: KdsFilter;
+  onChange: (f: KdsFilter) => void;
+}): JSX.Element {
+  const chips = [
+    { key: 'all' as const, label: 'All', dot: 'bg-gray-400', count: orders.filter(o => o.fulfillmentStatus !== 'done').length },
+    ...KDS_STEPS.map(s => ({ key: s.key, label: s.label, dot: s.dot, count: orders.filter(o => o.fulfillmentStatus === s.key).length })),
+  ];
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      {chips.map(chip => {
+        const active = filter === chip.key;
+        return (
+          <button
+            key={chip.key}
+            type="button"
+            onClick={() => onChange(chip.key)}
+            aria-pressed={active}
+            className={`inline-flex items-center gap-1.5 px-3 h-7 rounded-full border text-xs font-medium transition ${
+              active
+                ? 'border-gray-800 bg-gray-900 text-white'
+                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
+            {chip.label}
+            <span className={`text-[10px] tabular-nums ${active ? 'text-gray-200' : 'text-gray-400'}`}>
+              {chip.count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** MM:SS under 1 hr, HH:MM otherwise. Called with a parent-provided
  *  `nowMs` so all mounted cards tick together (one shared setInterval
@@ -100,11 +127,11 @@ export interface KdsOrderCardProps {
 }
 
 export function KdsOrderCard({ order: o, nowMs, onAdvance, canAdvance = true }: KdsOrderCardProps): JSX.Element {
-  const theme = KDS_THEME[o.fulfillmentStatus];
-  const idx = posApi.POS_FULFILLMENT_CHAIN.indexOf(o.fulfillmentStatus);
-  const nextStatus = posApi.POS_FULFILLMENT_CHAIN[idx + 1] ?? null;
+  const idx = Math.max(0, KDS_STEPS.findIndex(s => s.key === o.fulfillmentStatus));
+  const step = KDS_STEPS[idx];
+  const nextStatus = posApi.POS_FULFILLMENT_CHAIN[posApi.POS_FULFILLMENT_CHAIN.indexOf(step.key) + 1] ?? null;
+  const action = ACTION[step.key];
   const isReady = o.fulfillmentStatus === 'ready';
-  const clickable = theme.actionLabel != null && nextStatus != null;
   return (
     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden flex flex-col">
       <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
@@ -121,16 +148,38 @@ export function KdsOrderCard({ order: o, nowMs, onAdvance, canAdvance = true }: 
           </div>
         </div>
         <div className="text-right shrink-0">
-          <div className={`text-2xl font-bold tabular-nums leading-none ${theme.elapsedClass}`}>
+          <div className={`text-2xl font-bold tabular-nums leading-none ${step.clock}`}>
             {formatElapsed(o.createdAt, nowMs)}
           </div>
           <div className="text-[9px] uppercase tracking-widest text-gray-400 mt-1">Elapsed</div>
         </div>
       </div>
 
-      <div className={`mx-4 rounded-md text-[11px] font-semibold uppercase tracking-wide text-center py-1.5 ${theme.ribbonClass}`}>
-        {theme.ribbonLabel}
-      </div>
+      {/* The four steps — where this order is, and what is left. */}
+      <ol className="mx-4 mt-1 grid grid-cols-4 gap-1.5" aria-label="Kitchen steps">
+        {KDS_STEPS.map((s, i) => {
+          const state = i < idx ? 'done' : i === idx ? 'current' : 'todo';
+          return (
+            <li
+              key={s.key}
+              aria-current={state === 'current' ? 'step' : undefined}
+              className={`relative h-7 min-w-0 rounded-md px-0.5 inline-flex items-center justify-center text-[10px] font-semibold uppercase whitespace-nowrap ${
+                state === 'current' ? s.current
+                  : state === 'done' ? 'bg-gray-50 text-gray-400'
+                  : 'bg-white text-gray-300 border border-dashed border-gray-200'
+              }`}
+            >
+              {s.label}
+              {/* Done: a tick on the corner, so it costs the label no width. */}
+              {state === 'done' && (
+                <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-emerald-500 text-white inline-flex items-center justify-center ring-2 ring-white">
+                  <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
 
       <ul className="px-4 py-3 space-y-2 flex-1">
         {o.items.map((it, i) => {
@@ -157,19 +206,18 @@ export function KdsOrderCard({ order: o, nowMs, onAdvance, canAdvance = true }: 
         })}
       </ul>
 
-      {canAdvance && (
+      {canAdvance && nextStatus && (
       <div className="px-4 pb-4">
         <button
           type="button"
-          disabled={!clickable}
-          onClick={() => nextStatus && onAdvance(o.id, nextStatus)}
-          className={`w-full h-9 rounded-md text-xs font-semibold uppercase tracking-wide inline-flex items-center justify-center gap-2 transition disabled:cursor-not-allowed ${theme.actionClass}`}
+          onClick={() => onAdvance(o.id, nextStatus)}
+          className={`w-full h-9 rounded-md text-xs font-semibold uppercase tracking-wide inline-flex items-center justify-center gap-2 transition ${action.className}`}
         >
-          {theme.actionIcon === 'flame'     && <Flame       className="h-3.5 w-3.5" />}
-          {theme.actionIcon === 'check'     && <CheckCircle className="h-3.5 w-3.5" />}
-          {theme.actionIcon === 'trash'     && <Trash2      className="h-3.5 w-3.5" />}
-          {theme.actionIcon === 'hourglass' && <Hourglass   className="h-3.5 w-3.5" />}
-          {theme.actionLabel}
+          {action.icon === 'hand'  && <Hand        className="h-3.5 w-3.5" />}
+          {action.icon === 'flame' && <Flame       className="h-3.5 w-3.5" />}
+          {action.icon === 'check' && <CheckCircle className="h-3.5 w-3.5" />}
+          {action.icon === 'trash' && <Trash2      className="h-3.5 w-3.5" />}
+          {action.label}
         </button>
       </div>
       )}

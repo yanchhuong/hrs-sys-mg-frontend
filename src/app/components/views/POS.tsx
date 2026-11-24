@@ -58,7 +58,7 @@ import { ThumbnailImage } from '../common/ThumbnailImage';
 import { AccountingSettingsDialog } from '../common/AccountingSettingsDialog';
 import { ShareShopDialog } from '../common/ShareShopDialog';
 import { ShareKitchenDialog } from '../common/ShareKitchenDialog';
-import { KdsOrderCard } from '../common/KdsOrderCard';
+import { KdsOrderCard, KdsStepChips, kdsVisible, type KdsFilter } from '../common/KdsOrderCard';
 import { PairDisplayDialog } from '../common/PairDisplayDialog';
 import { SearchablePicker, type PickerOption } from '../common/SearchablePicker';
 import { printPosReceipt } from '../../utils/posReceipt';
@@ -1064,7 +1064,8 @@ export function POS() {
    *  update + reconcile from server response so the UI doesn't lag
    *  the click. A 'done' move drops the row from the active list. */
   const advanceFulfillment = async (id: string, next: posApi.PosFulfillmentStatus) => {
-    setActiveOrders(prev => prev.map(o => o.id === id ? { ...o, fulfillmentStatus: next } : o));
+    // v-kds-recent-top — stamped now, so the card moves to the top at once.
+    setActiveOrders(prev => prev.map(o => o.id === id ? { ...o, fulfillmentStatus: next, updatedAt: new Date().toISOString() } : o));
     try {
       const updated = await posApi.setFulfillmentStatus(id, next);
       setActiveOrders(prev => {
@@ -3613,16 +3614,11 @@ function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance, onShareK
     return () => window.clearInterval(id);
   }, [open]);
 
-  // Filter chips at the top-right of the header. 'all' shows every
-  // active order; the two named chips narrow to the mockup's two
-  // buckets: Cooking (in_progress) and Prep (requested + accepted,
-  // grouped because both are pre-cook waiting states).
-  const [filter, setFilter] = useState<'all' | 'cooking' | 'prep'>('all');
-  const filtered = orders.filter(o => {
-    if (filter === 'cooking') return o.fulfillmentStatus === 'in_progress' || o.fulfillmentStatus === 'ready';
-    if (filter === 'prep')    return o.fulfillmentStatus === 'requested' || o.fulfillmentStatus === 'accepted';
-    return true;
-  });
+  // v-kds-steps — filter chips: All, then one per step (Order ·
+  // Accepted · Cooking · Ready). v-kds-recent-top — the order changed
+  // last is on top: a new sale, or one just moved a step.
+  const [filter, setFilter] = useState<KdsFilter>('all');
+  const filtered = kdsVisible(orders, filter);
   const inProgressCount = orders.filter(o => o.fulfillmentStatus === 'in_progress' || o.fulfillmentStatus === 'ready').length;
   const pendingCount    = orders.filter(o => o.fulfillmentStatus === 'requested' || o.fulfillmentStatus === 'accepted').length;
 
@@ -3646,8 +3642,9 @@ function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance, onShareK
                 mirrors the Share Menu affordance on the POS header;
                 pinning it inside the drawer keeps the KDS discovery
                 path tight (operator is already looking at the
-                board they want to hand off). */}
-            <div className="inline-flex items-center gap-1.5 shrink-0">
+                board they want to hand off). Wraps: five step chips
+                plus Share outgrow a tablet-width header. */}
+            <div className="flex flex-wrap items-center justify-end gap-1.5 min-w-0">
               {onShareKitchen && (
                 <button
                   type="button"
@@ -3659,31 +3656,7 @@ function PosActiveOrdersDrawer({ open, onOpenChange, orders, onAdvance, onShareK
                   Share to Kitchen
                 </button>
               )}
-              {([
-                { key: 'all',     label: 'All',     dot: 'bg-gray-400',   count: orders.length },
-                { key: 'cooking', label: 'Cooking', dot: 'bg-amber-500',  count: inProgressCount },
-                { key: 'prep',    label: 'Prep',    dot: 'bg-gray-400',   count: pendingCount },
-              ] as const).map(chip => {
-                const active = filter === chip.key;
-                return (
-                  <button
-                    key={chip.key}
-                    type="button"
-                    onClick={() => setFilter(chip.key)}
-                    className={`inline-flex items-center gap-1.5 px-3 h-7 rounded-full border text-xs font-medium transition ${
-                      active
-                        ? 'border-gray-800 bg-gray-900 text-white'
-                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${chip.dot}`} />
-                    {chip.label}
-                    <span className={`text-[10px] tabular-nums ${active ? 'text-gray-200' : 'text-gray-400'}`}>
-                      {chip.count}
-                    </span>
-                  </button>
-                );
-              })}
+              <KdsStepChips orders={orders} filter={filter} onChange={setFilter} />
             </div>
           </div>
         </DialogHeader>
