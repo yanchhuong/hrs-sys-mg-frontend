@@ -6,7 +6,7 @@
  * The browse page calls {@link getPublicMenu} with no auth header — the
  * code is the entire secret, so anyone with /shop/{code} can read.
  */
-import { apiFetch, apiJson } from './client';
+import { apiFetch, apiJson, resolveAssetUrl } from './client';
 
 export interface ShopLinkInfo {
   code: string;
@@ -40,8 +40,9 @@ export interface PublicShopItem {
   /** V265 — full ordered image list. Null / omitted on legacy items;
    *  the FE falls back to [imageUrl] via {@link itemImages}. */
   imageUrls?: string[] | null;
-  /** V280 — small base64 thumbnail rendered on the storefront tiles.
-   *  Falls back to {@link imageUrl} on legacy items. */
+  /** Thumbnail for the storefront tiles: a link to the public image
+   *  endpoint (v-shop-lean-menu; older APIs sent base64). Falls back
+   *  to {@link imageUrl}. */
   imageThumbUrl?: string | null;
   category: 'drink' | 'snack' | 'food' | 'craft' | 'souvenir' | 'jewelry' | 'other' | string;
   inStock: boolean;
@@ -146,7 +147,26 @@ export async function setShopLinkOrderingEnabled(enabled: boolean): Promise<Shop
  *  resolves the menu. Uses the same apiJson client because it sits on
  *  the same base URL — it just doesn't get a JWT attached. */
 export async function getPublicMenu(code: string): Promise<PublicShopPayload> {
-  return apiJson(`/api/v1/public/shop/${encodeURIComponent(code)}`);
+  return withImageLinks(await apiJson<PublicShopPayload>(`/api/v1/public/shop/${encodeURIComponent(code)}`));
+}
+
+/** v-shop-lean-menu — the menu sends photo links relative to the API
+ *  (`/api/v1/public/stock-item-images/…`); make them loadable in an
+ *  <img> here (production proxies the API under /api-02). A base64
+ *  image from an older API passes through unchanged. */
+export function withImageLinks(p: PublicShopPayload): PublicShopPayload {
+  if (!p || !Array.isArray(p.items)) return p;
+  return {
+    ...p,
+    items: p.items.map(it => ({
+      ...it,
+      imageUrl: resolveAssetUrl(it.imageUrl) ?? '',
+      imageThumbUrl: resolveAssetUrl(it.imageThumbUrl),
+      imageUrls: Array.isArray(it.imageUrls)
+        ? it.imageUrls.map(u => resolveAssetUrl(u) ?? '').filter(Boolean)
+        : it.imageUrls,
+    })),
+  };
 }
 
 /** Anonymous order submit. Lands as an open PosOrder on the cashier's
@@ -223,7 +243,7 @@ export async function submitPublicOrder(
  *  tableLabel / tableSeats fields on the response so the FE can
  *  render a "Table 3" header. */
 export async function getPublicMenuByTable(tableCode: string): Promise<PublicShopPayload> {
-  return apiJson(`/api/v1/public/shop/table/${encodeURIComponent(tableCode)}`);
+  return withImageLinks(await apiJson<PublicShopPayload>(`/api/v1/public/shop/table/${encodeURIComponent(tableCode)}`));
 }
 
 /** V315 — table-scoped order submit. Server tags the created
