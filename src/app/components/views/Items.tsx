@@ -68,7 +68,6 @@ import { SearchWithSuggestions } from '../common/SearchWithSuggestions';
 import { FilterStrip } from '../common/FilterStrip';
 import { FilterSelect } from '../common/FilterSelect';
 import { makeThumbnailFromUrl } from '../../utils/imageCompress';
-import { DropdownSelect } from '../common/DropdownSelect';
 
 interface FormState {
   sku: string;
@@ -104,6 +103,9 @@ interface FormState {
   weight: string;
   weightUnit: marketApi.GoldCalcUnit;
   makingFee: string;
+  /** Market Based: the jewelry type (ជញ្ជៀន, ខ្សែក…), saved as the
+   *  category — the gold title when blank, as on mobile. */
+  jewelType: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -129,6 +131,7 @@ const EMPTY_FORM: FormState = {
   weight: '',
   weightUnit: 'chi',
   makingFee: '',
+  jewelType: '',
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -846,6 +849,12 @@ export function Items() {
       .then(d => setGoldPrices(d.items.filter(i => i.category === 'gold' && marketApi.goldCurrency(i.unit) === 'USD')))
       .catch(() => setGoldPrices([]));
   }, [dialogOpen, goldPrices]);
+  // Types already used on Market Based items, for the Type suggestions.
+  const [jewelTypes, setJewelTypes] = useState<string[]>([]);
+  useEffect(() => {
+    if (!dialogOpen) return;
+    itemsApi.categories(false, 'market').then(setJewelTypes).catch(() => setJewelTypes([]));
+  }, [dialogOpen]);
   // Usage-settings dialog (V120) — controls which sale/purchase
   // document forms surface the StockItemPicker.
   const [usageSettingsOpen, setUsageSettingsOpen] = useState(false);
@@ -1150,6 +1159,9 @@ export function Items() {
       weight: it.weightChi != null ? String(marketApi.chiInUnit(Number(it.weightChi), marketApi.goldUnitOf(it.unit))) : '',
       weightUnit: marketApi.goldUnitOf(it.unit),
       makingFee: it.makingFee ? String(it.makingFee) : '',
+      // An older gold item carries its gold title as the category: no type.
+      jewelType: it.goldTitle && it.category
+        && it.category.trim().toLowerCase() !== it.goldTitle.trim().toLowerCase() ? it.category : '',
     });
     setDialogOpen(true);
   };
@@ -1218,7 +1230,8 @@ export function Items() {
         // array clears every image.
         imageUrls: form.imageUrls,
         imageThumbUrl,
-        category: form.category,
+        // Market Based names its category with the type (or the gold), as on mobile.
+        category: goldTitle ? (form.jewelType.trim() || goldTitle) : form.category,
         // Serialise the typed groups back to a JSON string. Empty
         // groups → '' so the server NULLs the column.
         modifiers: itemsApi.serializeModifiers({ groups: form.modifierGroups }) ?? '',
@@ -2293,6 +2306,15 @@ export function Items() {
               </div>
             </div>
 
+            {/* Fixed Price | Market Based, then the Market Based fields —
+                the order and the fields the mobile item form has. */}
+            <MarketBasedFields
+              form={form}
+              setForm={setForm}
+              goldPrices={goldPrices}
+              jewelTypes={jewelTypes}
+            />
+
             {/* V302 — barcode input + Generate button. Rendered only
                 when the tenant has the barcode feature on (Items →
                 Settings → Barcode). The Generate button synthesises
@@ -2374,21 +2396,18 @@ export function Items() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs text-gray-600">Unit</Label>
-              <Input
-                value={form.unit}
-                onChange={e => setForm({ ...form, unit: e.target.value })}
-                placeholder="pcs, kg, hour…"
-                maxLength={LEN.unit}
-              />
-            </div>
-
-            <GoldPriceFields
-              form={form}
-              setForm={setForm}
-              goldPrices={goldPrices}
-            />
+            {/* Market Based: the unit is the weight unit, picked in its box. */}
+            {!form.goldTitle && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600">Unit</Label>
+                <Input
+                  value={form.unit}
+                  onChange={e => setForm({ ...form, unit: e.target.value })}
+                  placeholder="pcs, kg, hour…"
+                  maxLength={LEN.unit}
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -2595,55 +2614,60 @@ export function Items() {
               />
             </div>
 
-            {/* V142 — category dropdown. Drives the POS items-grid
-                filter tabs. Drink unlocks the Modifiers editor below
-                so the cashier can configure Size / Sugar Level. */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-gray-600">Category</Label>
-              {/* v-item-category-free-text (V269) — one-tap chip picker
-                  for the common categories PLUS a text input for a
-                  custom label. Empty string is a valid state ("none");
-                  the BE defaults it to 'other' on save so the row still
-                  filters cleanly. Selecting a chip fills the input +
-                  visually marks the chip; typing clears the chip. */}
-              <div className="chip-row">
-                {[
-                  { value: '',         label: '(none)' },
-                  { value: 'drink',    label: 'Drink' },
-                  { value: 'snack',    label: 'Snack' },
-                  { value: 'food',     label: 'Food' },
-                  { value: 'craft',    label: 'Craft' },
-                  { value: 'souvenir', label: 'Souvenir' },
-                  { value: 'jewelry',  label: 'Jewelry' },
-                  { value: 'other',    label: 'Other' },
-                ].map(opt => {
-                  const active = form.category.trim().toLowerCase() === opt.value;
-                  return (
-                    <button
-                      key={opt.value || 'none'}
-                      type="button"
-                      disabled={saving}
-                      onClick={() => setForm({ ...form, category: opt.value })}
-                      className={`px-3 h-7 rounded-full border text-xs font-medium transition ${
-                        active
-                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  );
-                })}
+            {/* Market Based names its category with the type, in its box. */}
+            {!form.goldTitle && (
+              <>
+              {/* V142 — category dropdown. Drives the POS items-grid
+                  filter tabs. Drink unlocks the Modifiers editor below
+                  so the cashier can configure Size / Sugar Level. */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-gray-600">Category</Label>
+                {/* v-item-category-free-text (V269) — one-tap chip picker
+                    for the common categories PLUS a text input for a
+                    custom label. Empty string is a valid state ("none");
+                    the BE defaults it to 'other' on save so the row still
+                    filters cleanly. Selecting a chip fills the input +
+                    visually marks the chip; typing clears the chip. */}
+                <div className="chip-row">
+                  {[
+                    { value: '',         label: '(none)' },
+                    { value: 'drink',    label: 'Drink' },
+                    { value: 'snack',    label: 'Snack' },
+                    { value: 'food',     label: 'Food' },
+                    { value: 'craft',    label: 'Craft' },
+                    { value: 'souvenir', label: 'Souvenir' },
+                    { value: 'jewelry',  label: 'Jewelry' },
+                    { value: 'other',    label: 'Other' },
+                  ].map(opt => {
+                    const active = form.category.trim().toLowerCase() === opt.value;
+                    return (
+                      <button
+                        key={opt.value || 'none'}
+                        type="button"
+                        disabled={saving}
+                        onClick={() => setForm({ ...form, category: opt.value })}
+                        className={`px-3 h-7 rounded-full border text-xs font-medium transition ${
+                          active
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                            : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <Input
+                  value={form.category}
+                  onChange={e => setForm({ ...form, category: e.target.value })}
+                  disabled={saving}
+                  maxLength={LEN.category}
+                  placeholder="Or type your own label — leave blank for none"
+                  className="h-9"
+                />
               </div>
-              <Input
-                value={form.category}
-                onChange={e => setForm({ ...form, category: e.target.value })}
-                disabled={saving}
-                maxLength={LEN.category}
-                placeholder="Or type your own label — leave blank for none"
-                className="h-9"
-              />
-            </div>
+              </>
+            )}
 
             {/* V142 — modifier editor. Available for every category
                 now (was Drink-only). Craft/Souvenir stores use it to
@@ -2875,87 +2899,132 @@ function GoldInfoLine({ label, tone, value, chi, perChi }: {
 }
 
 /**
- * Gold Market Price link on the item form: pick a gold title and the
- * item is priced by weight from it — Sell Out to sell, Buy In to buy —
- * instead of a fixed price. Weight is required while linked; the making
- * fee is optional and sold on its own line. Hidden until the tenant has
- * a USD gold price (or the item is already linked).
+ * Fixed Price | Market Based on the item form — the mobile item form's
+ * layout (app/apps/item-edit.tsx), so both apps ask the same things in
+ * the same order.
+ *
+ * Market Based = priced by weight from a gold price (Sell Out to sell,
+ * Buy In to buy), so it asks:
+ *   CATEGORY   the gold (chips) and the type (ជញ្ជៀន, ខ្សែក…; saved as
+ *              the category, the gold title when left blank)
+ *   UNIT       the weight unit (chips) — it is the item's unit
+ *   WEIGHT *   of one piece; stock stays a count of pieces
+ *   MAKING FEE optional, sold on a line of its own
+ *   INFORMATION what the weight is worth today, Sell / Buy
+ * There is no Selling Price: the gold price is the price.
+ *
+ * Hidden until the company has a USD gold price (or the item already
+ * follows one), as on mobile.
  */
-function GoldPriceFields({ form, setForm, goldPrices }: {
+function MarketBasedFields({ form, setForm, goldPrices, jewelTypes }: {
   form: FormState;
   setForm: (f: FormState) => void;
   goldPrices: marketApi.MarketItem[] | null;
+  jewelTypes: string[];
 }) {
   const options = goldPrices ?? [];
   if (options.length === 0 && !form.goldTitle) return null;
+  const market = !!form.goldTitle;
   const g = options.find(p => p.title === form.goldTitle);
   const chi = formChi(form);
   const sell = goldValue(chi, g?.sell.today);
   const buy = goldValue(chi, g?.buy.today);
+  // Older items carry their gold title as the category; that is not a type.
+  const titles = new Set(options.map(o => o.title.trim().toLowerCase()));
+  const typeOptions = jewelTypes.filter(c => !titles.has(c.trim().toLowerCase()));
+  const goldChips = g || !form.goldTitle ? options : [...options, { title: form.goldTitle } as marketApi.MarketItem];
+
+  const tab = (on: boolean) => `h-9 rounded-md text-sm transition ${
+    on ? 'bg-white text-gray-900 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700'}`;
+  const chip = (on: boolean) => `px-3 h-8 rounded-full text-sm font-medium transition ${
+    on ? 'bg-blue-700 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`;
+  const label = 'text-[11px] font-semibold uppercase tracking-wide text-gray-500';
+
   return (
-    <div className="space-y-2">
-      <div className="space-y-1.5">
-        <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
-          <Coins className="h-3.5 w-3.5 text-amber-600" />
-          Gold Market Price
-        </Label>
-        <DropdownSelect
-          value={form.goldTitle}
-          onChange={e => setForm({ ...form, goldTitle: e.target.value })}
-          className="h-9 w-full rounded-md border border-input bg-white px-2 text-sm"
-          aria-label="Gold Market Price"
-        >
-          <option value="">None — a fixed price</option>
-          {options.map(o => <option key={o.title} value={o.title}>{o.title}</option>)}
-          {form.goldTitle && !g && <option value={form.goldTitle}>{form.goldTitle}</option>}
-        </DropdownSelect>
-        <p className="text-[11px] text-gray-500">
-          {form.goldTitle
-            ? 'Priced by weight from this gold, and updated every time its price changes.'
-            : 'Pick a gold to price this item by weight from the market instead.'}
-        </p>
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1" role="radiogroup" aria-label="Pricing">
+        <button type="button" role="radio" aria-checked={!market} className={tab(!market)}
+          onClick={() => setForm({ ...form, goldTitle: '' })}>
+          Fixed Price
+        </button>
+        <button type="button" role="radio" aria-checked={market} className={tab(market)}
+          onClick={() => {
+            if (market) return;
+            // The first gold, and its weight unit as the item's unit, as on mobile.
+            const first = options[0]?.title ?? '';
+            setForm({ ...form, goldTitle: first, unit: marketApi.goldWeightUnit(form.weightUnit).symbol });
+          }}>
+          Market Based
+        </button>
       </div>
 
-      {form.goldTitle && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+      {market && (
+        <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
           <div className="space-y-1.5">
-            <Label className="text-xs text-gray-600">Weight <span className="text-red-500">*</span></Label>
-            <div className="flex gap-2">
-              <Input
-                value={form.weight}
-                onChange={e => setForm({ ...form, weight: maskNumber(e.target.value, NUM.goldWeight) })}
-                inputMode="decimal"
-                placeholder="0.0000"
-                aria-label="Weight"
-                className="flex-1 min-w-0 bg-white text-right tabular-nums"
-              />
-              <DropdownSelect
-                value={form.weightUnit}
-                onChange={e => {
-                  const weightUnit = e.target.value as marketApi.GoldCalcUnit;
-                  // The weight unit is the item's unit — keep the Unit field saying so.
-                  setForm({ ...form, weightUnit, unit: marketApi.goldWeightUnit(weightUnit).symbol });
-                }}
-                className="h-9 w-[150px] shrink-0 rounded-md border border-input bg-white px-2 text-sm"
-                aria-label="Weight unit"
-              >
-                {marketApi.GOLD_CALC_UNITS.map(u => <option key={u.key} value={u.key}>{u.label}</option>)}
-              </DropdownSelect>
+            <p className={label}>Category</p>
+            <div className="flex flex-wrap gap-2">
+              {goldChips.map(o => (
+                <button key={o.title} type="button" className={chip(form.goldTitle === o.title)}
+                  aria-pressed={form.goldTitle === o.title}
+                  onClick={() => setForm({ ...form, goldTitle: o.title })}>
+                  {o.title}
+                </button>
+              ))}
+            </div>
+            <Input
+              value={form.jewelType}
+              onChange={e => setForm({ ...form, jewelType: e.target.value })}
+              list="item-jewel-types"
+              placeholder="Type, e.g. ជញ្ជៀន or ខ្សែក"
+              aria-label="Type"
+              maxLength={LEN.category}
+              className="bg-white"
+            />
+            <datalist id="item-jewel-types">
+              {typeOptions.map(c => <option key={c} value={c} />)}
+            </datalist>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className={label}>Unit</p>
+            <div className="flex flex-wrap gap-2">
+              {marketApi.GOLD_CALC_UNITS.map(u => (
+                <button key={u.key} type="button" className={chip(form.weightUnit === u.key)}
+                  aria-pressed={form.weightUnit === u.key}
+                  // The weight unit is the item's unit.
+                  onClick={() => setForm({ ...form, weightUnit: u.key, unit: u.symbol })}>
+                  {u.label}
+                </button>
+              ))}
             </div>
           </div>
+
           <div className="space-y-1.5">
-            <Label className="text-xs text-gray-600">Making fee <span className="text-gray-400">(optional)</span></Label>
-            <NumericInput value={form.makingFee} onChange={v => setForm({ ...form, makingFee: v })} />
-            <p className="text-[11px] text-gray-500">Not part of the gold price: sold on a line of its own.</p>
+            <p className={label}>Weight <span className="text-red-500">*</span></p>
+            <Input
+              value={form.weight}
+              onChange={e => setForm({ ...form, weight: maskNumber(e.target.value, NUM.goldWeight) })}
+              inputMode="decimal"
+              placeholder="0.0000"
+              aria-label="Weight"
+              className="bg-white text-right tabular-nums"
+            />
           </div>
-          {/* Information: what the weight is worth today. The selling price
-              IS the item's price, so there is no Selling Price field while it
-              follows gold. Sell Out green, Buy In red — money in / out. */}
-          <div className="sm:col-span-2 rounded-md border border-amber-200 bg-white px-3 py-2 space-y-1.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Information</p>
-            <GoldInfoLine label="Sell Out" tone="text-emerald-700" value={sell} chi={chi} perChi={g?.sell.today} />
+
+          <div className="space-y-1.5">
+            <p className={label}>Making fee (optional)</p>
+            <NumericInput value={form.makingFee} onChange={v => setForm({ ...form, makingFee: v })} />
+            <p className="text-[11px] text-gray-500">Not part of the gold price: it is sold on a line of its own.</p>
+          </div>
+
+          {/* What the weight is worth today. The selling price IS the
+              item's price, so there is no Selling Price field while it
+              follows gold. Sell green, Buy red — money in / out. */}
+          <div className="rounded-md border border-amber-200 bg-white px-3 py-2 space-y-1.5">
+            <p className={label}>Information</p>
+            <GoldInfoLine label="Sell" tone="text-emerald-700" value={sell} chi={chi} perChi={g?.sell.today} />
             <div className="border-t border-gray-100" />
-            <GoldInfoLine label="Buy In" tone="text-red-700" value={buy} chi={chi} perChi={g?.buy.today} />
+            <GoldInfoLine label="Buy" tone="text-red-700" value={buy} chi={chi} perChi={g?.buy.today} />
           </div>
         </div>
       )}
