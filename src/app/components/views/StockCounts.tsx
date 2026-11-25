@@ -1184,7 +1184,7 @@ function SpotItemPicker(
       setSearching(true);
       try {
         const res = await itemsApi.list({
-          q: term, size: 20, warehouseId: warehouseId ?? undefined,
+          q: term, size: 20, warehouseId: warehouseId ?? undefined, images: 'ref',
         });
         setFound(res.content ?? []);
       } catch { /* a failed lookup just shows nothing */ }

@@ -126,7 +126,7 @@ export function BulkUploadItemsDialog({
         const pageSize = 200;
         const collected: itemsApi.Item[] = [];
         for (let page = 0; page < 50; page++) {
-          const res = await itemsApi.list({ page, size: pageSize });
+          const res = await itemsApi.list({ page, size: pageSize, images: 'ref' });
           const chunk = res.content ?? [];
           collected.push(...chunk);
           if (chunk.length < pageSize || page + 1 >= res.totalPages) break;
@@ -299,7 +299,7 @@ export function BulkUploadItemsDialog({
                          || msg.includes('already exists') || msg.includes('sku');
           const sku = (req.sku ?? '').trim();
           if (!looksDupe || !sku) throw e;
-          const search = await itemsApi.list({ q: sku, size: 25 }).catch(() => null);
+          const search = await itemsApi.list({ q: sku, size: 25, images: 'ref' }).catch(() => null);
           const hit = search?.content?.find(it => (it.sku ?? '').toLowerCase() === sku.toLowerCase());
           if (!hit) throw e;
           return itemsApi.update(hit.id, req);

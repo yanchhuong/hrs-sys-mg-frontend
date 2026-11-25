@@ -54,7 +54,7 @@ export function Loyalty() {
     try {
       const [list, itemList] = await Promise.all([
         loyalty.list(),
-        itemsApi.list({ size: 500 }).catch(() => ({ content: [] as Item[] })),
+        itemsApi.list({ size: 500, images: 'ref' }).catch(() => ({ content: [] as Item[] })),
       ]);
       setRows(list);
       // itemsApi.list returns a PagedResponse<Item> with `content`.

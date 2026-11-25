@@ -4,6 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Package } from 'lucide-react';
 import * as itemsApi from '../../api/items';
+import { resolveAssetUrl } from '../../api/client';
 import * as warehousesApi from '../../api/warehouses';
 
 /**
@@ -195,10 +196,9 @@ export function StockItemPicker({
               // the tenant has the warehouse feature on (detected via
               // showWarehouses); otherwise the row stays as before.
               const wh = c.warehouseId ? warehouseName.get(c.warehouseId) : null;
-              // First resolvable image URL — Item has both a legacy
-              // {@code imageUrl} column and the newer {@code imageUrls}
-              // array (V265); either can be populated on older rows.
-              const imgSrc = c.imageUrl || (c.imageUrls && c.imageUrls[0]) || null;
+              // Thumbnail link (images=ref catalogs), else the inline
+              // cover on catalogs still loaded with photos.
+              const imgSrc = resolveAssetUrl(itemsApi.tileImageOf(c));
               return (
                 <button
                   key={c.id}

@@ -658,7 +658,7 @@ function QuotationFormDialog({
   const ensureCatalog = async () => {
     if (catalogLoaded) return;
     try {
-      const res = await itemsApi.list({ size: 1000 });
+      const res = await itemsApi.list({ size: 1000, images: 'ref' });
       setStockCatalog(res.content ?? []);
     } catch {
       // Silent fail — a 403 (no stock perm) just leaves the picker
@@ -1144,7 +1144,7 @@ function QuotationFormDialog({
                                       <div className="text-[11px] text-gray-500 flex justify-between gap-2">
                                         <span>{r.unit ?? 'pcs'}</span>
                                         <span className="tabular-nums">
-                                          {(r.unitPrice ?? 0).toFixed(2)}
+                                          {(r.unitPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                                         </span>
                                       </div>
                                     </button>
@@ -1500,7 +1500,7 @@ function QuotationDetailDialog({
   // shortages" default while the request is in flight.
   const [stockCatalog, setStockCatalog] = useState<itemsApi.Item[]>([]);
   useEffect(() => {
-    itemsApi.list({ size: 1000, slim: true })
+    itemsApi.list({ size: 1000, slim: true, images: 'ref' })
       .then(r => setStockCatalog(r.content ?? []))
       .catch(() => setStockCatalog([]));
   }, []);

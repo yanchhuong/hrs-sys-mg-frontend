@@ -39,6 +39,7 @@ import * as settlementsApi from '../../api/consignmentSettlements';
 import * as customersApi from '../../api/customers';
 import * as warehousesApi from '../../api/warehouses';
 import * as itemsApi from '../../api/items';
+import { resolveAssetUrl } from '../../api/client';
 import { useI18n } from '../../i18n/I18nContext';
 import { DropdownSelect } from '../common/DropdownSelect';
 
@@ -148,7 +149,7 @@ function ConsignmentReport() {
         consignmentsApi.list({ size: 200 }),
         customersApi.list({ size: 500, kind: 'customer', type: 'business' }).catch(() => ({ content: [] as customersApi.Customer[] } as any)),
         warehousesApi.list().catch(() => [] as warehousesApi.Warehouse[]),
-        itemsApi.list({ size: 1000 }).catch(() => ({ content: [] as itemsApi.Item[] } as any)),
+        itemsApi.list({ size: 1000, images: 'ref' }).catch(() => ({ content: [] as itemsApi.Item[] } as any)),
         settlementsApi.list({ size: 500 }).catch(() => ({ content: [] as settlementsApi.ConsignmentSettlement[] } as any)),
       ]);
       setRows(r.content ?? []);
@@ -572,7 +573,7 @@ function printConsignmentNote(
     const item = itemsById.get(r.it.stockItemId);
     const name = item?.name ?? '(unknown)';
     const sku  = item?.sku ?? '';
-    const img  = item?.imageUrl || (item?.imageUrls && item.imageUrls[0]) || '';
+    const img  = (item && resolveAssetUrl(itemsApi.tileImageOf(item))) || '';
     const imgCell = img
       ? `<img src="${escapeHtml(img)}" alt="" style="width:36px;height:36px;object-fit:cover;border:1px solid #ddd;border-radius:2px" />`
       : '<div style="width:36px;height:36px;background:#f3f4f6;border:1px solid #ddd;border-radius:2px"></div>';
@@ -749,7 +750,7 @@ function printSettlementNote(
     const item = itemsById.get(it.stockItemId);
     const name = item?.name ?? '(unknown)';
     const sku  = item?.sku ?? '';
-    const img  = item?.imageUrl || (item?.imageUrls && item.imageUrls[0]) || '';
+    const img  = (item && resolveAssetUrl(itemsApi.tileImageOf(item))) || '';
     const imgCell = img
       ? `<img src="${escapeHtml(img)}" alt="" style="width:36px;height:36px;object-fit:cover;border:1px solid #ddd;border-radius:2px" />`
       : '<div style="width:36px;height:36px;background:#f3f4f6;border:1px solid #ddd;border-radius:2px"></div>';
@@ -1931,7 +1932,7 @@ function ConsignmentSettlementView() {
         settlementsApi.list({ size: 200 }),
         consignmentsApi.list({ size: 200 }),
         customersApi.list({ size: 500, kind: 'customer', type: 'business' }).catch(() => ({ content: [] as customersApi.Customer[] } as any)),
-        itemsApi.list({ size: 1000 }).catch(() => ({ content: [] as itemsApi.Item[] } as any)),
+        itemsApi.list({ size: 1000, images: 'ref' }).catch(() => ({ content: [] as itemsApi.Item[] } as any)),
       ]);
       setRows(s.content ?? []);
       setConsignments(c.content ?? []);

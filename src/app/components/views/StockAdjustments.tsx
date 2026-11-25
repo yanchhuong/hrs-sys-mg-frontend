@@ -112,7 +112,7 @@ export function StockAdjustments() {
    *  delta before submitting). */
   const loadItems = async () => {
     try {
-      const res = await itemsApi.list({ size: 1000 });
+      const res = await itemsApi.list({ size: 1000, images: 'ref' });
       setItems(res.content ?? []);
     } catch {
       setItems([]);
