@@ -609,8 +609,9 @@ export function PublicShopPage() {
     });
   }, [inStockItems, search, warehouse]);
   const { chipKeys, counts } = useMemo(
-    () => deriveCategoryChips(inStockSearched),
-    [inStockSearched],
+    // v-category-order — chips in the shop's saved category order.
+    () => deriveCategoryChips(inStockSearched, data?.categoryOrder),
+    [inStockSearched, data?.categoryOrder],
   );
 
   // v-shop-chip-scroll-arrows — recompute canScrollLeft / canScrollRight

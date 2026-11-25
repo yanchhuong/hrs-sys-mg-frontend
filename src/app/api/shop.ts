@@ -115,6 +115,10 @@ export interface PublicShopPayload {
   tableId?: string | null;
   tableLabel?: string | null;
   tableSeats?: number | null;
+  /** v-category-order — the company's saved category order (lowercase,
+   *  first first; [] when never set). The items already come in it; the
+   *  chips rank by it. Absent from an older server. */
+  categoryOrder?: string[];
 }
 
 export interface PublicManualKhqr {

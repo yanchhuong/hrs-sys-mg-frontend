@@ -298,6 +298,10 @@ export interface ListParams {
    *  sends `imageUrls: resolveImages(row)` would send [] — which the
    *  server treats as "clear every image". */
   images?: 'ref';
+  /** v-category-order — 'category' lists in the company's category order
+   *  (every item of the first category, then the next; each by name).
+   *  Omitted = by name. An older server ignores it. */
+  sort?: 'category';
 }
 
 export interface PagedResponse<T> {
@@ -318,6 +322,7 @@ export async function list(params: ListParams = {}): Promise<PagedResponse<Item>
   if (params.slim) q.slim = true;
   if (params.active) q.active = true;
   if (params.images) q.images = params.images;
+  if (params.sort) q.sort = params.sort;
   return apiJson('/api/v1/stock-items', { query: q });
 }
 
@@ -383,6 +388,12 @@ export async function categories(active = false, pricing?: 'market' | 'fixed'): 
   const q = new URLSearchParams({ active: String(active) });
   if (pricing) q.set('pricing', pricing);
   return apiJson(`/api/v1/stock-items/categories?${q}`);
+}
+
+/** v-category-order — the saved order alone (lowercase names, first first;
+ *  [] when never set). POS ranks its category chips by it. */
+export async function categoryOrder(): Promise<string[]> {
+  return apiJson('/api/v1/stock-items/categories/order');
 }
 
 /** v-category-order — these categories in this order, in the places they

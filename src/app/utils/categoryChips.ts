@@ -73,6 +73,8 @@ export interface CategoryChips {
  *  active === k || counts.get(k) > 0)` at render time. */
 export function deriveCategoryChips<T extends CategoryChipItem>(
   items: readonly T[],
+  /** v-category-order — the company's saved category order, ranked first. */
+  order?: readonly string[] | null,
 ): CategoryChips {
   const counts = new Map<string, number>();
   counts.set('all', items.length);
@@ -84,6 +86,21 @@ export function deriveCategoryChips<T extends CategoryChipItem>(
   const customs = Array.from(new Set(items.map(i => normalCat(i.category))))
     .filter(k => !KNOWN_POS_CATEGORIES.includes(k))
     .sort();
-  const chipKeys: readonly string[] = ['all', ...knownExclOther, ...customs, 'other'];
+  const chipKeys = inSavedOrder(['all', ...knownExclOther, ...customs, 'other'], order);
   return { chipKeys, counts };
+}
+
+/**
+ * v-category-order — the company's saved category order first, in that
+ * order; every other chip after it in the default order (known keys,
+ * then custom A to Z, 'other' last). No saved order = the default order
+ * unchanged. 'all' stays first. Same as the mobile app's categoryChips.
+ */
+export function inSavedOrder(chipKeys: readonly string[], order?: readonly string[] | null): readonly string[] {
+  if (!order || order.length === 0) return chipKeys;
+  const rank = new Map<string, number>();
+  order.forEach((c, i) => { const k = normalCat(c); if (!rank.has(k)) rank.set(k, i); });
+  const rest = chipKeys.filter(k => k !== 'all');
+  const ranked = rest.filter(k => rank.has(k)).sort((a, b) => rank.get(a)! - rank.get(b)!);
+  return ['all', ...ranked, ...rest.filter(k => !rank.has(k))];
 }

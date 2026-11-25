@@ -95,7 +95,8 @@ async function fetchAllActiveItems(): Promise<itemsApi.Item[]> {
     // images=ref: the covers are base64 (~40 KB avg, up to ~390 KB) and
     // walking every page used to pull all of them. Tiles load a small
     // thumbnail by URL instead. Safe because POS never writes items.
-    const res = await itemsApi.list({ page, size: PAGE_SIZE, slim: true, active: true, images: 'ref' });
+    // v-category-order — every item of the first category, then the next.
+    const res = await itemsApi.list({ page, size: PAGE_SIZE, slim: true, active: true, images: 'ref', sort: 'category' });
     const rows = res.content ?? [];
     const fresh = rows.filter(r => !seen.has(r.id));
     for (const r of fresh) seen.add(r.id);
@@ -143,6 +144,10 @@ export function POS() {
    *  the ticket "lands" visibly instead of just appearing. */
   const [cartJustLoaded, setCartJustLoaded] = useState(false);
   const [items, setItems] = useState<itemsApi.Item[]>([]);
+  // v-category-order — the saved category order ranks the chips (the
+  // items already come in it). [] when never set, or an older server.
+  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+  useEffect(() => { itemsApi.categoryOrder().then(setCategoryOrder).catch(() => { /* default order */ }); }, []);
   const [customers, setCustomers] = useState<customersApi.Customer[]>([]);
   const [openOrders, setOpenOrders] = useState<PosOrder[]>([]);
   /** V165 — paid orders still moving through the kitchen pipeline
@@ -461,7 +466,7 @@ export function POS() {
           // size cap missing from the grid (POS and Shop diverged
           // on same-tenant counts). Server sort is by name; matches
           // ShopLinkService.publicMenu so both surfaces align.
-          itemsApi.list({ page: 0, size: 50, slim: true, active: true, images: 'ref' }),
+          itemsApi.list({ page: 0, size: 50, slim: true, active: true, images: 'ref', sort: 'category' }),
           settingsApi.get('pos'),
         ]);
         setItems(firstPage.content.filter(i => i.active));
@@ -1251,7 +1256,7 @@ export function POS() {
   const categoryChipBase = sellableSearched.filter(i =>
     !warehouseFilter || (i.warehouseId ?? '') === warehouseFilter,
   );
-  const { chipKeys, counts: categoryCounts } = deriveCategoryChips(categoryChipBase);
+  const { chipKeys, counts: categoryCounts } = deriveCategoryChips(categoryChipBase, categoryOrder);
 
   // Cart panel JSX — rendered inside the desktop aside AND inside the
   // mobile bottom Sheet, so both surfaces stay in sync without a
