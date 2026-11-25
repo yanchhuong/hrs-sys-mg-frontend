@@ -7,6 +7,7 @@
  * code is the entire secret, so anyone with /shop/{code} can read.
  */
 import { apiFetch, apiJson, resolveAssetUrl } from './client';
+import { chiInUnit, goldUnitOf } from './marketPrices';
 
 export interface ShopLinkInfo {
   code: string;
@@ -63,6 +64,19 @@ export interface PublicShopItem {
    *  itemsApi.parseModifiers. Null when the item has no modifiers
    *  and the customer can add it directly. */
   modifiers?: string | null;
+  /** Market Based: the weight of one piece, in chi (null on a fixed
+   *  price). Its `unit` is the weight unit (ជី, ហ៊ុន, …). */
+  weightChi?: number | null;
+}
+
+/** What to show where the unit goes: "7.5 ជី" for a Market Based item —
+ *  its price is for the piece, so the weight comes before the unit — and
+ *  the plain unit otherwise. */
+export function unitText(it: Pick<PublicShopItem, 'unit' | 'weightChi'>): string {
+  const w = Number(it.weightChi);
+  if (it.weightChi == null || !Number.isFinite(w) || w <= 0) return it.unit ?? '';
+  const unit = (it.unit ?? '').trim() || 'ជី';
+  return `${chiInUnit(w, goldUnitOf(unit))} ${unit}`;
 }
 
 /** V265 — resolve the full ordered image list for a public-shop item,

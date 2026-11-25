@@ -1430,7 +1430,9 @@ export function PublicShopPage() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate">{line.item.name}</p>
                         <p className="text-xs text-gray-500">
-                          ${unit.toFixed(2)} {line.item.unit && `/ ${line.item.unit}`}
+                          ${unit.toFixed(2)} {line.item.weightChi
+                            ? `· ${shopApi.unitText(line.item)}`
+                            : line.item.unit && `/ ${line.item.unit}`}
                         </p>
                         {/* Modifier summary, shown as small grey chips
                             so the customer can sanity-check their
@@ -2098,7 +2100,7 @@ function PublicShopCard({
             {item.name}
           </div>
           {item.unit && (
-            <span className="text-[11px] text-gray-500 shrink-0 mt-0.5">{item.unit}</span>
+            <span className="text-[11px] text-gray-500 shrink-0 mt-0.5">{shopApi.unitText(item)}</span>
           )}
         </div>
         <div className="mt-1 flex items-center justify-between gap-2">
@@ -2354,7 +2356,9 @@ function ItemDetailDialog({
             </span>
             {/* "per pcs" means nothing without a price beside it. */}
             {item.unit && !!shopPriceLabel(item, t) && (
-              <span className="text-xs text-gray-500">{fill(t('shop.per_unit'), { unit: item.unit })}</span>
+              <span className="text-xs text-gray-500">
+                {item.weightChi ? shopApi.unitText(item) : fill(t('shop.per_unit'), { unit: item.unit })}
+              </span>
             )}
           </div>
           {item.description && (
