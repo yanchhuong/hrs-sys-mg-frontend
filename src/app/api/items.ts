@@ -385,6 +385,26 @@ export async function categories(active = false, pricing?: 'market' | 'fixed'): 
   return apiJson(`/api/v1/stock-items/categories?${q}`);
 }
 
+/** v-category-order — these categories in this order, in the places they
+ *  held (a narrowed list reorders just its own). Returns the whole order. */
+export async function saveCategoryOrder(names: string[]): Promise<string[]> {
+  return apiJson('/api/v1/stock-items/categories/order', { method: 'PUT', json: { names } });
+}
+
+export interface CategoryRenameResult {
+  /** The new name as stored (trimmed, lowercase). */
+  name: string;
+  /** Items moved to it. */
+  items: number;
+  /** The new name was already in use: the two are one category now. */
+  merged: boolean;
+}
+
+/** v-category-order — every item in `from` moves to `to`. */
+export async function renameCategory(from: string, to: string): Promise<CategoryRenameResult> {
+  return apiJson('/api/v1/stock-items/categories/rename', { method: 'POST', json: { from, to } });
+}
+
 /** Several items by id in one call — e.g. the codes (SKU) behind a
  *  document's lines, which carry only the stock item's id. Comma-joined:
  *  the server binds `ids` as a list either way. */

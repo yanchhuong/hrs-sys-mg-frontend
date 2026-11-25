@@ -31,6 +31,8 @@ import { TableRowsSkeleton } from '../common/LoadingSkeletons';
 import { ListEmpty, ListError } from '../common/ListStates';
 import { TONE_CLASS } from '../../utils/statusTones';
 import { useConfirm } from '../../context/ConfirmContext';
+import { CategoryManagerDialog, type CategoryRename } from '../common/CategoryManagerDialog';
+import { renamedValue } from '../../utils/categoryOrder';
 import { DocAuditLine } from '../common/DocAuditLine';
 import * as itemsApi from '../../api/items';
 import * as marketApi from '../../api/marketPrices';
@@ -849,12 +851,39 @@ export function Items() {
       .then(d => setGoldPrices(d.items.filter(i => i.category === 'gold' && marketApi.goldCurrency(i.unit) === 'USD')))
       .catch(() => setGoldPrices([]));
   }, [dialogOpen, goldPrices]);
-  // Types already used on Market Based items, for the Type suggestions.
+  // v-category-order — the company's categories in its own order (the
+  // Category picker and the list filter), and the types used on Market
+  // Based items (the Type picker). Reloaded when the form opens and
+  // after the Categories dialog saves.
+  const [allCategories, setAllCategories] = useState<string[]>([]);
   const [jewelTypes, setJewelTypes] = useState<string[]>([]);
-  useEffect(() => {
-    if (!dialogOpen) return;
-    itemsApi.categories(false, 'market').then(setJewelTypes).catch(() => setJewelTypes([]));
-  }, [dialogOpen]);
+  const reloadCategories = () => {
+    itemsApi.categories(false).then(setAllCategories).catch(() => { /* keep the last list */ });
+    itemsApi.categories(false, 'market').then(setJewelTypes).catch(() => { /* keep the last list */ });
+  };
+  useEffect(() => { reloadCategories(); }, []);
+  useEffect(() => { if (dialogOpen) reloadCategories(); }, [dialogOpen]);
+  /** The Categories dialog, for the list the open field offers. */
+  const [categorySheet, setCategorySheet] = useState<'fixed' | 'market' | null>(null);
+  // Older gold items carry their gold title as the category; not a type.
+  const marketTypes = useMemo(() => {
+    const titles = new Set((goldPrices ?? []).map(o => o.title.trim().toLowerCase()));
+    return jewelTypes.filter(c => !titles.has(c.trim().toLowerCase()));
+  }, [jewelTypes, goldPrices]);
+  // After the Categories dialog saves: reload the lists (they share one
+  // order); a rename also moved items, so reload the rows, and the open
+  // form follows a rename of the name it holds.
+  const onCategoriesChanged = (renamed?: CategoryRename) => {
+    reloadCategories();
+    if (renamed) {
+      setForm(f => ({
+        ...f,
+        category: renamedValue(f.category, renamed.from, renamed.to),
+        jewelType: renamedValue(f.jewelType, renamed.from, renamed.to),
+      }));
+      void load();
+    }
+  };
   // Usage-settings dialog (V120) — controls which sale/purchase
   // document forms surface the StockItemPicker.
   const [usageSettingsOpen, setUsageSettingsOpen] = useState(false);
@@ -1002,6 +1031,8 @@ export function Items() {
   // to the tail so the catch-all bucket sits after every named
   // category, matching the POS chip ordering.
   const categoryOptions = useMemo(() => {
+    // v-category-order — the company's own list and order, as on mobile.
+    if (allCategories.length > 0) return allCategories;
     const set = new Set<string>();
     for (const r of rows) {
       const c = (r.category ?? '').toString().trim().toLowerCase();
@@ -1011,7 +1042,7 @@ export function Items() {
     const hasOther = all.includes('other');
     const named = all.filter(c => c !== 'other');
     return hasOther ? [...named, 'other'] : named;
-  }, [rows]);
+  }, [rows, allCategories]);
 
   const filtersActive =
     !!categoryFilter || !!stockIoFilter || !!activeFilter || !!imageFilter
@@ -2263,6 +2294,13 @@ export function Items() {
         </CardContent>
       </Card>
 
+      <CategoryManagerDialog
+        open={categorySheet !== null}
+        names={categorySheet === 'market' ? marketTypes : allCategories}
+        onClose={() => setCategorySheet(null)}
+        onChanged={onCategoriesChanged}
+      />
+
       {/* Add / Edit single-entry dialog. Responsive layout:
        *  • DialogContent caps at 90vh and lays itself out as a column
        *    so the footer stays pinned while the body scrolls.
@@ -2312,7 +2350,8 @@ export function Items() {
               form={form}
               setForm={setForm}
               goldPrices={goldPrices}
-              jewelTypes={jewelTypes}
+              typeOptions={marketTypes}
+              onManage={canEdit ? () => setCategorySheet('market') : undefined}
             />
 
             {/* V302 — barcode input + Generate button. Rendered only
@@ -2617,53 +2656,23 @@ export function Items() {
             {/* Market Based names its category with the type, in its box. */}
             {!form.goldTitle && (
               <>
-              {/* V142 — category dropdown. Drives the POS items-grid
-                  filter tabs. Drink unlocks the Modifiers editor below
-                  so the cashier can configure Size / Sugar Level. */}
+              {/* v-category-order — the company's own categories, in its
+                  order, as on mobile: pick one or type a new one; "Edit"
+                  orders and renames them. Blank saves as 'other'. */}
               <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Category</Label>
-                {/* v-item-category-free-text (V269) — one-tap chip picker
-                    for the common categories PLUS a text input for a
-                    custom label. Empty string is a valid state ("none");
-                    the BE defaults it to 'other' on save so the row still
-                    filters cleanly. Selecting a chip fills the input +
-                    visually marks the chip; typing clears the chip. */}
-                <div className="chip-row">
-                  {[
-                    { value: '',         label: '(none)' },
-                    { value: 'drink',    label: 'Drink' },
-                    { value: 'snack',    label: 'Snack' },
-                    { value: 'food',     label: 'Food' },
-                    { value: 'craft',    label: 'Craft' },
-                    { value: 'souvenir', label: 'Souvenir' },
-                    { value: 'jewelry',  label: 'Jewelry' },
-                    { value: 'other',    label: 'Other' },
-                  ].map(opt => {
-                    const active = form.category.trim().toLowerCase() === opt.value;
-                    return (
-                      <button
-                        key={opt.value || 'none'}
-                        type="button"
-                        disabled={saving}
-                        onClick={() => setForm({ ...form, category: opt.value })}
-                        className={`px-3 h-7 rounded-full border text-xs font-medium transition ${
-                          active
-                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                            : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <Input
+                <CategoryLabel label="Category"
+                  onManage={canEdit ? () => setCategorySheet('fixed') : undefined} />
+                <SearchablePicker
+                  options={pickerOptions(allCategories, form.category)}
                   value={form.category}
-                  onChange={e => setForm({ ...form, category: e.target.value })}
+                  onChange={v => setForm({ ...form, category: v })}
+                  placeholder="Pick one already used, or type a new one"
+                  emptyLabel="(none)"
+                  searchPlaceholder="Search or type a new one…"
+                  emptyResultsLabel="No match — type to add it."
+                  allowClear
                   disabled={saving}
-                  maxLength={LEN.category}
-                  placeholder="Or type your own label — leave blank for none"
-                  className="h-9"
+                  onCreate={async label => ({ value: label.trim(), label: label.trim() })}
                 />
               </div>
               </>
@@ -2898,6 +2907,32 @@ function GoldInfoLine({ label, tone, value, chi, perChi }: {
   );
 }
 
+/** A category label with "✎ Edit" at the end of the line when the role
+ *  may order and rename categories (v-category-order), as on mobile. */
+function CategoryLabel({ label, onManage, upper }: { label: string; onManage?: () => void; upper?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      {upper
+        ? <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+        : <Label className="text-xs text-gray-600">{label}</Label>}
+      {onManage && (
+        <button type="button" onClick={onManage} title="Order and rename categories"
+          className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline">
+          <Pencil className="h-3 w-3" /> Edit
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Picker options for a list of names, plus the current value when it is
+ *  not one of them yet (a name typed just now), so it still shows. */
+function pickerOptions(names: string[], current: string) {
+  const list = names.map(n => ({ value: n, label: n }));
+  const c = current.trim();
+  return c && !names.includes(c) ? [{ value: c, label: c }, ...list] : list;
+}
+
 /**
  * Fixed Price | Market Based on the item form — the mobile item form's
  * layout (app/apps/item-edit.tsx), so both apps ask the same things in
@@ -2916,11 +2951,14 @@ function GoldInfoLine({ label, tone, value, chi, perChi }: {
  * Hidden until the company has a USD gold price (or the item already
  * follows one), as on mobile.
  */
-function MarketBasedFields({ form, setForm, goldPrices, jewelTypes }: {
+function MarketBasedFields({ form, setForm, goldPrices, typeOptions, onManage }: {
   form: FormState;
   setForm: (f: FormState) => void;
   goldPrices: marketApi.MarketItem[] | null;
-  jewelTypes: string[];
+  /** Types used on Market Based items, in the company's order. */
+  typeOptions: string[];
+  /** Opens the Categories dialog; absent for a role that can't edit items. */
+  onManage?: () => void;
 }) {
   const options = goldPrices ?? [];
   if (options.length === 0 && !form.goldTitle) return null;
@@ -2929,9 +2967,6 @@ function MarketBasedFields({ form, setForm, goldPrices, jewelTypes }: {
   const chi = formChi(form);
   const sell = goldValue(chi, g?.sell.today);
   const buy = goldValue(chi, g?.buy.today);
-  // Older items carry their gold title as the category; that is not a type.
-  const titles = new Set(options.map(o => o.title.trim().toLowerCase()));
-  const typeOptions = jewelTypes.filter(c => !titles.has(c.trim().toLowerCase()));
   const goldChips = g || !form.goldTitle ? options : [...options, { title: form.goldTitle } as marketApi.MarketItem];
 
   const tab = (on: boolean) => `h-9 rounded-md text-sm transition ${
@@ -2961,7 +2996,7 @@ function MarketBasedFields({ form, setForm, goldPrices, jewelTypes }: {
       {market && (
         <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
           <div className="space-y-1.5">
-            <p className={label}>Category</p>
+            <CategoryLabel label="Category" onManage={onManage} upper />
             <div className="flex flex-wrap gap-2">
               {goldChips.map(o => (
                 <button key={o.title} type="button" className={chip(form.goldTitle === o.title)}
@@ -2971,18 +3006,18 @@ function MarketBasedFields({ form, setForm, goldPrices, jewelTypes }: {
                 </button>
               ))}
             </div>
-            <Input
+            <SearchablePicker
+              options={pickerOptions(typeOptions, form.jewelType)}
               value={form.jewelType}
-              onChange={e => setForm({ ...form, jewelType: e.target.value })}
-              list="item-jewel-types"
+              onChange={v => setForm({ ...form, jewelType: v })}
               placeholder="Type, e.g. ជញ្ជៀន or ខ្សែក"
-              aria-label="Type"
-              maxLength={LEN.category}
+              emptyLabel="(none)"
+              searchPlaceholder="Search or type a new one…"
+              emptyResultsLabel="No match — type to add it."
+              allowClear
+              onCreate={async label => ({ value: label.trim(), label: label.trim() })}
               className="bg-white"
             />
-            <datalist id="item-jewel-types">
-              {typeOptions.map(c => <option key={c} value={c} />)}
-            </datalist>
           </div>
 
           <div className="space-y-1.5">
