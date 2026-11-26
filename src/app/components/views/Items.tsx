@@ -105,9 +105,6 @@ interface FormState {
   weight: string;
   weightUnit: marketApi.GoldCalcUnit;
   makingFee: string;
-  /** Market Based: the jewelry type (ជញ្ជៀន, ខ្សែក…), saved as the
-   *  category — the gold title when blank, as on mobile. */
-  jewelType: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -123,7 +120,9 @@ const EMPTY_FORM: FormState = {
   // for services. An untracked item with a stock number misled a shop.
   deductionEnabled: true,
   imageUrls: [],
-  category: 'other',
+  // Blank: the server stores it as 'other'. Blank (not 'other') so a new
+  // Market Based item still takes its gold title, as on mobile.
+  category: '',
   modifierGroups: [],
   warehouseId: '',
   itemCategory: '',
@@ -133,7 +132,6 @@ const EMPTY_FORM: FormState = {
   weight: '',
   weightUnit: 'chi',
   makingFee: '',
-  jewelType: '',
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -852,24 +850,23 @@ export function Items() {
       .catch(() => setGoldPrices([]));
   }, [dialogOpen, goldPrices]);
   // v-category-order — the company's categories in its own order (the
-  // Category picker and the list filter), and the types used on Market
-  // Based items (the Type picker). Reloaded when the form opens and
-  // after the Categories dialog saves.
+  // Category picker and the list filter). Reloaded when the form opens
+  // and after the Categories dialog saves.
   const [allCategories, setAllCategories] = useState<string[]>([]);
-  const [jewelTypes, setJewelTypes] = useState<string[]>([]);
   const reloadCategories = () => {
     itemsApi.categories(false).then(setAllCategories).catch(() => { /* keep the last list */ });
-    itemsApi.categories(false, 'market').then(setJewelTypes).catch(() => { /* keep the last list */ });
   };
   useEffect(() => { reloadCategories(); }, []);
   useEffect(() => { if (dialogOpen) reloadCategories(); }, [dialogOpen]);
-  /** The Categories dialog, for the list the open field offers. */
-  const [categorySheet, setCategorySheet] = useState<'fixed' | 'market' | null>(null);
-  // Older gold items carry their gold title as the category; not a type.
-  const marketTypes = useMemo(() => {
+  /** The Categories dialog (order / rename the one shared list). */
+  const [categorySheet, setCategorySheet] = useState(false);
+  // v-shared-category — Fixed Price and Market Based share ONE Category
+  // field and list, as on mobile. Older gold items carry their gold title
+  // as the category; that is a price, not a category, so it drops out.
+  const formCategories = useMemo(() => {
     const titles = new Set((goldPrices ?? []).map(o => o.title.trim().toLowerCase()));
-    return jewelTypes.filter(c => !titles.has(c.trim().toLowerCase()));
-  }, [jewelTypes, goldPrices]);
+    return allCategories.filter(c => !titles.has(c.trim().toLowerCase()));
+  }, [allCategories, goldPrices]);
   // After the Categories dialog saves: reload the lists (they share one
   // order); a rename also moved items, so reload the rows, and the open
   // form follows a rename of the name it holds.
@@ -879,7 +876,6 @@ export function Items() {
       setForm(f => ({
         ...f,
         category: renamedValue(f.category, renamed.from, renamed.to),
-        jewelType: renamedValue(f.jewelType, renamed.from, renamed.to),
       }));
       void load();
     }
@@ -1179,7 +1175,11 @@ export function Items() {
       active: it.active,
       deductionEnabled: it.deductionEnabled,
       imageUrls: itemsApi.resolveImages(it),
-      category: it.category ?? 'other',
+      // A Market Based item whose category is just its gold title has no
+      // category of its own: the field starts blank.
+      category: it.goldTitle && it.category
+        && it.category.trim().toLowerCase() === it.goldTitle.trim().toLowerCase()
+        ? '' : (it.category ?? 'other'),
       modifierGroups: itemsApi.parseModifiers(it.modifiers)?.groups ?? [],
       warehouseId: it.warehouseId ?? '',
       itemCategory: it.itemCategory ?? '',
@@ -1190,9 +1190,6 @@ export function Items() {
       weight: it.weightChi != null ? String(marketApi.chiInUnit(Number(it.weightChi), marketApi.goldUnitOf(it.unit))) : '',
       weightUnit: marketApi.goldUnitOf(it.unit),
       makingFee: it.makingFee ? String(it.makingFee) : '',
-      // An older gold item carries its gold title as the category: no type.
-      jewelType: it.goldTitle && it.category
-        && it.category.trim().toLowerCase() !== it.goldTitle.trim().toLowerCase() ? it.category : '',
     });
     setDialogOpen(true);
   };
@@ -1261,8 +1258,9 @@ export function Items() {
         // array clears every image.
         imageUrls: form.imageUrls,
         imageThumbUrl,
-        // Market Based names its category with the type (or the gold), as on mobile.
-        category: goldTitle ? (form.jewelType.trim() || goldTitle) : form.category,
+        // Market Based: no category of its own ('' / 'other') saves as the
+        // gold title, as on mobile.
+        category: goldTitle ? (ownCategory(form.category) || goldTitle) : form.category,
         // Serialise the typed groups back to a JSON string. Empty
         // groups → '' so the server NULLs the column.
         modifiers: itemsApi.serializeModifiers({ groups: form.modifierGroups }) ?? '',
@@ -2295,9 +2293,9 @@ export function Items() {
       </Card>
 
       <CategoryManagerDialog
-        open={categorySheet !== null}
-        names={categorySheet === 'market' ? marketTypes : allCategories}
-        onClose={() => setCategorySheet(null)}
+        open={categorySheet}
+        names={formCategories}
+        onClose={() => setCategorySheet(false)}
         onChanged={onCategoriesChanged}
       />
 
@@ -2350,8 +2348,28 @@ export function Items() {
               form={form}
               setForm={setForm}
               goldPrices={goldPrices}
-              typeOptions={marketTypes}
-              onManage={canEdit ? () => setCategorySheet('market') : undefined}
+              category={
+                /* v-shared-category — one Category for both modes, right
+                   under the mode tabs: pick one or type a new one; "Edit"
+                   orders and renames them. Blank saves as 'other' (the
+                   gold title on Market Based). */
+                <div className="space-y-1.5">
+                  <CategoryLabel label="Category"
+                    onManage={canEdit ? () => setCategorySheet(true) : undefined} />
+                  <SearchablePicker
+                    options={pickerOptions(formCategories, form.category)}
+                    value={form.category}
+                    onChange={v => setForm({ ...form, category: v })}
+                    placeholder="Pick one already used, or type a new one"
+                    emptyLabel="(none)"
+                    searchPlaceholder="Search or type a new one…"
+                    emptyResultsLabel="No match — type to add it."
+                    allowClear
+                    disabled={saving}
+                    onCreate={async label => ({ value: label.trim(), label: label.trim() })}
+                  />
+                </div>
+              }
             />
 
             {/* V302 — barcode input + Generate button. Rendered only
@@ -2653,31 +2671,6 @@ export function Items() {
               />
             </div>
 
-            {/* Market Based names its category with the type, in its box. */}
-            {!form.goldTitle && (
-              <>
-              {/* v-category-order — the company's own categories, in its
-                  order, as on mobile: pick one or type a new one; "Edit"
-                  orders and renames them. Blank saves as 'other'. */}
-              <div className="space-y-1.5">
-                <CategoryLabel label="Category"
-                  onManage={canEdit ? () => setCategorySheet('fixed') : undefined} />
-                <SearchablePicker
-                  options={pickerOptions(allCategories, form.category)}
-                  value={form.category}
-                  onChange={v => setForm({ ...form, category: v })}
-                  placeholder="Pick one already used, or type a new one"
-                  emptyLabel="(none)"
-                  searchPlaceholder="Search or type a new one…"
-                  emptyResultsLabel="No match — type to add it."
-                  allowClear
-                  disabled={saving}
-                  onCreate={async label => ({ value: label.trim(), label: label.trim() })}
-                />
-              </div>
-              </>
-            )}
-
             {/* V142 — modifier editor. Available for every category
                 now (was Drink-only). Craft/Souvenir stores use it to
                 offer Size / Color / Wrap variants the same way a
@@ -2909,12 +2902,10 @@ function GoldInfoLine({ label, tone, value, chi, perChi }: {
 
 /** A category label with "✎ Edit" at the end of the line when the role
  *  may order and rename categories (v-category-order), as on mobile. */
-function CategoryLabel({ label, onManage, upper }: { label: string; onManage?: () => void; upper?: boolean }) {
+function CategoryLabel({ label, onManage }: { label: string; onManage?: () => void }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      {upper
-        ? <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</p>
-        : <Label className="text-xs text-gray-600">{label}</Label>}
+      <Label className="text-xs text-gray-600">{label}</Label>
       {onManage && (
         <button type="button" onClick={onManage} title="Order and rename categories"
           className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline">
@@ -2923,6 +2914,14 @@ function CategoryLabel({ label, onManage, upper }: { label: string; onManage?: (
       )}
     </div>
   );
+}
+
+/** The category as the item's own, or '' when it has none: blank, or
+ *  'other' (what the server stores for blank). A Market Based item with
+ *  none saves its gold title instead. */
+function ownCategory(category: string): string {
+  const c = category.trim();
+  return c.toLowerCase() === 'other' ? '' : c;
 }
 
 /** Picker options for a list of names, plus the current value when it is
@@ -2938,10 +2937,13 @@ function pickerOptions(names: string[], current: string) {
  * layout (app/apps/item-edit.tsx), so both apps ask the same things in
  * the same order.
  *
+ * `category` (the one Category field, v-shared-category) sits right
+ * under the tabs in both modes — and alone, with no tabs, for a company
+ * with no gold price.
+ *
  * Market Based = priced by weight from a gold price (Sell Out to sell,
  * Buy In to buy), so it asks:
- *   CATEGORY   the gold (chips) and the type (ជញ្ជៀន, ខ្សែក…; saved as
- *              the category, the gold title when left blank)
+ *   GOLD MARKET PRICE  the gold (chips); a blank category saves as it
  *   UNIT       the weight unit (chips) — it is the item's unit
  *   WEIGHT *   of one piece; stock stays a count of pieces
  *   MAKING FEE optional, sold on a line of its own
@@ -2951,17 +2953,15 @@ function pickerOptions(names: string[], current: string) {
  * Hidden until the company has a USD gold price (or the item already
  * follows one), as on mobile.
  */
-function MarketBasedFields({ form, setForm, goldPrices, typeOptions, onManage }: {
+function MarketBasedFields({ form, setForm, goldPrices, category }: {
   form: FormState;
   setForm: (f: FormState) => void;
   goldPrices: marketApi.MarketItem[] | null;
-  /** Types used on Market Based items, in the company's order. */
-  typeOptions: string[];
-  /** Opens the Categories dialog; absent for a role that can't edit items. */
-  onManage?: () => void;
+  /** The Category field, shown under the tabs in both modes. */
+  category: React.ReactNode;
 }) {
   const options = goldPrices ?? [];
-  if (options.length === 0 && !form.goldTitle) return null;
+  if (options.length === 0 && !form.goldTitle) return <>{category}</>;
   const market = !!form.goldTitle;
   const g = options.find(p => p.title === form.goldTitle);
   const chi = formChi(form);
@@ -2993,10 +2993,12 @@ function MarketBasedFields({ form, setForm, goldPrices, typeOptions, onManage }:
         </button>
       </div>
 
+      {category}
+
       {market && (
         <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
           <div className="space-y-1.5">
-            <CategoryLabel label="Category" onManage={onManage} upper />
+            <p className={label}>Gold market price</p>
             <div className="flex flex-wrap gap-2">
               {goldChips.map(o => (
                 <button key={o.title} type="button" className={chip(form.goldTitle === o.title)}
@@ -3006,18 +3008,6 @@ function MarketBasedFields({ form, setForm, goldPrices, typeOptions, onManage }:
                 </button>
               ))}
             </div>
-            <SearchablePicker
-              options={pickerOptions(typeOptions, form.jewelType)}
-              value={form.jewelType}
-              onChange={v => setForm({ ...form, jewelType: v })}
-              placeholder="Type, e.g. ជញ្ជៀន or ខ្សែក"
-              emptyLabel="(none)"
-              searchPlaceholder="Search or type a new one…"
-              emptyResultsLabel="No match — type to add it."
-              allowClear
-              onCreate={async label => ({ value: label.trim(), label: label.trim() })}
-              className="bg-white"
-            />
           </div>
 
           <div className="space-y-1.5">
