@@ -369,12 +369,12 @@ function ProgramDialog({ open, onOpenChange, editing, items, onSaved }: {
             <>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-xs">Buy quantity</Label>
+                  <Label className="text-xs">Buy</Label>
                   <NumericInput value={buyQuantity} onChange={setBuyQuantity} decimals={0}
                          className="h-9 mt-1" placeholder="5" />
                 </div>
                 <div>
-                  <Label className="text-xs">Reward quantity</Label>
+                  <Label className="text-xs">Reward</Label>
                   <NumericInput value={rewardQuantity} onChange={setRewardQuantity} decimals={0}
                          className="h-9 mt-1" placeholder="1" />
                 </div>
