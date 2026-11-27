@@ -75,6 +75,10 @@ export interface Item {
    *  each time the gold price changes) and goldBuyPrice the Buy In ×
    *  weightChi. Null for a fixed-price item. */
   goldTitle?: string | null;
+  /** v-quick-items (V428) — a Quick Item: the third pricing type, sold
+   *  from the mobile Quick Order screen only (never POS or the online
+   *  shop). This app does not send it on save, so the server keeps it. */
+  quick?: boolean;
   /** Weight in chi (ជី). */
   weightChi?: number | null;
   /** Optional making fee (ថ្លៃឈ្នួល), sold on its own line. */
@@ -194,6 +198,9 @@ export interface ItemRequest {
   /** v-gold-items — Gold Market Price title to price from. Undefined on
    *  update = unchanged; empty string = a fixed price again. */
   goldTitle?: string;
+  /** v-quick-items — a Quick Item (sold from the mobile Quick Order only).
+   *  Undefined = unchanged; a gold title turns it off server-side. */
+  quick?: boolean;
   /** Weight in chi; required with a gold title. Undefined = unchanged. */
   weightChi?: number;
   /** Optional making fee; 0 clears it. Undefined = unchanged. */

@@ -38,7 +38,7 @@ import * as itemsApi from '../../api/items';
 import * as marketApi from '../../api/marketPrices';
 import { resolveAssetUrl } from '../../api/client';
 import * as warehousesApi from '../../api/warehouses';
-import { Plus, Pencil, Trash2, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal, Coins, Tag, Package, Boxes, CheckCircle2, PackageX, ScanBarcode } from 'lucide-react';
+import { Plus, Pencil, Trash2, RefreshCw, Info, PackagePlus, Settings, Warehouse as WarehouseIcon, Upload, ImageIcon, FileSpreadsheet, Camera, SlidersHorizontal, Coins, Tag, Package, Boxes, CheckCircle2, PackageX, ScanBarcode, Zap } from 'lucide-react';
 import { exportListToExcel } from '../../utils/excelExport';
 import { BulkUploadItemsDialog } from '../common/BulkUploadItemsDialog';
 import { toast } from 'sonner';
@@ -105,6 +105,9 @@ interface FormState {
   weight: string;
   weightUnit: marketApi.GoldCalcUnit;
   makingFee: string;
+  /** v-quick-items — a Quick Item: a fixed price, sold from the mobile
+   *  Quick Order only. Never together with a gold title. */
+  quick: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -132,6 +135,7 @@ const EMPTY_FORM: FormState = {
   weight: '',
   weightUnit: 'chi',
   makingFee: '',
+  quick: false,
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -1186,6 +1190,7 @@ export function Items() {
       minStock: String(it.minStock ?? 0),
       barcode: it.barcode ?? '',
       goldTitle: it.goldTitle ?? '',
+      quick: !!it.quick,
       // Weight is stored in chi; shown in the unit it was saved in.
       weight: it.weightChi != null ? String(marketApi.chiInUnit(Number(it.weightChi), marketApi.goldUnitOf(it.unit))) : '',
       weightUnit: marketApi.goldUnitOf(it.unit),
@@ -1253,6 +1258,8 @@ export function Items() {
         goldTitle,
         weightChi,
         makingFee,
+        // v-quick-items — a gold title wins: a Quick Item has a fixed price.
+        quick: !goldTitle && form.quick,
         // V265 — send the full ordered list; the BE derives imageUrl
         // from imageUrls[0] so legacy readers keep working. An empty
         // array clears every image.
@@ -2004,6 +2011,13 @@ export function Items() {
                               stock.update. */}
                           <div className="flex items-center gap-1">
                             <span className="truncate">{it.name}</span>
+                            {/* v-quick-items — a Quick Item, sold from the
+                                mobile Quick Order only (not POS or the shop). */}
+                            {it.quick && (
+                              <span className="shrink-0" title="Quick Item — sold from Quick Order only">
+                                <Zap className="h-3.5 w-3.5 text-amber-500" aria-label="Quick Item" />
+                              </span>
+                            )}
                             <RowModifiersPopover
                               item={it}
                               disabled={!canEdit}
@@ -2933,13 +2947,15 @@ function pickerOptions(names: string[], current: string) {
 }
 
 /**
- * Fixed Price | Market Based on the item form — the mobile item form's
- * layout (app/apps/item-edit.tsx), so both apps ask the same things in
- * the same order.
+ * Fixed Price | Market Based | Quick Item on the item form — the mobile
+ * item form's layout (app/apps/item-edit.tsx), so both apps ask the same
+ * things in the same order.
  *
  * `category` (the one Category field, v-shared-category) sits right
- * under the tabs in both modes — and alone, with no tabs, for a company
- * with no gold price.
+ * under the tabs in every mode.
+ *
+ * Quick Item (v-quick-items) = a fixed price, sold from the mobile Quick
+ * Order only (never POS or the online shop); it asks what Fixed Price asks.
  *
  * Market Based = priced by weight from a gold price (Sell Out to sell,
  * Buy In to buy), so it asks:
@@ -2950,8 +2966,8 @@ function pickerOptions(names: string[], current: string) {
  *   INFORMATION what the weight is worth today, Sell / Buy
  * There is no Selling Price: the gold price is the price.
  *
- * Hidden until the company has a USD gold price (or the item already
- * follows one), as on mobile.
+ * The Market Based tab shows once the company has a USD gold price (or the
+ * item already follows one), as on mobile; the other two always show.
  */
 function MarketBasedFields({ form, setForm, goldPrices, category }: {
   form: FormState;
@@ -2961,8 +2977,9 @@ function MarketBasedFields({ form, setForm, goldPrices, category }: {
   category: React.ReactNode;
 }) {
   const options = goldPrices ?? [];
-  if (options.length === 0 && !form.goldTitle) return <>{category}</>;
+  const hasMarket = options.length > 0 || !!form.goldTitle;
   const market = !!form.goldTitle;
+  const quick = !market && form.quick;
   const g = options.find(p => p.title === form.goldTitle);
   const chi = formChi(form);
   const sell = goldValue(chi, g?.sell.today);
@@ -2977,19 +2994,27 @@ function MarketBasedFields({ form, setForm, goldPrices, category }: {
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1" role="radiogroup" aria-label="Pricing">
-        <button type="button" role="radio" aria-checked={!market} className={tab(!market)}
-          onClick={() => setForm({ ...form, goldTitle: '' })}>
+      <div className={`grid ${hasMarket ? 'grid-cols-3' : 'grid-cols-2'} gap-1 rounded-lg bg-gray-100 p-1`}
+        role="radiogroup" aria-label="Pricing">
+        <button type="button" role="radio" aria-checked={!market && !quick} className={tab(!market && !quick)}
+          onClick={() => setForm({ ...form, goldTitle: '', quick: false })}>
           Fixed Price
         </button>
-        <button type="button" role="radio" aria-checked={market} className={tab(market)}
-          onClick={() => {
-            if (market) return;
-            // The first gold, and its weight unit as the item's unit, as on mobile.
-            const first = options[0]?.title ?? '';
-            setForm({ ...form, goldTitle: first, unit: marketApi.goldWeightUnit(form.weightUnit).symbol });
-          }}>
-          Market Based
+        {hasMarket && (
+          <button type="button" role="radio" aria-checked={market} className={tab(market)}
+            onClick={() => {
+              if (market) return;
+              // The first gold, and its weight unit as the item's unit, as on mobile.
+              const first = options[0]?.title ?? '';
+              setForm({ ...form, goldTitle: first, quick: false, unit: marketApi.goldWeightUnit(form.weightUnit).symbol });
+            }}>
+            Market Based
+          </button>
+        )}
+        <button type="button" role="radio" aria-checked={quick} className={tab(quick)}
+          title="Sold from the mobile Quick Order only"
+          onClick={() => setForm({ ...form, goldTitle: '', quick: true })}>
+          Quick Item
         </button>
       </div>
 

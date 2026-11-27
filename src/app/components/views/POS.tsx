@@ -469,7 +469,8 @@ export function POS() {
           itemsApi.list({ page: 0, size: 50, slim: true, active: true, images: 'ref', sort: 'category' }),
           settingsApi.get('pos'),
         ]);
-        setItems(firstPage.content.filter(i => i.active));
+        // v-quick-items — Quick Items sell from the mobile Quick Order only.
+        setItems(firstPage.content.filter(i => i.active && !i.quick));
         setPosSettings(pos);
         // Release the loading gate now — operator can already work
         // with the first 50 tiles while the tail streams in.
@@ -488,7 +489,7 @@ export function POS() {
           posApi.listOpen(),
           posApi.listActiveFulfillment(),
         ]).then(([allItems, custList, open, active]) => {
-          setItems(allItems.filter(i => i.active));
+          setItems(allItems.filter(i => i.active && !i.quick));
           setCustomers(custList.content);
           setOpenOrders(open);
           setActiveOrders(active);
