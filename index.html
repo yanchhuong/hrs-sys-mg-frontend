@@ -77,30 +77,32 @@
       <meta name="googlebot" content="index, follow" />
       <meta name="theme-color" content="#2563eb" />
 
-      <!-- Language + regional targeting. Duplicate hreflang so
-           Google's crawler picks the right variant per user. -->
-      <link rel="alternate" hreflang="en" href="https://smart-hrms.com/" />
-      <link rel="alternate" hreflang="km" href="https://smart-hrms.com/km" />
-      <link rel="alternate" hreflang="zh" href="https://smart-hrms.com/zh" />
-      <link rel="alternate" hreflang="x-default" href="https://smart-hrms.com/" />
-      <link rel="canonical" href="https://smart-hrms.com/" />
+      <!-- Canonical host is www.hr-share.com — every absolute URL in
+           these tags, the JSON-LD, robots.txt and sitemap.xml must use
+           it. No hreflang until /km really serves Khmer from the URL —
+           today the language comes from the visitor's saved choice, so
+           a /km link would be a false promise. -->
+      <link rel="canonical" href="https://www.hr-share.com/" />
 
       <!-- Open Graph — Facebook, LinkedIn, Slack unfurl previews. -->
       <meta property="og:type" content="website" />
       <meta property="og:site_name" content="Smart-HRMS" />
       <meta property="og:title" content="Smart-HRMS — HR, Payroll, POS &amp; Accounting for Cambodia" />
       <meta property="og:description" content="Bilingual (Khmer / English) HR &amp; Payroll platform built for Cambodian businesses. POS, Accounting, Attendance, OT Management — one platform, one database." />
-      <meta property="og:url" content="https://smart-hrms.com/" />
+      <meta property="og:url" content="https://www.hr-share.com/" />
       <meta property="og:locale" content="en_US" />
       <meta property="og:locale:alternate" content="km_KH" />
       <meta property="og:locale:alternate" content="zh_CN" />
-      <meta property="og:image" content="https://smart-hrms.com/og-cover.png" />
+      <!-- No og:image / twitter:image yet: og-cover.png never existed on
+           this site. Add a 1200x630 cover (fictional demo data only) at
+           /og-cover.png, then point both tags at
+           https://www.hr-share.com/og-cover.png and set the card back to
+           summary_large_image. -->
 
       <!-- Twitter Card — same message, Twitter/X-shape preview. -->
-      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:card" content="summary" />
       <meta name="twitter:title" content="Smart-HRMS — HR, Payroll, POS &amp; Accounting for Cambodia" />
       <meta name="twitter:description" content="Bilingual (Khmer / English) HR &amp; Payroll platform for Cambodian businesses. POS, Accounting, Attendance, OT Management — one platform." />
-      <meta name="twitter:image" content="https://smart-hrms.com/og-cover.png" />
 
       <!-- JSON-LD structured data — Google renders this as the
            SoftwareApplication rich result: name, category,
@@ -116,7 +118,7 @@
         "inLanguage": ["en", "km", "zh"],
         "areaServed": "KH",
         "description": "Bilingual (Khmer & English) HR & Payroll platform for Cambodian businesses. Includes POS (with KHQR + PayWay), Accounting (Invoice / Bill / Expense), Attendance with fingerprint devices, and OT Management. One database, one permission matrix, one login.",
-        "url": "https://smart-hrms.com/",
+        "url": "https://www.hr-share.com/",
         "offers": {
           "@type": "Offer",
           "priceCurrency": "USD",
