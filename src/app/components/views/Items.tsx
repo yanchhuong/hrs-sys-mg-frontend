@@ -2532,7 +2532,7 @@ export function Items() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Cost Price{formKhr ? ' (KHR)' : ''}</Label>
+                <Label className="text-xs text-gray-600 justify-end">Cost Price{formKhr ? ' (KHR)' : ''}</Label>
                 <NumericInput
                   value={form.unitCost}
                   decimals={formKhr ? 0 : 2}
@@ -2542,7 +2542,7 @@ export function Items() {
               {/* A gold item's selling price is in its Information panel above. */}
               {!form.goldTitle && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-gray-600">Selling Price{formKhr ? ' (KHR)' : ''}</Label>
+                  <Label className="text-xs text-gray-600 justify-end">Selling Price{formKhr ? ' (KHR)' : ''}</Label>
                   <NumericInput
                     value={form.unitPrice}
                     decimals={formKhr ? 0 : 2}
@@ -2554,7 +2554,7 @@ export function Items() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:items-end">
               <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                <Label className="text-xs text-gray-600 flex items-center justify-end gap-1.5">
                   Current Stock
                   <TooltipProvider delayDuration={120}>
                     <Tooltip>
@@ -2584,7 +2584,7 @@ export function Items() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600 inline-flex items-center gap-1.5">
+                <Label className="text-xs text-gray-600 flex items-center justify-end gap-1.5">
                   Min Stock
                   <TooltipProvider delayDuration={120}>
                     <Tooltip>
@@ -2953,18 +2953,19 @@ function goldValue(chi: number | null, perChi: number | null | undefined): numbe
 
 /** One line of a gold item's Information panel: label left, value right,
  *  and how it is made up ("3 chi × $480.00") under the value. */
-function GoldInfoLine({ label, tone, value, chi, perChi }: {
+/** One side of the gold value card: the name, the value under it, then how
+ *  it was worked out. Sell sits left, Buy right. */
+function GoldInfoLine({ label, tone, value, chi, perChi, align }: {
   label: string; tone: string; value: number | null; chi: number | null; perChi: number | null | undefined;
+  align: 'left' | 'right';
 }) {
   const made = perChi == null ? 'no price'
     : (chi == null ? '—' : String(Math.round(chi * 10000) / 10000)) + ' chi × ' + fmtUsd(perChi);
   return (
-    <div className="flex items-start justify-between gap-3">
-      <span className={'text-xs font-medium pt-0.5 ' + tone}>{label}</span>
-      <span className="text-right">
-        <span className="block text-base font-semibold tabular-nums text-gray-900">{value == null ? '—' : fmtUsd(value)}</span>
-        <span className="block text-[10px] tabular-nums text-gray-500">{made}</span>
-      </span>
+    <div className={'min-w-0 px-3 ' + (align === 'left' ? 'text-left' : 'text-right')}>
+      <span className={'block text-xs font-medium ' + tone}>{label}</span>
+      <span className="block truncate text-base font-semibold tabular-nums text-gray-900">{value == null ? '—' : fmtUsd(value)}</span>
+      <span className="block text-[10px] tabular-nums text-gray-500">{made}</span>
     </div>
   );
 }
@@ -3158,7 +3159,7 @@ function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, q
           Order draws its tank from it. */}
       {quick && (
         <div className="space-y-1.5">
-          <label htmlFor="item-tank-capacity" className={label}>Max stock ({form.unit.trim() || 'pcs'})</label>
+          <label htmlFor="item-tank-capacity" className={`${label} block text-right`}>Max stock ({form.unit.trim() || 'pcs'})</label>
           <NumericInput id="item-tank-capacity" value={form.tankCapacity} decimals={3}
             onChange={v => setForm({ ...form, tankCapacity: v })} placeholder={itemsApi.isFuelQuick(form.quickType, form.unit) ? '10,000' : '0'} />
           <p className="text-xs text-gray-500">
@@ -3200,32 +3201,35 @@ function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, q
             </div>
           </div>
 
+          {/* Weight | Making fee — one row, as on mobile. */}
           <div className="space-y-1.5">
-            <p className={label}>Weight <span className="text-red-500">*</span></p>
-            <Input
-              value={form.weight}
-              onChange={e => setForm({ ...form, weight: maskNumber(e.target.value, NUM.goldWeight) })}
-              inputMode="decimal"
-              placeholder="0.0000"
-              aria-label="Weight"
-              className="bg-white text-right tabular-nums"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <p className={label}>Making fee (optional)</p>
-            <NumericInput value={form.makingFee} onChange={v => setForm({ ...form, makingFee: v })} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <p className={`${label} text-right`}>Weight <span className="text-red-500">*</span></p>
+                <Input
+                  value={form.weight}
+                  onChange={e => setForm({ ...form, weight: maskNumber(e.target.value, NUM.goldWeight) })}
+                  inputMode="decimal"
+                  placeholder="0.0000"
+                  aria-label="Weight"
+                  className="text-right tabular-nums"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <p className={`${label} text-right`}>Making fee</p>
+                <NumericInput value={form.makingFee} onChange={v => setForm({ ...form, makingFee: v })} aria-label="Making fee" />
+              </div>
+            </div>
             <p className="text-[11px] text-gray-500">Not part of the gold price: it is sold on a line of its own.</p>
           </div>
 
-          {/* What the weight is worth today. The selling price IS the
+          {/* What the weight is worth today: Sell left, Buy right, each
+              value under its name — no heading. The selling price IS the
               item's price, so there is no Selling Price field while it
               follows gold. Sell green, Buy red — money in / out. */}
-          <div className="rounded-md border border-amber-200 bg-white px-3 py-2 space-y-1.5">
-            <p className={label}>Information</p>
-            <GoldInfoLine label="Sell" tone="text-emerald-700" value={sell} chi={chi} perChi={g?.sell.today} />
-            <div className="border-t border-gray-100" />
-            <GoldInfoLine label="Buy" tone="text-red-700" value={buy} chi={chi} perChi={g?.buy.today} />
+          <div className="grid grid-cols-2 divide-x divide-gray-100 rounded-md border border-amber-200 bg-white py-2" aria-label="Gold value today">
+            <GoldInfoLine label="Sell" tone="text-emerald-700" value={sell} chi={chi} perChi={g?.sell.today} align="left" />
+            <GoldInfoLine label="Buy" tone="text-red-700" value={buy} chi={chi} perChi={g?.buy.today} align="right" />
           </div>
         </div>
       )}
