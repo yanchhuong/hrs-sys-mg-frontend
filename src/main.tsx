@@ -4,6 +4,7 @@
   import "./styles/index.css";
   import { installChunkReloadSafetyNet } from "./app/utils/lazyWithReload";
   import { installSelectNumberOnFocus } from "./app/utils/selectNumberOnFocus";
+  import { applyPathRobots } from "./app/utils/pageSeo";
 
   // Belt-and-suspenders backup for the React.lazy-level guard: any raw
   // dynamic import() that isn't wrapped in lazyWithReload() (e.g. a
@@ -14,5 +15,7 @@
   installChunkReloadSafetyNet();
   // Number fields select their value on focus, so it is typed over.
   installSelectNumberOnFocus();
+  // Private links (invoice, invitations, reset password…) stay out of search.
+  applyPathRobots();
 
   createRoot(document.getElementById("root")!).render(<App />);

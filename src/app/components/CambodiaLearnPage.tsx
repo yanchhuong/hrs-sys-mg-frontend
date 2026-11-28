@@ -13,6 +13,7 @@
 import { useEffect } from 'react';
 import { Button } from './ui/button';
 import { useI18n } from '../i18n/I18nContext';
+import { setPageSeo } from '../utils/pageSeo';
 import { Building2, ArrowLeft, Languages } from 'lucide-react';
 import {
   Lang, CambodiaSection, WorkingRule, BenefitFormulas, BenefitCalculatorsShowcase,
@@ -47,6 +48,16 @@ export function CambodiaLearnPage() {
                zh: '平台如何映射柬埔寨的 NSSF、薪资税、工龄补偿和年假规则 — 附有可运行示例和实时计算器。' } as const,
   };
   const t = (m: { en: string; km: string; zh: string }) => m[lang] ?? m.en;
+
+  // v-ai-visibility — its own search entry instead of the homepage's
+  // tags (index.html's canonical pointed this page at "/").
+  useEffect(() => {
+    setPageSeo({
+      title: `${t(label.title)} | Smart HRMS`,
+      description: t(label.lede),
+      path: '/cambodia',
+    });
+  }, [lang]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="landing-typography min-h-screen bg-white text-slate-900 antialiased">
