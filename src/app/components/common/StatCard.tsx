@@ -27,10 +27,13 @@ export const STAT_CARD_TONES: Record<string, { bg: string; text: string; ring: s
 export type StatCardTone = keyof typeof STAT_CARD_TONES;
 
 export function StatCard({
-  label, value, hint, icon: Icon, tone,
+  label, value, hint, icon: Icon, tone, sub,
 }: {
   label: string;
   value: string | number;
+  /** A quiet second line under the value — e.g. the riel total under a
+   *  dollar one (two currencies are shown apart, never added). */
+  sub?: ReactNode;
   /** Optional explanatory hint — surfaces as a hover tooltip on a
    *  small info icon next to the label so the card body stays
    *  clean. Falsy (null / undefined / empty) hides the icon. */
@@ -83,6 +86,7 @@ export function StatCard({
         >
           {value}
         </div>
+        {sub ? <div className="text-xs tabular-nums text-right text-gray-500 truncate">{sub}</div> : null}
       </CardContent>
     </Card>
   );

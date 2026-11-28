@@ -118,6 +118,9 @@ export function StockItemPicker({
     const term = q.trim().toLowerCase();
     const base = catalog.filter(c => {
       if (!c.active) return false;
+      // v-item-currency — a Quick Item sells from Quick Order only (and
+      // may be priced in riel), never on a document.
+      if (c.quick) return false;
       if (requireStock && !itemsApi.isItemSellable(c)) return false;
       // Strict positive-stock layer for callers moving physical
       // units (Consignment) — filters out non-inventory items

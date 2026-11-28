@@ -85,6 +85,9 @@ export interface Item {
   /** v-quick-tanks (V430) — a fuel Quick Item's tank size, in its unit; the
    *  mobile Quick Order draws the tank from it. */
   tankCapacity?: number | null;
+  /** v-item-currency (V431) — the currency of unitPrice and unitCost: USD,
+   *  or KHR on a Quick Item only. Absent (an older server) = USD. */
+  currency?: 'USD' | 'KHR' | null;
   /** Weight in chi (ជី). */
   weightChi?: number | null;
   /** Optional making fee (ថ្លៃឈ្នួល), sold on its own line. */
@@ -211,6 +214,8 @@ export interface ItemRequest {
   quickType?: string;
   /** v-quick-tanks — the tank size. Undefined = unchanged; 0 clears it. */
   tankCapacity?: number;
+  /** v-item-currency — USD or KHR (KHR on a Quick Item only). Undefined = unchanged. */
+  currency?: 'USD' | 'KHR';
   /** Weight in chi; required with a gold title. Undefined = unchanged. */
   weightChi?: number;
   /** Optional making fee; 0 clears it. Undefined = unchanged. */
@@ -365,6 +370,9 @@ export interface ItemsListWithTotals {
   totalPrice: number;
   /** Sum of unit_price x stock_qty — the stock's worth at its price. */
   totalRetailValue: number;
+  /** v-item-currency — the same sum over KHR items; the USD one above
+   *  counts USD items only. Absent on older servers. */
+  totalRetailValueKhr?: number;
 }
 
 /** V305 — tenant's own item-quota snapshot. Used by the bulk-upload

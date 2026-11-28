@@ -796,6 +796,8 @@ function QuotationFormDialog({
   const fillLineFromBarcode = async (localId: string, code: string) => {
     try {
       const si = await itemsApi.getByBarcode(code.trim());
+      // v-item-currency — a Quick Item sells from Quick Order only.
+      if (si.quick) { toast.error(`${si.name} is a Quick Item — sold from Quick Order only.`); return; }
       updateLine(localId, {
         stockItemId: si.id,
         name: si.name,

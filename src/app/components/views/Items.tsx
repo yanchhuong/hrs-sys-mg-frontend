@@ -110,8 +110,10 @@ interface FormState {
   quick: boolean;
   /** v-quick-types — the Quick Item's system type code ('' = none yet). */
   quickType: string;
-  /** v-quick-tanks — a fuel Quick Item's tank size ('' = not set). */
+  /** v-quick-tanks — a Quick Item's max stock; for fuel, the tank size ('' = not set). */
   tankCapacity: string;
+  /** v-item-currency — a Quick Item's price/cost currency (KHR for a new one). */
+  currency: 'USD' | 'KHR';
 }
 
 const EMPTY_FORM: FormState = {
@@ -142,6 +144,7 @@ const EMPTY_FORM: FormState = {
   quick: false,
   quickType: '',
   tankCapacity: '',
+  currency: 'KHR',
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -780,6 +783,8 @@ export function Items() {
     totalStock: number;
     /** Price x quantity on hand, the same sum as totals.price below. */
     totalRetailValue: number;
+    /** v-item-currency — the same over KHR items, kept apart. */
+    totalRetailValueKhr: number;
   } | null>(null);
   const CATALOG_MAX = 1000;
   const [loading, setLoading] = useState(false);
@@ -903,6 +908,8 @@ export function Items() {
   const [usageSettingsOpen, setUsageSettingsOpen] = useState(false);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  /** v-item-currency — the form's prices are riel (a KHR Quick Item). */
+  const formKhr = !form.goldTitle && form.quick && form.currency === 'KHR';
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<itemsApi.Item | null>(null);
 
@@ -934,6 +941,7 @@ export function Items() {
         totalActive:     first.totalActive     ?? 0,
         totalStock:      Number(first.totalStock ?? 0),
         totalRetailValue: Number(first.totalRetailValue ?? 0),
+        totalRetailValueKhr: Number(first.totalRetailValueKhr ?? 0),
       });
       setLoading(false);
       setTimeout(() => {
@@ -1091,13 +1099,19 @@ export function Items() {
   // shelf I'm looking at right now worth?". Reads unitCost /
   // unitPrice / stockQty — same fields the row cells render.
   const totals = useMemo(() => {
-    let cost = 0, price = 0, qty = 0, active = 0, outOfStock = 0;
+    let cost = 0, price = 0, qty = 0, active = 0, outOfStock = 0, costKhr = 0, priceKhr = 0;
     for (const r of filtered) {
       // v-not-tracked — stock figures count tracked items only, as the
       // server's do: an untracked item's number isn't kept up to date.
       const q = r.deductionEnabled ? Number(r.stockQty ?? 0) : 0;
-      cost  += q * Number(r.unitCost  ?? 0);
-      price += q * Number(r.unitPrice ?? 0);
+      // v-item-currency — riel items are summed apart, never into dollars.
+      if (r.currency === 'KHR') {
+        costKhr  += q * Number(r.unitCost  ?? 0);
+        priceKhr += q * Number(r.unitPrice ?? 0);
+      } else {
+        cost  += q * Number(r.unitCost  ?? 0);
+        price += q * Number(r.unitPrice ?? 0);
+      }
       qty   += q;
       if (r.active) active += 1;
       // Out-of-stock definition mirrors isItemSellable's negation on
@@ -1108,7 +1122,7 @@ export function Items() {
         outOfStock += 1;
       }
     }
-    return { cost, price, qty, active, outOfStock };
+    return { cost, price, qty, active, outOfStock, costKhr, priceKhr };
   }, [filtered]);
   // Total Cost has no server-side figure, so it is only trustworthy
   // once every row is loaded (or when the tiles already follow the
@@ -1207,6 +1221,7 @@ export function Items() {
       quick: !!it.quick,
       quickType: it.quickType ?? '',
       tankCapacity: it.tankCapacity != null ? String(it.tankCapacity) : '',
+      currency: it.currency === 'KHR' ? 'KHR' : 'USD',
       // Weight is stored in chi; shown in the unit it was saved in.
       weight: it.weightChi != null ? String(marketApi.chiInUnit(Number(it.weightChi), marketApi.goldUnitOf(it.unit))) : '',
       weightUnit: marketApi.goldUnitOf(it.unit),
@@ -1279,10 +1294,10 @@ export function Items() {
         // v-quick-items — a gold title wins: a Quick Item has a fixed price.
         quick: !goldTitle && form.quick,
         ...(!goldTitle && form.quick && form.quickType ? { quickType: form.quickType } : {}),
-        // v-quick-tanks — fuel only; any other Quick Item clears a stale size (0).
-        ...(!goldTitle && form.quick
-          ? { tankCapacity: itemsApi.isFuelQuick(form.quickType, form.unit) ? Number(form.tankCapacity) || 0 : 0 }
-          : {}),
+        // v-quick-tanks — a Quick Item's max stock; '' clears it (0).
+        ...(!goldTitle && form.quick ? { tankCapacity: Number(form.tankCapacity) || 0 } : {}),
+        // v-item-currency — KHR on a Quick Item only; everything else USD.
+        currency: !goldTitle && form.quick ? form.currency : 'USD',
         // V265 — send the full ordered list; the BE derives imageUrl
         // from imageUrls[0] so legacy readers keep working. An empty
         // array clears every image.
@@ -1465,6 +1480,7 @@ export function Items() {
                     { header: 'Unit',           value: it => it.unit ?? '',                                   width: 10 },
                     { header: 'Cost Price',     value: it => Number(it.unitCost ?? 0),                        width: 12 },
                     { header: 'Selling Price',  value: it => Number(it.unitPrice ?? 0),                       width: 12 },
+                    { header: 'Currency',       value: it => it.currency ?? 'USD',                            width: 9 },
                     { header: 'Current Stock',  value: it => Number(it.stockQty ?? 0),                        width: 12 },
                     { header: 'Min Stock',      value: it => Number(it.minStock ?? 0),                        width: 10 },
                     { header: 'Warehouse',      value: it => it.warehouseId
@@ -1672,12 +1688,17 @@ export function Items() {
               a number that disagrees with its neighbours. */}
           <StatCard label="Total Cost" icon={Coins} tone="green"
             hint={costTileComplete ? undefined : 'Shown once the full item list has loaded.'}
-            value={costTileComplete ? `$${totals.cost.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '—'} />
+            value={costTileComplete ? `$${totals.cost.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '—'}
+            sub={costTileComplete && totals.costKhr > 0 ? `៛ ${totals.costKhr.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : undefined} />
           {/* Price x quantity whichever figure is shown. The server's sum of
               unit prices counted an out-of-stock item at its price, so the
               unfiltered tile disagreed with In stock + Out. */}
           <StatCard label="Total Price" icon={Tag} tone="blue"
-            value={`$${(tilesUseFiltered ? totals.price : (serverTotals?.totalRetailValue ?? totals.price)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`} />
+            value={`$${(tilesUseFiltered ? totals.price : (serverTotals?.totalRetailValue ?? totals.price)).toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+            sub={(() => {
+              const khr = tilesUseFiltered ? totals.priceKhr : (serverTotals?.totalRetailValueKhr ?? totals.priceKhr);
+              return khr > 0 ? `៛ ${khr.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : undefined;
+            })()} />
           <StatCard label="Total Stock (QTY)" icon={Package} tone="amber"
             value={(tilesUseFiltered ? totals.qty : (serverTotals?.totalStock ?? totals.qty)).toLocaleString('en-US', { maximumFractionDigits: 2 })} />
         </div>
@@ -2131,7 +2152,7 @@ export function Items() {
                           />
                         </TableCell>
                         <TableCell className="text-right tabular-nums text-gray-600">
-                          {Number(it.unitCost ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {fmtItemMoney(it.unitCost, it.currency)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {it.goldTitle && (
@@ -2141,7 +2162,7 @@ export function Items() {
                               Gold
                             </span>
                           )}
-                          {Number(it.unitPrice ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {fmtItemMoney(it.unitPrice, it.currency)}
                         </TableCell>
                         <TableCell className={`text-right tabular-nums ${it.deductionEnabled && onHand <= 0 ? 'text-rose-700 font-medium' : ''}`}>
                           {/* v-items-receive-inline — Receive-stock
@@ -2511,18 +2532,20 @@ export function Items() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-gray-600">Cost Price</Label>
+                <Label className="text-xs text-gray-600">Cost Price{formKhr ? ' (KHR)' : ''}</Label>
                 <NumericInput
                   value={form.unitCost}
+                  decimals={formKhr ? 0 : 2}
                   onChange={v => setForm({ ...form, unitCost: v })}
                 />
               </div>
               {/* A gold item's selling price is in its Information panel above. */}
               {!form.goldTitle && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-gray-600">Selling Price</Label>
+                  <Label className="text-xs text-gray-600">Selling Price{formKhr ? ' (KHR)' : ''}</Label>
                   <NumericInput
                     value={form.unitPrice}
+                    decimals={formKhr ? 0 : 2}
                     onChange={v => setForm({ ...form, unitPrice: v })}
                   />
                 </div>
@@ -3001,6 +3024,15 @@ function pickerOptions(names: string[], current: string) {
  * The Market Based tab shows once the company has a USD gold price (or the
  * item already follows one), as on mobile; the other two always show.
  */
+/** v-item-currency — a price or cost in the row's currency: "12.50" for
+ *  dollars (the column header carries no symbol), "៛ 4,500" for riel. */
+function fmtItemMoney(n: number | null | undefined, currency: string | null | undefined): string {
+  const v = Number(n ?? 0);
+  return currency === 'KHR'
+    ? `៛ ${v.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+    : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, quickOnly, category }: {
   form: FormState;
   setForm: (f: FormState) => void;
@@ -3107,13 +3139,33 @@ function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, q
         </div>
       )}
 
-      {/* v-quick-tanks — fuel: the mobile Quick Order draws its tank from this. */}
-      {quick && itemsApi.isFuelQuick(form.quickType, form.unit) && (
+      {/* v-item-currency — a Quick Item is priced in riel or dollars. */}
+      {quick && (
         <div className="space-y-1.5">
-          <label htmlFor="item-tank-capacity" className={label}>Tank capacity ({form.unit.trim() || 'L'})</label>
+          <p className={label}>Currency</p>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Currency">
+            {(['KHR', 'USD'] as const).map(c => (
+              <button key={c} type="button" role="radio" aria-checked={form.currency === c} className={chip(form.currency === c)}
+                onClick={() => setForm({ ...form, currency: c })}>
+                {c === 'KHR' ? 'KHR (៛)' : 'USD ($)'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* v-quick-tanks — a Quick Item's max stock; for fuel, the mobile Quick
+          Order draws its tank from it. */}
+      {quick && (
+        <div className="space-y-1.5">
+          <label htmlFor="item-tank-capacity" className={label}>Max stock ({form.unit.trim() || 'pcs'})</label>
           <NumericInput id="item-tank-capacity" value={form.tankCapacity} decimals={3}
-            onChange={v => setForm({ ...form, tankCapacity: v })} placeholder="10,000" />
-          <p className="text-xs text-gray-500">Quick Order shows the tank: stock on hand is the level, Min Stock the dashed line.</p>
+            onChange={v => setForm({ ...form, tankCapacity: v })} placeholder={itemsApi.isFuelQuick(form.quickType, form.unit) ? '10,000' : '0'} />
+          <p className="text-xs text-gray-500">
+            {itemsApi.isFuelQuick(form.quickType, form.unit)
+              ? 'Quick Order shows the tank: stock on hand is the level, Min Stock the dashed line.'
+              : 'The most this item is stocked to.'}
+          </p>
         </div>
       )}
 
