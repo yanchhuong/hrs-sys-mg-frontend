@@ -29,6 +29,7 @@ import { NAV_BY_ID, NAV_LEAVES } from './config/nav';
 import { POS_DISPLAY_PATH } from './utils/posCustomerDisplay';
 import { DesktopApiModeSwitch } from './components/DesktopApiModeSwitch';
 import { isTauri } from './utils/runtime';
+import { MOBILE_SITE, isPhoneOnProductionSite } from './utils/mobileSite';
 
 // v-lazy-app-shells — every logged-in surface + every anonymous
 // deep-link page is lazy-loaded. Anonymous landing/login visitors
@@ -273,7 +274,12 @@ function AppContent() {
           prefill={loginPrefill}
         />
       : <LandingPage
-          onSignInClick={() => { setLoginPrefill(null); setShowLogin(true); }}
+          onSignInClick={() => {
+            // v-ai-visibility — phones sign in on the mobile app; the
+            // landing page itself stays readable for them (and crawlers).
+            if (isPhoneOnProductionSite()) { window.location.assign(MOBILE_SITE); return; }
+            setLoginPrefill(null); setShowLogin(true);
+          }}
           onDemoClick={desktop ? undefined : (email: string) => {
             // v-landing-demo-dropdown — landing now passes the picked
             // demo tenant's email (Accounting / HR / Hospital / Store);

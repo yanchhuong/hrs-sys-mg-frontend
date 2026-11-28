@@ -148,10 +148,10 @@ const T = {
                zh: '为您实际拥有的员工而打造' },
     title:   { en: 'Whether you run a factory or an office, this fits.',
                km: 'មិនថាអ្នកដំណើរការរោងចក្រ ឬការិយាល័យ វាសមនឹងអ្នកទាំងអស់។',
-               zh: '无论您经营工厂还是办公室，Smart-HRMS 都适用。' },
-    desc:    { en: 'Most HR products are designed for tidy, salaried office work. Real businesses in Cambodia have shift workers on factory floors, mixed-language teams, and dozens of fingerprint terminals — Smart-HRMS is built for that reality.',
-               km: 'ផលិតផលធនធានមនុស្សភាគច្រើនរចនាសម្រាប់ការងារការិយាល័យដែលមានរបៀបរៀបរយ។ អាជីវកម្មពិតប្រាកដនៅកម្ពុជាមានកម្មកររបបវេន លាយក្នុងក្រុមការងារភាសាច្រើន និងឧបករណ៍ស្នាមម្រាមដៃច្រើនរយ — Smart-HRMS សាងសង់ឡើងសម្រាប់ការពិតនោះ។',
-               zh: '大多数 HR 产品都是为整洁、领薪的办公室工作而设计的。柬埔寨的真实企业拥有工厂车间的轮班工人、多语言团队和数十台指纹考勤机 — Smart-HRMS 正是为这种现实而打造。' },
+               zh: '无论您经营工厂还是办公室，Smart HRMS 都适用。' },
+    desc:    { en: 'Most HR products are designed for tidy, salaried office work. Real businesses in Cambodia have shift workers on factory floors, mixed-language teams, and dozens of fingerprint terminals — Smart HRMS is built for that reality.',
+               km: 'ផលិតផលធនធានមនុស្សភាគច្រើនរចនាសម្រាប់ការងារការិយាល័យដែលមានរបៀបរៀបរយ។ អាជីវកម្មពិតប្រាកដនៅកម្ពុជាមានកម្មកររបបវេន លាយក្នុងក្រុមការងារភាសាច្រើន និងឧបករណ៍ស្នាមម្រាមដៃច្រើនរយ — Smart HRMS សាងសង់ឡើងសម្រាប់ការពិតនោះ។',
+               zh: '大多数 HR 产品都是为整洁、领薪的办公室工作而设计的。柬埔寨的真实企业拥有工厂车间的轮班工人、多语言团队和数十台指纹考勤机 — Smart HRMS 正是为这种现实而打造。' },
     factoryBadge:  { en: 'Most-deployed',           km: 'ដាក់ឱ្យដំណើរការច្រើនជាងគេ',  zh: '部署最多' },
     factoryTitle:  { en: 'Factory & Manufacturing', km: 'រោងចក្រ និងផលិតកម្ម',         zh: '工厂与制造业' },
     factoryDesc:   { en: 'Multi-shift, multi-device, multi-language workforces — handled.',
@@ -208,20 +208,25 @@ const T = {
                    km: 'គ្រប់គ្រងប្រាក់ខែ — មើលជាមុនមុនពេលបង្ហោះ',
                    zh: '薪资管理 — 发布前批量预览' },
   },
+  // v-ai-visibility — facts the product itself shows, not outcome
+  // claims. "12+ hours saved", "8× faster payroll" and "100% TOS
+  // accuracy" had no measurement behind them and were removed. "60+"
+  // = the module catalogue further down this page (62 cards); keep it
+  // true if that list shrinks.
   metrics: {
-    metric1Label: { en: 'Saved per HR week',   km: 'ពេលវេលាសន្សំក្នុងសប្តាហ៍',           zh: '每周节省的 HR 工时' },
-    metric1Value: { en: '12+ hours',           km: '១២+ ម៉ោង',                          zh: '12+ 小时' },
-    metric2Label: { en: 'Faster payroll',      km: 'ដំណើរការប្រាក់ខែលឿនជាង',             zh: '发薪速度提升' },
-    metric2Value: { en: '8×',                  km: '៨ ដង',                              zh: '8 倍' },
-    metric3Label: { en: 'TOS accuracy',        km: 'ភាពត្រឹមត្រូវនៃពន្ធលើប្រាក់ខែ',       zh: '薪资税准确度' },
-    metric3Value: { en: '100%',                km: '១០០%',                              zh: '100%' },
-    metric4Label: { en: 'Locations supported', km: 'ទីតាំងដែលគាំទ្រ',                    zh: '可支持地点数' },
-    metric4Value: { en: 'Unlimited',           km: 'គ្មានកំណត់',                          zh: '无限制' },
+    metric1Label: { en: 'Modules in one platform',  km: 'ម៉ូឌុលក្នុងប្រព័ន្ធតែមួយ',      zh: '一个平台中的模块' },
+    metric1Value: { en: '60+',                      km: '៦០+',                          zh: '60+' },
+    metric2Label: { en: 'Bilingual interface',      km: 'ផ្ទាំងប្រើប្រាស់ពីរភាសា',       zh: '双语界面' },
+    metric2Value: { en: 'Khmer + English',          km: 'ខ្មែរ + អង់គ្លេស',             zh: '高棉语 + 英语' },
+    metric3Label: { en: 'Built into payroll',       km: 'មានស្រាប់ក្នុងប្រាក់ខែ',         zh: '内置于薪资计算' },
+    metric3Value: { en: 'TOS + NSSF',               km: 'ពន្ធលើប្រាក់ខែ + ប.ស.ស',      zh: '薪资税 + NSSF' },
+    metric4Label: { en: 'One login, every location', km: 'គណនីតែមួយ គ្រប់ទីតាំង',       zh: '一个账号，所有地点' },
+    metric4Value: { en: 'Multi-branch',             km: 'ច្រើនសាខា',                    zh: '多分店' },
   },
   zeroInstall: {
-    eyebrow:   { en: 'Why teams pick Smart-HRMS for every office',
-                 km: 'ហេតុអ្វីក្រុមការងារជ្រើសរើស Smart-HRMS សម្រាប់គ្រប់ការិយាល័យ',
-                 zh: '为何团队为每个办公室都选 Smart-HRMS' },
+    eyebrow:   { en: 'Why teams pick Smart HRMS for every office',
+                 km: 'ហេតុអ្វីក្រុមការងារជ្រើសរើស Smart HRMS សម្រាប់គ្រប់ការិយាល័យ',
+                 zh: '为何团队为每个办公室都选 Smart HRMS' },
     headline:  { en: 'Flexible. Easy. Multi-office — without buying a single device.',
                  km: 'ងាយស្រួល បត់បែន ច្រើនការិយាល័យ — ដោយឥតទិញឧបករណ៍សោះ។',
                  zh: '灵活 · 简便 · 多办公地点 — 一台设备都不用买。' },
@@ -246,12 +251,12 @@ const T = {
     deviceDesc:{ en: 'One dashboard for every branch you run — Phnom Penh, Siem Reap, the construction site, the field team. Headcount, attendance, payroll roll up per location and across the whole company in one click.',
                  km: 'Dashboard តែមួយសម្រាប់គ្រប់សាខា — ភ្នំពេញ សៀមរាប ការដ្ឋានសំណង់ ឬក្រុមការងារផ្ទាល់។ ចំនួនបុគ្គលិក វត្តមាន និងប្រាក់ខែសរុបតាមទីតាំង និងទូទាំងក្រុមហ៊ុនក្នុងការចុចតែម្តង។',
                  zh: '一个仪表盘覆盖所有分支 — 金边、暹粒、工地、外勤团队。人数、考勤、薪资按地点和整公司一键汇总。' },
-    punchline: { en: 'Here we are, Smart-HRMS — we are everything.',
-                 km: 'យើងនៅទីនេះ Smart-HRMS — យើងគឺគ្រប់យ៉ាង។',
-                 zh: '我们在这里，Smart-HRMS — 我们就是一切。' },
+    punchline: { en: 'Here we are, Smart HRMS — we are everything.',
+                 km: 'យើងនៅទីនេះ Smart HRMS — យើងគឺគ្រប់យ៉ាង។',
+                 zh: '我们在这里，Smart HRMS — 我们就是一切。' },
   },
   modules: {
-    sectionEyebrow: { en: 'What Smart-HRMS does', km: 'អ្វីដែល Smart-HRMS ធ្វើ', zh: 'Smart-HRMS 提供什么' },
+    sectionEyebrow: { en: 'What Smart HRMS does', km: 'អ្វីដែល Smart HRMS ធ្វើ', zh: 'Smart HRMS 提供什么' },
     sectionTitle:   { en: 'Every workflow your business runs — organised by who uses it',
                       km: 'រាល់ដំណើរការនៅក្នុងអាជីវកម្មរបស់អ្នក — រៀបចំតាមអ្នកប្រើ',
                       zh: '业务的每个流程 — 按使用者分类组织' },
@@ -272,9 +277,9 @@ const T = {
     title:   { en: 'Run it your way',
                km: 'ដំណើរការតាមរបៀបរបស់អ្នក',
                zh: '按您的方式运行' },
-    desc:    { en: 'Some sites need data to stay inside the building. Others want the convenience of cloud access. Smart-HRMS supports both — and if you need both at once, Connect & Sync glues them together.',
-               km: 'ទីតាំងខ្លះត្រូវការទិន្នន័យឱ្យនៅក្នុងអាគារ។ ខ្លះទៀតចង់បានភាពងាយស្រួលនៃការចូលប្រើតាមពពក។ Smart-HRMS គាំទ្រទាំងពីរ — ហើយប្រសិនបើអ្នកត្រូវការទាំងពីរក្នុងពេលតែមួយ Connect & Sync ភ្ជាប់ពួកវាជាមួយគ្នា។',
-               zh: '有些站点需要数据保留在内部，有些则希望享受云端访问的便利。Smart-HRMS 同时支持两种方式 — 如需两者并用，Connect & Sync 会将它们无缝衔接。' },
+    desc:    { en: 'Some sites need data to stay inside the building. Others want the convenience of cloud access. Smart HRMS supports both — and if you need both at once, Connect & Sync glues them together.',
+               km: 'ទីតាំងខ្លះត្រូវការទិន្នន័យឱ្យនៅក្នុងអាគារ។ ខ្លះទៀតចង់បានភាពងាយស្រួលនៃការចូលប្រើតាមពពក។ Smart HRMS គាំទ្រទាំងពីរ — ហើយប្រសិនបើអ្នកត្រូវការទាំងពីរក្នុងពេលតែមួយ Connect & Sync ភ្ជាប់ពួកវាជាមួយគ្នា។',
+               zh: '有些站点需要数据保留在内部，有些则希望享受云端访问的便利。Smart HRMS 同时支持两种方式 — 如需两者并用，Connect & Sync 会将它们无缝衔接。' },
     standaloneTitle: { en: 'Stand-alone',          km: 'Stand-alone',                       zh: 'Stand-alone（本地部署）' },
     standaloneSub:   { en: 'On-premise · your hardware', km: 'ក្នុងស្រុក · ឧបករណ៍របស់អ្នក', zh: '本地 · 您的硬件' },
     standaloneB1:    { en: 'Runs entirely inside your office network',
@@ -1880,8 +1885,9 @@ function LandingFooter({ lang }: { lang: Lang }) {
               <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-white">
                 <Building2 className="h-5 w-5" />
               </span>
-              <span className="text-base font-semibold tracking-tight text-slate-900">Smart-HRMS</span>
+              <span className="text-base font-semibold tracking-tight text-slate-900">Smart HRMS</span>
             </div>
+            <p className="mt-1 text-xs font-medium text-slate-500">HR-Share 360°</p>
             <p className="mt-3 max-w-xs text-sm text-slate-600">{t(T.footer.tagline, lang)}</p>
           </div>
 
@@ -1923,14 +1929,20 @@ function LandingFooter({ lang }: { lang: Lang }) {
                   {t(T.hero.contactUs, lang)}
                 </a>
               </li>
+              {/* Official public contact (v-ai-visibility, 2026-11-28).
+                  Same values as the Organization JSON-LD in index.html —
+                  change both together. */}
               <li className="flex items-center gap-2">
                 <Mail className="h-3.5 w-3.5" />
-                <a href="https://t.me/Maxwells_CX" target="_blank" rel="noopener noreferrer"
+                <a href="https://t.me/smrthrms" target="_blank" rel="noopener noreferrer"
                    className="hover:text-blue-600 hover:underline">
-                  @Maxwells_CX
+                  @smrthrms
                 </a>
               </li>
-              <li className="flex items-center gap-2"><Phone className="h-3.5 w-3.5" /> +855 98 844 504</li>
+              <li className="flex items-center gap-2">
+                <Phone className="h-3.5 w-3.5" />
+                <a href="tel:+85517201410" className="hover:text-blue-600 hover:underline">017 201 410</a>
+              </li>
               <li className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5" /> Phnom Penh, Cambodia</li>
             </ul>
           </div>
@@ -1965,7 +1977,7 @@ function LandingFooter({ lang }: { lang: Lang }) {
         </div>
 
         <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500 sm:flex-row">
-          <p>© {new Date().getFullYear()} Smart-HRMS. {t(T.footer.rights, lang)}</p>
+          <p>© {new Date().getFullYear()} HR-Share 360°. {t(T.footer.rights, lang)}</p>
           <div className="flex items-center gap-4">
             <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> SOC2-ready</span>
             <span className="inline-flex items-center gap-1.5"><FileSpreadsheet className="h-3.5 w-3.5" /> Excel exports</span>

@@ -1,3 +1,15 @@
+# Crawler policy (owner's decision, 2026-11-28):
+#   - search crawlers welcome: Google, Bing, ChatGPT search (OAI-SearchBot)
+#   - OpenAI's model-training crawler (GPTBot) not allowed
+# robots.txt is a request to well-behaved crawlers, not a lock: private
+# data is protected by sign-in on the API, never by this file.
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: GPTBot
+Disallow: /
+
 User-agent: *
 Allow: /
 

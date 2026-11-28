@@ -722,9 +722,9 @@ export const LANDING_CATEGORIES: LandingCategory[] = [
     tone: 'slate',
     title: { en: 'Platform & Integrations', km: 'វេទិកា និងការតភ្ជាប់', zh: '平台与集成' },
     desc: {
-      en: 'The plumbing that makes one Smart-HRMS serve many branches, many tenants, and the customers who shop with them.',
-      km: 'ហេដ្ឋារចនាសម្ព័ន្ធដែលធ្វើឱ្យ Smart-HRMS មួយបម្រើដល់សាខាច្រើន អតិថិជនច្រើន។',
-      zh: '让一个 Smart-HRMS 服务多分支、多租户及其客户的底层基础设施。',
+      en: 'The plumbing that makes one Smart HRMS serve many branches, many tenants, and the customers who shop with them.',
+      km: 'ហេដ្ឋារចនាសម្ព័ន្ធដែលធ្វើឱ្យ Smart HRMS មួយបម្រើដល់សាខាច្រើន អតិថិជនច្រើន។',
+      zh: '让一个 Smart HRMS 服务多分支、多租户及其客户的底层基础设施。',
     },
     modules: [
       {

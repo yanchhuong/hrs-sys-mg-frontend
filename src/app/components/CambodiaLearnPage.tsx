@@ -59,7 +59,7 @@ export function CambodiaLearnPage() {
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-white">
               <Building2 className="h-5 w-5" />
             </span>
-            <span className="text-base font-semibold tracking-tight">Smart-HRMS</span>
+            <span className="text-base font-semibold tracking-tight">Smart HRMS</span>
           </a>
           <div className="flex items-center gap-2">
             <button
