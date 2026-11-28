@@ -110,6 +110,8 @@ interface FormState {
   quick: boolean;
   /** v-quick-types — the Quick Item's system type code ('' = none yet). */
   quickType: string;
+  /** v-quick-tanks — a fuel Quick Item's tank size ('' = not set). */
+  tankCapacity: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -139,6 +141,7 @@ const EMPTY_FORM: FormState = {
   makingFee: '',
   quick: false,
   quickType: '',
+  tankCapacity: '',
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -1203,6 +1206,7 @@ export function Items() {
       goldTitle: it.goldTitle ?? '',
       quick: !!it.quick,
       quickType: it.quickType ?? '',
+      tankCapacity: it.tankCapacity != null ? String(it.tankCapacity) : '',
       // Weight is stored in chi; shown in the unit it was saved in.
       weight: it.weightChi != null ? String(marketApi.chiInUnit(Number(it.weightChi), marketApi.goldUnitOf(it.unit))) : '',
       weightUnit: marketApi.goldUnitOf(it.unit),
@@ -1275,6 +1279,10 @@ export function Items() {
         // v-quick-items — a gold title wins: a Quick Item has a fixed price.
         quick: !goldTitle && form.quick,
         ...(!goldTitle && form.quick && form.quickType ? { quickType: form.quickType } : {}),
+        // v-quick-tanks — fuel only; any other Quick Item clears a stale size (0).
+        ...(!goldTitle && form.quick
+          ? { tankCapacity: itemsApi.isFuelQuick(form.quickType, form.unit) ? Number(form.tankCapacity) || 0 : 0 }
+          : {}),
         // V265 — send the full ordered list; the BE derives imageUrl
         // from imageUrls[0] so legacy readers keep working. An empty
         // array clears every image.
@@ -3085,6 +3093,16 @@ function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, c
           {!form.quickType && types.length > 0 && types.every(taken) && (
             <p className="text-xs text-gray-500">Every Quick Item type is added. Edit the existing one instead.</p>
           )}
+        </div>
+      )}
+
+      {/* v-quick-tanks — fuel: the mobile Quick Order draws its tank from this. */}
+      {quick && itemsApi.isFuelQuick(form.quickType, form.unit) && (
+        <div className="space-y-1.5">
+          <label htmlFor="item-tank-capacity" className={label}>Tank capacity ({form.unit.trim() || 'L'})</label>
+          <NumericInput id="item-tank-capacity" value={form.tankCapacity} decimals={3}
+            onChange={v => setForm({ ...form, tankCapacity: v })} placeholder="10,000" />
+          <p className="text-xs text-gray-500">Quick Order shows the tank: stock on hand is the level, Min Stock the dashed line.</p>
         </div>
       )}
 

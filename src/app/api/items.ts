@@ -82,6 +82,9 @@ export interface Item {
   /** v-quick-types (V429) — the Quick Item's system type (GOLD, SILVER,
    *  DIESEL, LPG); null on other items and on older untyped Quick Items. */
   quickType?: string | null;
+  /** v-quick-tanks (V430) — a fuel Quick Item's tank size, in its unit; the
+   *  mobile Quick Order draws the tank from it. */
+  tankCapacity?: number | null;
   /** Weight in chi (ជី). */
   weightChi?: number | null;
   /** Optional making fee (ថ្លៃឈ្នួល), sold on its own line. */
@@ -206,6 +209,8 @@ export interface ItemRequest {
   quick?: boolean;
   /** v-quick-types — which system type; required with quick = true. */
   quickType?: string;
+  /** v-quick-tanks — the tank size. Undefined = unchanged; 0 clears it. */
+  tankCapacity?: number;
   /** Weight in chi; required with a gold title. Undefined = unchanged. */
   weightChi?: number;
   /** Optional making fee; 0 clears it. Undefined = unchanged. */
@@ -420,6 +425,10 @@ export async function quickTypes(): Promise<QuickType[]> {
 }
 
 /** The type's name in the language the app is showing. */
+/** v-quick-tanks — fuel (Diesel, LPG, or sold by the litre) has a tank. */
+export const isFuelQuick = (quickType: string | null | undefined, unit: string | null | undefined) =>
+  quickType === 'DIESEL' || quickType === 'LPG' || /^(l|lt|ltr|liters?|litres?|លីត្រ)$/i.test((unit ?? '').trim());
+
 export const quickTypeName = (q: Pick<QuickType, 'nameEn' | 'nameKm'>, lang: string) =>
   (lang === 'km' ? q.nameKm : q.nameEn) || q.nameEn;
 
