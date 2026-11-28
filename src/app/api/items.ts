@@ -79,6 +79,9 @@ export interface Item {
    *  from the mobile Quick Order screen only (never POS or the online
    *  shop). This app does not send it on save, so the server keeps it. */
   quick?: boolean;
+  /** v-quick-types (V429) — the Quick Item's system type (GOLD, SILVER,
+   *  DIESEL, LPG); null on other items and on older untyped Quick Items. */
+  quickType?: string | null;
   /** Weight in chi (ជី). */
   weightChi?: number | null;
   /** Optional making fee (ថ្លៃឈ្នួល), sold on its own line. */
@@ -201,6 +204,8 @@ export interface ItemRequest {
   /** v-quick-items — a Quick Item (sold from the mobile Quick Order only).
    *  Undefined = unchanged; a gold title turns it off server-side. */
   quick?: boolean;
+  /** v-quick-types — which system type; required with quick = true. */
+  quickType?: string;
   /** Weight in chi; required with a gold title. Undefined = unchanged. */
   weightChi?: number;
   /** Optional making fee; 0 clears it. Undefined = unchanged. */
@@ -397,8 +402,29 @@ export async function categories(active = false, pricing?: 'market' | 'fixed'): 
   return apiJson(`/api/v1/stock-items/categories?${q}`);
 }
 
+/** v-quick-types — one system Quick Item type, and the company's item of
+ *  that type (itemId null = not added yet). */
+export interface QuickType {
+  code: string;
+  nameEn: string;
+  nameKm: string;
+  /** The unit the item form fills in when the type is picked. */
+  unit: string | null;
+  itemId: string | null;
+  itemName: string | null;
+}
+
+/** Gold, Silver, Diesel, LPG — a company adds each once (V429). */
+export async function quickTypes(): Promise<QuickType[]> {
+  return apiJson('/api/v1/stock-items/quick-types');
+}
+
+/** The type's name in the language the app is showing. */
+export const quickTypeName = (q: Pick<QuickType, 'nameEn' | 'nameKm'>, lang: string) =>
+  (lang === 'km' ? q.nameKm : q.nameEn) || q.nameEn;
+
 /** v-category-order — the saved order alone (lowercase names, first first;
- *  [] when never set). POS ranks its category chips by it. */
+ *  [] when never set). POS ranks its category chips by it.
 export async function categoryOrder(): Promise<string[]> {
   return apiJson('/api/v1/stock-items/categories/order');
 }

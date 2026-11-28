@@ -108,6 +108,8 @@ interface FormState {
   /** v-quick-items — a Quick Item: a fixed price, sold from the mobile
    *  Quick Order only. Never together with a gold title. */
   quick: boolean;
+  /** v-quick-types — the Quick Item's system type code ('' = none yet). */
+  quickType: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -136,6 +138,7 @@ const EMPTY_FORM: FormState = {
   weightUnit: 'chi',
   makingFee: '',
   quick: false,
+  quickType: '',
 };
 
 /** Two prefilled modifier groups the cashier sets up most often on
@@ -853,6 +856,14 @@ export function Items() {
       .then(d => setGoldPrices(d.items.filter(i => i.category === 'gold' && marketApi.goldCurrency(i.unit) === 'USD')))
       .catch(() => setGoldPrices([]));
   }, [dialogOpen, goldPrices]);
+  // v-quick-types — the system Quick Item types and which ones the company
+  // has added; fetched each time the form opens, so a type just added shows
+  // as taken.
+  const [quickTypes, setQuickTypes] = useState<itemsApi.QuickType[] | null>(null);
+  useEffect(() => {
+    if (!dialogOpen) return;
+    itemsApi.quickTypes().then(setQuickTypes).catch(() => setQuickTypes([]));
+  }, [dialogOpen]);
   // v-category-order — the company's categories in its own order (the
   // Category picker and the list filter). Reloaded when the form opens
   // and after the Categories dialog saves.
@@ -1191,6 +1202,7 @@ export function Items() {
       barcode: it.barcode ?? '',
       goldTitle: it.goldTitle ?? '',
       quick: !!it.quick,
+      quickType: it.quickType ?? '',
       // Weight is stored in chi; shown in the unit it was saved in.
       weight: it.weightChi != null ? String(marketApi.chiInUnit(Number(it.weightChi), marketApi.goldUnitOf(it.unit))) : '',
       weightUnit: marketApi.goldUnitOf(it.unit),
@@ -1208,6 +1220,8 @@ export function Items() {
     if (!Number.isFinite(unitPrice) || unitPrice < 0) { toast.error('Unit price must be 0 or more'); return; }
     if (!Number.isFinite(unitCost)  || unitCost  < 0) { toast.error('Unit cost must be 0 or more'); return; }
     if (!Number.isFinite(stockQty)) { toast.error('Stock quantity must be a number'); return; }
+    // v-quick-types — a Quick Item is one of the system types.
+    if (form.quick && !form.goldTitle.trim() && !form.quickType) { toast.error('Choose what this Quick Item is'); return; }
     // v-gold-items — a gold item is priced by its weight, so it needs one.
     const goldTitle = form.goldTitle.trim();
     let weightChi: number | undefined;
@@ -1260,6 +1274,7 @@ export function Items() {
         makingFee,
         // v-quick-items — a gold title wins: a Quick Item has a fixed price.
         quick: !goldTitle && form.quick,
+        ...(!goldTitle && form.quick && form.quickType ? { quickType: form.quickType } : {}),
         // V265 — send the full ordered list; the BE derives imageUrl
         // from imageUrls[0] so legacy readers keep working. An empty
         // array clears every image.
@@ -2362,6 +2377,8 @@ export function Items() {
               form={form}
               setForm={setForm}
               goldPrices={goldPrices}
+              quickTypes={quickTypes}
+              editingId={editing?.id ?? null}
               category={
                 /* v-shared-category — one Category for both modes, right
                    under the mode tabs: pick one or type a new one; "Edit"
@@ -2969,14 +2986,35 @@ function pickerOptions(names: string[], current: string) {
  * The Market Based tab shows once the company has a USD gold price (or the
  * item already follows one), as on mobile; the other two always show.
  */
-function MarketBasedFields({ form, setForm, goldPrices, category }: {
+function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, category }: {
   form: FormState;
   setForm: (f: FormState) => void;
   goldPrices: marketApi.MarketItem[] | null;
+  /** v-quick-types — the system types; null while loading. */
+  quickTypes: itemsApi.QuickType[] | null;
+  /** The item being edited: its own type is never "taken". */
+  editingId: string | null;
   /** The Category field, shown under the tabs in both modes. */
   category: React.ReactNode;
 }) {
+  const { lang } = useI18n();
   const options = goldPrices ?? [];
+  const types = quickTypes ?? [];
+  /** Another item of the company already is this type. */
+  const taken = (q: itemsApi.QuickType) => !!q.itemId && q.itemId !== editingId;
+  const pickType = (q: itemsApi.QuickType) => {
+    const prev = types.find(x => x.code === form.quickType);
+    const typed = form.name.trim();
+    // Fill the name and unit the type suggests, unless the person has typed
+    // their own (anything but the previous type's words).
+    const keepName = typed && !(prev && (typed === prev.nameEn || typed === prev.nameKm));
+    const keepUnit = form.unit.trim() && !(prev && form.unit === prev.unit);
+    setForm({
+      ...form, quickType: q.code,
+      name: keepName ? form.name : itemsApi.quickTypeName(q, lang),
+      unit: keepUnit || !q.unit ? form.unit : q.unit,
+    });
+  };
   const hasMarket = options.length > 0 || !!form.goldTitle;
   const market = !!form.goldTitle;
   const quick = !market && form.quick;
@@ -3017,6 +3055,38 @@ function MarketBasedFields({ form, setForm, goldPrices, category }: {
           Quick Item
         </button>
       </div>
+
+      {/* v-quick-types — which Quick Item this is. A type the company
+          already has shows, but can't be picked: each is added once. */}
+      {quick && (
+        <div className="space-y-1.5">
+          <p className={label}>Quick Item type <span className="text-red-500">*</span></p>
+          {quickTypes === null ? (
+            <p className="text-sm text-gray-400">Loading…</p>
+          ) : (
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Quick Item type">
+              {types.map(q => {
+                const off = taken(q);
+                const on = form.quickType === q.code;
+                return (
+                  <button key={q.code} type="button" role="radio" aria-checked={on} disabled={off}
+                    title={off ? `Already added: ${q.itemName ?? ''}` : undefined}
+                    className={off ? 'px-3 h-8 rounded-full text-sm font-medium bg-gray-100 text-gray-400 cursor-not-allowed' : chip(on)}
+                    onClick={() => pickType(q)}>
+                    {itemsApi.quickTypeName(q, lang)}{off && <span className="font-normal"> · Added</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {quickTypes !== null && types.length === 0 && (
+            <p className="text-xs text-red-600">Could not load the Quick Item types. Close the form and try again.</p>
+          )}
+          {!form.quickType && types.length > 0 && types.every(taken) && (
+            <p className="text-xs text-gray-500">Every Quick Item type is added. Edit the existing one instead.</p>
+          )}
+        </div>
+      )}
 
       {category}
 
