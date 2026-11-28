@@ -441,7 +441,7 @@ export const quickTypeName = (q: Pick<QuickType, 'nameEn' | 'nameKm'>, lang: str
   (lang === 'km' ? q.nameKm : q.nameEn) || q.nameEn;
 
 /** v-category-order — the saved order alone (lowercase names, first first;
- *  [] when never set). POS ranks its category chips by it.
+ *  [] when never set). POS ranks its category chips by it. */
 export async function categoryOrder(): Promise<string[]> {
   return apiJson('/api/v1/stock-items/categories/order');
 }
