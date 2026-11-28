@@ -2041,12 +2041,15 @@ export function Items() {
                                 <Zap className="h-3.5 w-3.5 text-amber-500" aria-label="Quick Item" />
                               </span>
                             )}
-                            <RowModifiersPopover
-                              item={it}
-                              disabled={!canEdit}
-                              onSaved={(updated) =>
-                                setRows(prev => prev.map(r => r.id === updated.id ? updated : r))}
-                            />
+                            {/* v-quick-locked — a Quick Item has no modifiers. */}
+                            {!it.quick && (
+                              <RowModifiersPopover
+                                item={it}
+                                disabled={!canEdit}
+                                onSaved={(updated) =>
+                                  setRows(prev => prev.map(r => r.id === updated.id ? updated : r))}
+                              />
+                            )}
                           </div>
                           {it.description && (
                             <div className="text-[11px] text-gray-500 truncate max-w-md">{it.description}</div>
@@ -2387,6 +2390,7 @@ export function Items() {
               goldPrices={goldPrices}
               quickTypes={quickTypes}
               editingId={editing?.id ?? null}
+              quickOnly={!!editing?.quick}
               category={
                 /* v-shared-category — one Category for both modes, right
                    under the mode tabs: pick one or type a new one; "Edit"
@@ -2714,11 +2718,14 @@ export function Items() {
                 now (was Drink-only). Craft/Souvenir stores use it to
                 offer Size / Color / Wrap variants the same way a
                 coffee shop offers Size / Sugar Level. */}
-            <ModifiersEditor
-              groups={form.modifierGroups}
-              onChange={g => setForm({ ...form, modifierGroups: g })}
-              disabled={saving}
-            />
+            {/* v-quick-locked — not on a Quick Item: Quick Order has no modifiers. */}
+            {!(form.quick && !form.goldTitle) && (
+              <ModifiersEditor
+                groups={form.modifierGroups}
+                onChange={g => setForm({ ...form, modifierGroups: g })}
+                disabled={saving}
+              />
+            )}
           </div>
 
           {/* Pinned footer — sits outside the scrolling body so Save +
@@ -2994,7 +3001,7 @@ function pickerOptions(names: string[], current: string) {
  * The Market Based tab shows once the company has a USD gold price (or the
  * item already follows one), as on mobile; the other two always show.
  */
-function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, category }: {
+function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, quickOnly, category }: {
   form: FormState;
   setForm: (f: FormState) => void;
   goldPrices: marketApi.MarketItem[] | null;
@@ -3002,6 +3009,8 @@ function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, c
   quickTypes: itemsApi.QuickType[] | null;
   /** The item being edited: its own type is never "taken". */
   editingId: string | null;
+  /** v-quick-locked — editing a Quick Item: it stays one, so no price tabs. */
+  quickOnly: boolean;
   /** The Category field, shown under the tabs in both modes. */
   category: React.ReactNode;
 }) {
@@ -3040,6 +3049,7 @@ function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, c
 
   return (
     <div className="space-y-3">
+      {!quickOnly && (
       <div className={`grid ${hasMarket ? 'grid-cols-3' : 'grid-cols-2'} gap-1 rounded-lg bg-gray-100 p-1`}
         role="radiogroup" aria-label="Pricing">
         <button type="button" role="radio" aria-checked={!market && !quick} className={tab(!market && !quick)}
@@ -3063,6 +3073,7 @@ function MarketBasedFields({ form, setForm, goldPrices, quickTypes, editingId, c
           Quick Item
         </button>
       </div>
+      )}
 
       {/* v-quick-types — which Quick Item this is. A type the company
           already has shows, but can't be picked: each is added once. */}
